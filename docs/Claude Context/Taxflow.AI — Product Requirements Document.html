@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Taxflow.AI — Product Requirements Document</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --font:'Plus Jakarta Sans','Segoe UI',system-ui,-apple-system,sans-serif;
+  --mono:'JetBrains Mono',Consolas,monospace;
+  --bg:#060A13;--panel:#0C1425;--card:#111B31;--card2:#162341;--line:#1E2C4A;--line2:#2B3D63;
+  --tx:#E8EEFB;--tx2:#B0BDD8;--tx3:#7987AB;
+  --blue:#4C8DFF;--blue2:#2F6BFF;--cyan:#3DD6F5;--green:#34D399;--amber:#F6C453;--red:#F87171;--violet:#8B7CFF;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+:root[data-theme="light"]{
+  --bg:#EDF1F9;--panel:#FFFFFF;--card:#FFFFFF;--card2:#F1F5FC;--line:#DAE2F1;--line2:#C3CFE6;
+  --tx:#0E1A33;--tx2:#3E4E75;--tx3:#6B7BA0;
+  --blue:#2563EB;--blue2:#1D4ED8;--cyan:#0891B2;--green:#059669;--amber:#B7791F;--red:#DC2626;--violet:#6D5BEA;
+}
+html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 64px);scroll-behavior:smooth}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.65 var(--font);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p{margin:0}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.layout{display:grid;grid-template-columns:240px minmax(0,1fr);max-width:1200px;margin:0 auto;gap:34px;padding:0 20px}
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;padding:24px 0;max-height:100vh;overflow:auto}
+nav.toc b{display:block;font-size:13px;color:var(--tx3);margin:0 0 10px 10px;font-weight:600}
+nav.toc a{display:block;padding:6px 10px;border-radius:8px;color:var(--tx2);text-decoration:none;font-size:13px;border-left:2px solid transparent}
+nav.toc a:hover{background:var(--card)}
+nav.toc a.on{color:var(--tx);border-left-color:var(--blue);background:color-mix(in srgb,var(--blue) 12%,transparent)}
+main{padding:28px 0 90px;min-width:0}
+.hero{padding:26px 26px 24px;border-radius:20px;background:linear-gradient(135deg,color-mix(in srgb,var(--blue2) 34%,var(--card)),var(--card));border:1px solid var(--line2);margin-bottom:26px}
+.hero .k{font-size:13px;color:var(--cyan);font-weight:600}
+.hero h1{font-size:30px;line-height:1.2;letter-spacing:-.5px;margin:8px 0 10px;font-weight:800}
+.hero p{color:var(--tx2);max-width:70ch}
+.hero .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.tag{font-size:12px;font-weight:600;padding:3px 10px;border-radius:99px;background:color-mix(in srgb,var(--tx) 8%,transparent);color:var(--tx2)}
+.tag.b{background:color-mix(in srgb,var(--blue) 18%,transparent);color:var(--blue)}
+.tag.g{background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green)}
+.tag.a{background:color-mix(in srgb,var(--amber) 20%,transparent);color:var(--amber)}
+.tag.v{background:color-mix(in srgb,var(--violet) 20%,transparent);color:var(--violet)}
+.topbar{display:flex;justify-content:flex-end;padding-top:14px}
+.iconbtn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line2);background:var(--card);display:grid;place-items:center}
+section{margin-bottom:46px}
+section>h2{font-size:23px;letter-spacing:-.3px;margin-bottom:6px;font-weight:700}
+section>.lead{color:var(--tx3);margin-bottom:18px;max-width:72ch}
+h3{font-size:16px;margin:22px 0 10px;font-weight:700}
+h4{font-size:13px;color:var(--tx3);margin:0 0 6px;font-weight:600}
+p+p{margin-top:10px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.card h3{margin-top:0}
+.card ul,.card ol{margin:6px 0 0;padding-left:20px}
+.card li{margin:4px 0;color:var(--tx2)}
+.card p{color:var(--tx2)}
+.kpi{padding:14px 16px}
+.kpi b{display:block;font-size:24px;letter-spacing:-.5px;font-weight:800}
+.kpi span{font-size:12.5px;color:var(--tx3)}
+.callout{display:flex;gap:12px;padding:13px 16px;border-radius:14px;border:1px solid color-mix(in srgb,var(--cyan) 35%,transparent);background:color-mix(in srgb,var(--cyan) 9%,transparent);color:var(--tx2);margin:14px 0}
+.callout.warn{border-color:color-mix(in srgb,var(--amber) 38%,transparent);background:color-mix(in srgb,var(--amber) 9%,transparent)}
+.callout b{color:var(--tx)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card);margin:10px 0}
+table{width:100%;border-collapse:collapse;min-width:600px}
+th{font-size:12px;color:var(--tx3);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600;background:var(--panel)}
+td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--tx2);font-size:14px}
+tr:last-child td{border-bottom:0}
+td b{color:var(--tx)}
+.pri{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.p0{background:color-mix(in srgb,var(--red) 18%,transparent);color:var(--red)}
+.p1{background:color-mix(in srgb,var(--amber) 20%,transparent);color:var(--amber)}
+.p2{background:color-mix(in srgb,var(--blue) 18%,transparent);color:var(--blue)}
+/* feature blocks */
+.feat{border:1px solid var(--line);border-radius:16px;background:var(--card);margin:14px 0;overflow:hidden}
+.feat-h{display:flex;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.feat-h .num{width:30px;height:30px;border-radius:9px;background:var(--card2);display:grid;place-items:center;font-weight:700;font-size:13px;color:var(--blue);flex:none}
+.feat-h b{font-size:16px}
+.feat-body{padding:4px 18px 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.blk h4{margin-bottom:5px}
+.blk p,.blk li{font-size:13.5px;color:var(--tx2)}
+.blk ul{margin:0;padding-left:18px}
+.blk li{margin:3px 0}
+.pain{border-left:3px solid var(--red)}
+.sol{border-left:3px solid var(--green)}
+.how{border-left:3px solid var(--blue)}
+.blk.bordered{padding:2px 0 2px 12px}
+.persona{display:flex;gap:14px;align-items:flex-start}
+.persona .av{width:44px;height:44px;border-radius:13px;background:var(--card2);display:grid;place-items:center;font-weight:700;color:var(--blue);flex:none}
+.flow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.flow .st{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:8px 13px;font-size:13px;font-weight:600}
+.flow .ar{color:var(--tx3)}
+pre.code{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font:12.5px/1.6 var(--mono);color:var(--tx2);overflow-x:auto;margin:8px 0}
+.src li{margin:4px 0;font-size:13px}
+footer{color:var(--tx3);font-size:13px;margin-top:30px}
+@media(max-width:900px){
+  .layout{grid-template-columns:1fr;gap:0}
+  nav.toc{position:static;display:flex;gap:6px;overflow-x:auto;padding:14px 0 4px;max-height:none}
+  nav.toc b{display:none}
+  nav.toc a{flex:none;border:1px solid var(--line);border-radius:99px;padding:5px 12px;white-space:nowrap}
+  nav.toc a.on{border-color:var(--blue)}
+  .hero h1{font-size:24px}
+}
+@media print{nav.toc,.topbar{display:none}.layout{display:block}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" id="toc" aria-label="Sections">
+  <b>Contents</b>
+  <a href="#overview">1. Overview</a>
+  <a href="#problem">2. Problem</a>
+  <a href="#vision">3. Vision & goals</a>
+  <a href="#personas">4. Personas</a>
+  <a href="#principles">5. Design principles</a>
+  <a href="#journey">6. User journey</a>
+  <a href="#features">7. Features (detailed)</a>
+  <a href="#trust">8. Trust & accuracy model</a>
+  <a href="#nfr">9. Non-functional reqs</a>
+  <a href="#data">10. Data model</a>
+  <a href="#arch">11. Architecture</a>
+  <a href="#releases">12. Release plan</a>
+  <a href="#metrics">13. Metrics</a>
+  <a href="#risks">14. Risks & assumptions</a>
+  <a href="#outofscope">15. Out of scope</a>
+  <a href="#glossary">16. Glossary</a>
+</nav>
+<main>
+<div class="topbar"><button class="iconbtn" id="thm" aria-label="Switch light or dark theme">◐</button></div>
+
+<div class="hero">
+  <div class="k">Product Requirements Document · v1.0</div>
+  <h1>Taxflow.AI — the document and deadline hub for accounting firms</h1>
+  <p>Taxflow.AI turns the messiest part of an accountant's week — chasing clients for documents, retyping bills, tracking who owes what — into an automated, auditable workflow that runs where the client already is: WhatsApp.</p>
+  <div class="meta"><span class="tag b">Owner: Product</span><span class="tag">20 September 2026</span><span class="tag g">Market: international CA and accounting firms</span><span class="tag a">Status: pre-build, seeking design partners</span></div>
+</div>
+
+<!-- 1 -->
+<section id="overview">
+<h2>1. One-page overview</h2>
+<p class="lead">If you read nothing else, read this section.</p>
+<div class="grid g2">
+<div class="card"><h3>What it is</h3><p>A workspace that sits on top of an accounting firm's existing tools. Clients send documents on WhatsApp. Taxflow reads them, checks them, tracks every deadline per client, and prepares filing-ready worksheets and export files. The firm still files, using its own judgement and its existing ledger software.</p></div>
+<div class="card"><h3>Who it's for</h3><p>Small and mid-size accounting, bookkeeping and tax firms (2–50 staff) serving SME clients internationally. The firm is the customer. The client is a user but never pays us directly.</p></div>
+<div class="card"><h3>The core loop</h3><div class="flow"><span class="st">Collect</span><span class="ar">→</span><span class="st">Read</span><span class="ar">→</span><span class="st">Check</span><span class="ar">→</span><span class="st">Track</span><span class="ar">→</span><span class="st">Prepare</span><span class="ar">→</span><span class="st">Export</span></div><p>Every feature in this document exists to make one of these six steps faster, cheaper or more accurate.</p></div>
+<div class="card"><h3>Why now</h3><p>Governments everywhere are digitising tax filing (structured e-invoicing, quarterly digital reporting, JSON and XML returns), which raises the amount of clean, structured data a firm must produce. At the same time, clients overwhelmingly prefer sending a photo on WhatsApp to logging into a portal. That gap between "how clients behave" and "what regulators now require" is the product opportunity.</p></div>
+</div>
+<div class="callout"><span>🎯</span><span><b>North star:</b> the number of client documents collected, read and approved per firm per month, without the accountant manually retyping anything.</span></div>
+</section>
+
+<!-- 2 -->
+<section id="problem">
+<h2>2. The problem, in detail</h2>
+<p class="lead">Five compounding problems, not one.</p>
+<div class="grid g2">
+<div class="card pain" style="border-left:3px solid var(--red)"><h3>1. Document chasing is unpaid, invisible labour</h3><p>An accountant doesn't bill for the hour spent messaging twelve clients asking for August invoices. It's overhead that scales with client count, so it caps how many clients a small firm can serve.</p></div>
+<div class="card pain" style="border-left:3px solid var(--red)"><h3>2. Manual data entry is slow and error-prone</h3><p>Retyping a bill into a ledger takes minutes and introduces typos. Studies commonly cite manual invoice processing costing several times more than automated processing.</p></div>
+<div class="card pain" style="border-left:3px solid var(--red)"><h3>3. Deadlines live in someone's head</h3><p>Multiplied across dozens of clients and several filing types (VAT/GST, income tax, payroll, company filings), tracking is usually a spreadsheet, a WhatsApp group and a diary — three sources of truth that disagree.</p></div>
+<div class="card pain" style="border-left:3px solid var(--red)"><h3>4. Evidence is scattered</h3><p>When a number in a tax return is questioned, the accountant needs to find the source document fast. Today that means searching email, WhatsApp and shared drives.</p></div>
+<div class="card pain" style="border-left:3px solid var(--red)"><h3>5. Regulators are raising the bar</h3><p>Structured e-invoicing, quarterly digital reporting and JSON/XML filing formats mean "a PDF in an email" is no longer good enough in a growing number of countries. Firms that don't adapt will spend more time on compliance mechanics, not less.</p></div>
+</div>
+<p style="color:var(--tx2)">None of these problems are solved by buying a better ledger. Zoho Books, QuickBooks, Xero and Tally all record transactions well. What they don't do is get the client to send the invoice in the first place, read it without a human typing, or tell the firm which of 80 clients is falling behind this week. That gap is Taxflow's entire reason to exist.</p>
+</section>
+
+<!-- 3 -->
+<section id="vision">
+<h2>3. Vision and goals</h2>
+<div class="grid g2">
+<div class="card"><h3>Vision (3 years)</h3><p>Every accounting firm's client relationship runs through one calm, WhatsApp-native workspace: the firm never chases a document twice, never misses a deadline, and never retypes a number that a machine could read correctly the first time.</p></div>
+<div class="card"><h3>Mission (this PRD)</h3><p>Ship a product that removes at least half the time a firm spends collecting and entering client documents, without ever filing anything the firm hasn't approved.</p></div>
+</div>
+<h3>Goals and non-goals</h3>
+<div class="tw"><table>
+<tr><th>We will</th><th>We will not</th></tr>
+<tr><td>Automate collection, reading, checking and tracking</td><td>Replace the firm's accounting ledger</td></tr>
+<tr><td>Produce filing-ready worksheets and export files</td><td>Submit anything to a tax authority ourselves</td></tr>
+<tr><td>Keep a human in the loop for every approval</td><td>Auto-approve or auto-file based on confidence scores</td></tr>
+<tr><td>Sell to the firm</td><td>Sell directly to the firm's end clients</td></tr>
+<tr><td>Integrate with existing ledgers</td><td>Force firms to migrate off their current system</td></tr>
+</table></div>
+</section>
+
+<!-- 4 -->
+<section id="personas">
+<h2>4. Personas</h2>
+<div class="grid g3">
+<div class="card"><div class="persona"><span class="av">FO</span><div><h3 style="margin-top:0">Firm owner / partner</h3><p><b>Goal:</b> grow client count without growing headcount at the same rate.<br><b>Pain:</b> can't tell which clients are behind until it's almost too late.<br><b>Success:</b> a dashboard that shows risk across the whole book in one glance.</p></div></div></div>
+<div class="card"><div class="persona"><span class="av">SA</span><div><h3 style="margin-top:0">Senior accountant / bookkeeper</h3><p><b>Goal:</b> spend time reviewing and advising, not typing.<br><b>Pain:</b> unreadable photos, duplicate invoices, unclear tax treatment.<br><b>Success:</b> a review queue that's faster than typing from scratch.</p></div></div></div>
+<div class="card"><div class="persona"><span class="av">JR</span><div><h3 style="margin-top:0">Junior staff / articled clerk</h3><p><b>Goal:</b> get through the checklist without asking a senior every time.<br><b>Pain:</b> no clear view of what's outstanding per client.<br><b>Success:</b> a per-client checklist and progress bar that tells them exactly what's left.</p></div></div></div>
+<div class="card"><div class="persona"><span class="av">SM</span><div><h3 style="margin-top:0">SME client (the accountant's client)</h3><p><b>Goal:</b> stay compliant with as little effort as possible.<br><b>Pain:</b> forgets, doesn't want to learn new software, sends blurry photos.<br><b>Success:</b> never has to leave WhatsApp, gets polite reminders, sees what's still needed.</p></div></div></div>
+<div class="card"><div class="persona"><span class="av">OP</span><div><h3 style="margin-top:0">Operations / practice manager</h3><p><b>Goal:</b> even workload across staff, nothing falls through the cracks.<br><b>Pain:</b> no single source of truth for who's doing what.<br><b>Success:</b> task assignment and audit log across the whole firm.</p></div></div></div>
+<div class="card"><div class="persona"><span class="av">IT</span><div><h3 style="margin-top:0">IT / compliance lead (larger firms)</h3><p><b>Goal:</b> confidence that client data is handled safely.<br><b>Pain:</b> unmanaged WhatsApp chat history is a data-protection liability today.<br><b>Success:</b> audit logs, access controls, data residency and a clear processing agreement.</p></div></div></div>
+</div>
+</section>
+
+<!-- 5 -->
+<section id="principles">
+<h2>5. Product design principles</h2>
+<div class="grid g3">
+<div class="card"><h3>1. A human always approves</h3><p>Taxflow never sends a message, files a return, or posts a number without a person choosing to. Automation prepares; people decide. This is the single most important trust rule in the product.</p></div>
+<div class="card"><h3>2. Meet the client where they are</h3><p>We don't ask SME clients to install anything or learn a portal. If they can send a photo on WhatsApp, they can use Taxflow.</p></div>
+<div class="card"><h3>3. Every number has a source</h3><p>Any figure the product produces links back to the original document. If we can't show where a number came from, we don't show the number.</p></div>
+<div class="card"><h3>4. Show confidence, don't hide uncertainty</h3><p>Extraction is probabilistic. The UI always shows how sure the system is, and routes anything uncertain to a person before it's used.</p></div>
+<div class="card"><h3>5. Sit on top, don't replace</h3><p>Firms have already chosen a ledger. We integrate and export; we don't ask them to migrate.</p></div>
+<div class="card"><h3>6. Built for the firm, not the client</h3><p>Every screen answers a firm's question: "who's behind, what needs review, what's due." The client-facing surface (WhatsApp, optional portal) is deliberately minimal.</p></div>
+</div>
+</section>
+
+<!-- 6 -->
+<section id="journey">
+<h2>6. End-to-end user journey</h2>
+<p class="lead">Walking through one filing period for one client shows how the features connect.</p>
+<div class="tw"><table>
+<tr><th style="width:170px">Step</th><th>What happens</th><th>Who acts</th></tr>
+<tr><td><b>1. Period opens</b></td><td>The deadline engine creates the period's checklist for the client automatically, based on their registered filing obligations.</td><td>System</td></tr>
+<tr><td><b>2. Request sent</b></td><td>A WhatsApp message goes out (on schedule or on demand) asking for the specific documents still missing, in the client's language.</td><td>System, firm approves template</td></tr>
+<tr><td><b>3. Client replies</b></td><td>The client sends photos or PDFs directly in the same chat. No login, no app.</td><td>Client</td></tr>
+<tr><td><b>4. Auto-capture</b></td><td>Every attachment is saved into the right client / year / month / Raw folder within seconds, and the checklist item ticks.</td><td>System</td></tr>
+<tr><td><b>5. Extraction</b></td><td>The document is read: dates, amounts, tax IDs, line items. A confidence score is attached to every field.</td><td>System</td></tr>
+<tr><td><b>6. Review</b></td><td>Low-confidence fields and anything unusual (duplicate invoice number, mismatched tax ID) surface in a queue next to the original image.</td><td>Accountant</td></tr>
+<tr><td><b>7. Approve</b></td><td>The accountant confirms or corrects the data. Approved data moves to the client's Extracted folder.</td><td>Accountant</td></tr>
+<tr><td><b>8. Progress updates</b></td><td>The client's deadline card updates its progress bar automatically as documents are approved.</td><td>System</td></tr>
+<tr><td><b>9. Prepare</b></td><td>Once enough of the period's documents are approved, the firm generates a filing worksheet or export file from that data.</td><td>Accountant, on demand</td></tr>
+<tr><td><b>10. File</b></td><td>The accountant reviews the worksheet, moves the numbers into the government portal or their filing software, and files under their own professional responsibility.</td><td>Accountant</td></tr>
+<tr><td><b>11. Close out</b></td><td>The filing is marked complete, the client is notified, and everything (documents, edits, messages, exports) stays in the audit log.</td><td>System</td></tr>
+</table></div>
+</section>
+
+<!-- 7 : FEATURES -->
+<section id="features">
+<h2>7. Features, explained in detail</h2>
+<p class="lead">Every feature below follows the same structure: the pain point it solves, how it actually works, and why it's designed that way. Priority: <span class="pri p0">P0</span> ships in v1, <span class="pri p1">P1</span> follows within two quarters, <span class="pri p2">P2</span> is later.</p>
+
+<div class="feat">
+<div class="feat-h"><span class="num">1</span><b>Client and firm workspace setup</b><span class="pri p0" style="margin-left:auto">P0</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>Firms manage client lists in scattered spreadsheets, with no single record of each client's filing obligations, contact details or consent status.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>One structured client record per client: legal name, tax IDs, jurisdiction, filing obligations and frequencies, primary contact, WhatsApp number, language and consent status. Bulk import from Excel/CSV.</p></div>
+<div class="blk how"><h4>How it works</h4><p>On sign-up, the firm imports its client list. A mapping wizard matches spreadsheet columns to fields. Filing obligations can be set per client or inferred from a jurisdiction template (for example "GST-registered, monthly" or "VAT-registered, quarterly").</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">2</span><b>WhatsApp document collection hub</b><span class="pri p0" style="margin-left:auto">P0</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>Clients already send bills on WhatsApp, but it's unmanaged: buried in chat history, not filed anywhere, and the accountant has to remember to ask.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>A firm connects one WhatsApp Business number. All client conversations live in one inbox, with a checklist per client showing exactly what's outstanding for the current period.</p></div>
+<div class="blk how"><h4>How it works</h4><p>Built on the official WhatsApp Business Platform (Cloud API) via a licensed provider. Outbound requests use pre-approved message templates (required for messages sent outside a live conversation). Every inbound attachment is captured through a webhook and routed into the client's folder automatically. Consent is recorded per contact before any message is sent, and an opt-out is honoured immediately.</p></div>
+<div class="blk"><h4>Why WhatsApp specifically</h4><p>It's already the channel clients use informally. Formalising it — instead of asking clients to adopt a new portal — is the single biggest adoption unlock in the product.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">3</span><b>Smart document requests and reminders</b><span class="pri p0" style="margin-left:auto">P0</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>Sending the same "please send your invoices" message to 80 clients, one at a time, is exactly the kind of repetitive task that eats an accountant's week.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>Bulk, templated, scheduled requests that only ask for what's actually still missing for each client, in their preferred language, with a one-tap "approve and send" step.</p></div>
+<div class="blk how"><h4>How it works</h4><p>A request is built from a template plus per-client variables (name, period, due date, specific missing items). The firm can send immediately, schedule it, or set a recurring rule (e.g. "3 days before each period's due date"). Quiet hours prevent messages outside acceptable times. A dry-run preview shows exactly what each client will receive before it sends.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">4</span><b>Automatic document extraction (OCR + AI reading)</b><span class="pri p0" style="margin-left:auto">P0</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>Retyping every invoice, receipt and bank line is slow, boring and where most manual errors creep in.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>Every incoming bill, invoice or receipt is read automatically: date, document number, party name, tax ID, line items, tax rate, and totals — with a confidence score on each field.</p></div>
+<div class="blk how"><h4>How it works</h4><p>A combination of OCR and a document-understanding model extracts structured fields, cross-checked with rule-based validation (does the tax add up, is the tax ID the right format, does the total match the line items). Printed documents in a clear layout get the highest accuracy; handwritten or low-quality photos get flagged for closer review rather than guessed at silently.</p></div>
+<div class="blk"><h4>What it deliberately does not do</h4><p>It never silently "corrects" a number without flagging it, and it never claims certainty it doesn't have. Publishing honest accuracy numbers, by document type and by language, is part of the feature — not a caveat bolted on afterward.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">5</span><b>Review queue</b><span class="pri p0" style="margin-left:auto">P0</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>Fully automated data entry that nobody checks is how mistakes end up in a filed tax return. Fully manual entry is slow. Firms need a middle path.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>A side-by-side view: the original document on one side, the extracted fields on the other. Low-confidence fields are visibly highlighted. One click approves; editing a field re-checks it and clears the flag.</p></div>
+<div class="blk how"><h4>How it works</h4><p>Documents queue by status: needs review, extracted, approved. The queue also flags duplicate invoice numbers from the same supplier and tax-ID format errors, so the accountant isn't just proofreading OCR — they're catching real compliance problems before filing.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">6</span><b>Client document vault</b><span class="pri p0" style="margin-left:auto">P0</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>"Where's the original invoice for this number?" is a common, time-consuming question during a filing or an audit, and the answer today is scattered across email, WhatsApp and shared drives.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>Every client has an automatically organised folder tree: client → year → month → Raw / Extracted / Generated. Every extracted number links straight back to its source file.</p></div>
+<div class="blk how"><h4>How it works</h4><p>Files are routed automatically as they're captured or generated — no manual filing. Search works across file names, extracted party names and amounts. Retention rules can be set per jurisdiction's record-keeping requirements.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">7</span><b>Deadline and workflow tracking</b><span class="pri p0" style="margin-left:auto">P0</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>A firm with 80 clients and five filing types per client is tracking hundreds of deadlines. Today that lives in someone's head, a spreadsheet, and a diary that all disagree.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>Every client's filings appear as cards with a progress bar built from real, checkable steps (not a guess), a due date, and a clear at-risk flag when a deadline is close and progress is low.</p></div>
+<div class="blk how"><h4>How it works</h4><p>Each filing type has a defined step sequence (for example: collect documents → extract → reconcile → prepare → client approval → file). Steps tick automatically where the system can tell (documents approved) and manually where a person must confirm (client approved the draft). The firm-wide dashboard rolls every client up into a single "who's behind" view.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">8</span><b>Filing worksheets and generated files</b><span class="pri p0" style="margin-left:auto">P0</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>Once documents are collected, someone still has to sum them correctly into the exact boxes, schedules or files a tax authority expects — a mechanical but detail-critical step.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>Worksheets and export files built directly from approved, source-linked data: for portals with no upload (type the figures in), a clean box-by-box worksheet with an invoice-level backup list; for portals that accept a file, a validated export in the required format.</p></div>
+<div class="blk how"><h4>How it works</h4><p>A rules engine, specific to each jurisdiction and filing type, maps approved documents to the destination structure. All arithmetic is done by fixed, auditable rules — never left to a language model to "guess" a total. The output previews before it's used, and every figure remains clickable back to its source invoices.</p></div>
+<div class="blk"><h4>Why this is separate from extraction</h4><p>Extraction is inherently uncertain (it's reading a photo). Calculation should never be uncertain. Keeping them as separate steps, with separate trust levels, is a deliberate architecture decision (see section 8).</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">9</span><b>Ledger exports and integrations</b><span class="pri p0" style="margin-left:auto">P0</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>Firms have already chosen and trained staff on a ledger (Tally, Zoho Books, QuickBooks, Xero, Sage). Asking them to switch is a non-starter.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>Approved, extracted data exports straight into the formats those systems import, or pushes directly via API where one exists, so double entry disappears.</p></div>
+<div class="blk how"><h4>How it works</h4><p>A mapping layer converts Taxflow's internal document model into each target format (Excel/CSV for manual import, native XML/API for direct push where supported). New export targets are added as a config, not a rebuild.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">10</span><b>Roles, approvals and audit log</b><span class="pri p0" style="margin-left:auto">P0</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>A firm is professionally and legally responsible for what it files. Handing that responsibility to an unreviewable automated system is not something any serious firm will accept — nor should they.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>Role-based access (owner, senior, junior, read-only), an approval step in front of every outbound message and every "generate filing" action, and an immutable log of who did what, when, and what changed.</p></div>
+<div class="blk how"><h4>How it works</h4><p>Every state-changing action (edit a field, approve a document, send a message, generate a worksheet) writes an audit event with before/after values. The log is exportable, so it can be handed to a regulator or an internal reviewer on request.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">11</span><b>Firm-wide dashboard</b><span class="pri p0" style="margin-left:auto">P0</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>A firm owner has no single view of practice health — they find out a filing is late when the client calls, angry.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>One screen: filings due this week, clients missing documents, the extraction queue, and recent automated activity — the same view every morning.</p></div>
+<div class="blk how"><h4>How it works</h4><p>Aggregates data already produced by the other features (nothing new is computed here) into ranked, actionable lists, so the first five minutes of a workday tell the owner exactly where to focus.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">12</span><b>Conversational assistant</b><span class="pri p1" style="margin-left:auto">P1</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>Even with a good dashboard, finding "who hasn't sent documents" or "prepare the filing for Client X" often means clicking through several screens.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>A chat panel that answers questions from live firm data and opens the relevant page — "who is missing documents," "generate the VAT worksheet for Client X," "when is Client Y's next deadline."</p></div>
+<div class="blk how"><h4>How it works</h4><p>The assistant only reads and summarises existing data, or triggers the same actions a person could click (schedule a reminder, open a page). It never sends a message or files anything without landing on the normal approval step. This keeps the "human always approves" principle intact even when AI is doing the asking.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">13</span><b>Optional client portal</b><span class="pri p1" style="margin-left:auto">P1</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>Some clients (or some firms) prefer a web upload link over WhatsApp, especially for larger files or for clients without WhatsApp.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>A simple, no-login (magic-link) portal mirroring the same checklist, for firms or clients who want it, alongside WhatsApp rather than instead of it.</p></div>
+<div class="blk how"><h4>How it works</h4><p>Same backend as the WhatsApp hub — the portal is just another way documents arrive. Uploaded files go through the identical capture → extract → review pipeline.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">14</span><b>Bank statement parsing</b><span class="pri p1" style="margin-left:auto">P1</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>Bank reconciliation is one of the most repetitive tasks in bookkeeping, and bank statement PDFs are notoriously inconsistent in format.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>Parse bank statement PDFs/Excel into transaction lists and suggest matches against already-approved invoices.</p></div>
+<div class="blk how"><h4>How it works</h4><p>Per-bank templates plus a general-purpose parser handle the most common statement formats first; suggested matches always require a human confirmation click, never an automatic post.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">15</span><b>Structured e-invoicing readiness</b><span class="pri p1" style="margin-left:auto">P1</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>A growing number of countries now require invoices as structured, government-validated data rather than PDFs. Getting a client's invoicing data clean enough for that transition is new, unpaid work for firms.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>Check a client's invoice data against the structured-format field requirements, show a readiness score, and flag exactly what's missing (usually tax IDs, addresses or item-level detail).</p></div>
+<div class="blk how"><h4>How it works</h4><p>Taxflow does not become a certified e-invoicing transmitter itself — that requires a formal accreditation process specific to each country. Instead, it prepares clean data and hands off to an accredited third-party provider via an integration, similar to how a firm might use a specialist e-filing partner today.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">16</span><b>Multi-jurisdiction rule packs</b><span class="pri p2" style="margin-left:auto">P2</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>An international firm (or a firm with clients abroad) juggles completely different filing calendars, forms and tax categories per country.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>The deadline engine, worksheet builder and document-field rules are all driven by a swappable "country pack" rather than hard-coded logic, so adding a new jurisdiction doesn't mean rebuilding the product.</p></div>
+<div class="blk how"><h4>How it works</h4><p>Each pack defines: filing types and calendars, required invoice fields and tax categories, worksheet/export mappings, and message templates in the local language. The core product (collect, extract, review, track) stays identical across every country.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">17</span><b>Team workload and capacity view</b><span class="pri p2" style="margin-left:auto">P2</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>In a growing firm, work isn't evenly spread — one senior accountant quietly carries twice the client load of another.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>Assign clients or filings to staff, and show a workload view alongside the deadline dashboard.</p></div>
+<div class="blk how"><h4>How it works</h4><p>Built on the same task/step data already tracked for deadlines — this is a different view of existing data, not a new data model.</p></div>
+</div></div>
+
+<div class="feat">
+<div class="feat-h"><span class="num">18</span><b>Notifications and daily digest</b><span class="pri p2" style="margin-left:auto">P2</span></div>
+<div class="feat-body">
+<div class="blk pain"><h4>Pain point</h4><p>Staff shouldn't need to open the dashboard constantly to know something needs their attention.</p></div>
+<div class="blk sol"><h4>Solution</h4><p>A daily digest (email or in-app) summarising overnight activity: new documents received, items needing review, filings due soon.</p></div>
+<div class="blk how"><h4>How it works</h4><p>A scheduled job compiles the same dashboard data into a digest at a time the firm chooses.</p></div>
+</div></div>
+
+<h3>Feature priority summary</h3>
+<div class="tw"><table>
+<tr><th>Priority</th><th>Features</th><th>Reasoning</th></tr>
+<tr><td><span class="pri p0">P0 — MVP</span></td><td>1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11</td><td>The complete core loop. Nothing here is optional — remove any one and the loop breaks.</td></tr>
+<tr><td><span class="pri p1">P1 — Fast follow</span></td><td>12, 13, 14, 15</td><td>Meaningfully increase value and stickiness once the core loop is proven with real firms.</td></tr>
+<tr><td><span class="pri p2">P2 — Later</span></td><td>16, 17, 18</td><td>Matter for scaling to more countries and larger firms, not for proving the initial value.</td></tr>
+</table></div>
+</section>
+
+<!-- 8 -->
+<section id="trust">
+<h2>8. The trust and accuracy model</h2>
+<p class="lead">This is the section a skeptical accountant will read most carefully, so it gets its own space rather than being scattered across features.</p>
+<div class="grid g2">
+<div class="card"><h3>Three trust tiers</h3><ul>
+<li><b>Uncertain (AI-read):</b> raw extraction from a document. Always shown with a confidence score and the source image. Never used downstream until approved.</li>
+<li><b>Confirmed (human-approved):</b> a person has reviewed and approved the field. This is the only data that feeds into worksheets, exports or client-facing summaries.</li>
+<li><b>Deterministic (rule-calculated):</b> totals, tax splits and box values, computed by fixed formulas from confirmed data — never estimated by a model.</li>
+</ul></div>
+<div class="card"><h3>Rules we don't break</h3><ul>
+<li>No message is ever sent, and no filing is ever generated, without an explicit approval step (configurable to "notify me" or "require my click," never fully silent).</li>
+<li>No number in a worksheet is unsourced — every figure is clickable back to the document it came from.</li>
+<li>Accuracy is measured and published by document type and language, not asserted with one marketing number.</li>
+<li>The product never claims to "file" anything. It prepares; the licensed firm files.</li>
+</ul></div>
+</div>
+<div class="callout warn"><span>⚠️</span><span>Getting this wrong is an existential risk, not a UX detail. A single wrongly-filed return traced back to an unreviewed AI extraction would be catastrophic for firm trust and for Taxflow's reputation. Every design decision in this document defers to this section when in conflict.</span></div>
+</section>
+
+<!-- 9 -->
+<section id="nfr">
+<h2>9. Non-functional requirements</h2>
+<div class="tw"><table>
+<tr><th>Area</th><th>Requirement</th></tr>
+<tr><td><b>Reliability</b></td><td>No inbound WhatsApp attachment is ever lost. Target 99.9% uptime for the collection hub, since a missed message directly costs the firm client trust.</td></tr>
+<tr><td><b>Speed</b></td><td>Single-document extraction completes in under 30 seconds. Dashboard and review-queue pages load in under 2 seconds.</td></tr>
+<tr><td><b>Security</b></td><td>Encryption in transit and at rest, per-firm data isolation, role-based access control, two-factor authentication, regular independent penetration testing.</td></tr>
+<tr><td><b>Privacy</b></td><td>The firm is the data controller; Taxflow is the processor. A data processing agreement, breach notification process, and data export/deletion on request are baseline requirements, not extras.</td></tr>
+<tr><td><b>Data residency</b></td><td>Configurable per market — some jurisdictions require, or firms will demand, in-country or in-region storage for client financial data.</td></tr>
+<tr><td><b>Localisation</b></td><td>Multi-language UI and message templates from the start; right-to-left layout support where needed.</td></tr>
+<tr><td><b>Messaging compliance</b></td><td>Documented consent per contact, opt-out honoured immediately, only approved templates used outside live conversation windows.</td></tr>
+<tr><td><b>Auditability</b></td><td>Every state-changing action logged with who/when/before/after, exportable on request.</td></tr>
+<tr><td><b>Accessibility</b></td><td>Usable on a phone browser for approvals on the go; readable contrast and keyboard navigation on desktop.</td></tr>
+</table></div>
+</section>
+
+<!-- 10 -->
+<section id="data">
+<h2>10. Core data model</h2>
+<p class="lead">Kept deliberately simple: everything hangs off Client and Document, because those are what an accountant actually thinks in.</p>
+<pre class="code">Firm
+ └─ Users (role: owner / senior / junior / read-only)
+ └─ Client
+     ├─ Contact (channel, language, consent status)
+     ├─ Filing Obligation (type, frequency, jurisdiction rules)
+     ├─ Checklist (per period) ── Request (message sent) ── Message (thread)
+     ├─ Document (raw file, status: received → extracting → review → approved)
+     │    └─ Extraction (fields, confidence per field, edit history)
+     ├─ Task (a filing: steps, due date, status, assignee)
+     └─ Output (worksheet or export file, linked to source Documents)
+AuditEvent (actor, action, entity, before, after, timestamp)</pre>
+<p style="color:var(--tx2)">Two design choices matter most here. First, <b>Document and Extraction are separate records</b>, so the original file and the AI's reading of it are never conflated — you can always see both. Second, <b>Output always links back to the Documents behind it</b>, so "where did this number come from" is a data relationship, not a manual lookup.</p>
+</section>
+
+<!-- 11 -->
+<section id="arch">
+<h2>11. Architecture at a glance</h2>
+<div class="grid g2">
+<div class="card"><h3>Major components</h3><ul>
+<li><b>Web application</b> — the firm's workspace (dashboard, review queue, deadlines, worksheets).</li>
+<li><b>Messaging service</b> — integrates with the WhatsApp Business Platform via a licensed provider; handles templates, consent, inbound webhooks.</li>
+<li><b>Ingestion pipeline</b> — validates incoming files, deduplicates, queues for extraction.</li>
+<li><b>Extraction service</b> — OCR plus document-understanding model, with rule-based validation layered on top.</li>
+<li><b>Rules engine</b> — per-jurisdiction filing calendars, invoice field requirements, and worksheet/export mappings (the "country pack").</li>
+<li><b>Vault</b> — encrypted document storage, organised automatically by client/year/month/bucket.</li>
+<li><b>Export/integration layer</b> — format converters and API connectors to third-party ledgers.</li>
+<li><b>Audit and billing services.</b></li>
+</ul></div>
+<div class="card"><h3>Key architectural decisions</h3><ul>
+<li><b>Extraction and calculation are separate services.</b> One is probabilistic (AI), the other deterministic (rules). Mixing them would make every number in the product only as trustworthy as the least reliable part.</li>
+<li><b>Buy the commodity, build the workflow.</b> Messaging infrastructure, OCR baselines and cloud hosting are bought. The firm-specific workflow — review queue, deadline engine, country packs — is what we build and defend.</li>
+<li><b>Don't become a regulated party.</b> Where a role requires formal accreditation (e.g. transmitting structured e-invoices to a government network), Taxflow integrates with an accredited partner rather than seeking that accreditation itself in the early stages.</li>
+<li><b>Country packs, not forks.</b> Expanding to a new market means adding a configuration pack, not maintaining a separate codebase.</li>
+</ul></div>
+</div>
+</section>
+
+<!-- 12 -->
+<section id="releases">
+<h2>12. Release plan</h2>
+<div class="tw"><table>
+<tr><th>Release</th><th>Contains</th><th>Goal</th></tr>
+<tr><td><b>Alpha (design partners)</b></td><td>Features 1–11 (the full P0 core loop), one jurisdiction</td><td>Prove the loop works end to end with real firms and real clients</td></tr>
+<tr><td><b>v1.0 (paid launch)</b></td><td>Alpha feature set, hardened, plus billing and onboarding</td><td>First paying firms, validate willingness to pay</td></tr>
+<tr><td><b>v1.1</b></td><td>Conversational assistant (12), client portal (13)</td><td>Reduce time-to-value and support more client preferences</td></tr>
+<tr><td><b>v1.2</b></td><td>Bank statement parsing (14), e-invoicing readiness (15)</td><td>Extend the loop further into bookkeeping and compliance readiness</td></tr>
+<tr><td><b>v2.0</b></td><td>Second country pack (16), workload view (17), digest (18)</td><td>Scale to a second market without rebuilding the core</td></tr>
+</table></div>
+</section>
+
+<!-- 13 -->
+<section id="metrics">
+<h2>13. Success metrics</h2>
+<div class="callout"><span>⭐</span><span><b>North-star metric:</b> documents collected and approved per firm per month, without manual retyping. Everything else is a leading or lagging indicator of this.</span></div>
+<div class="tw"><table>
+<tr><th>Category</th><th>Metric</th><th>Why it matters</th></tr>
+<tr><td>Activation</td><td>% of new firms sending a first document request within 48 hours</td><td>Measures time-to-first-value</td></tr>
+<tr><td>Product quality</td><td>% of fields approved without edit, by document type</td><td>Direct measure of extraction trustworthiness</td></tr>
+<tr><td>Product quality</td><td>Median review time per document</td><td>Proves review is faster than manual entry</td></tr>
+<tr><td>Value delivered</td><td>Reduction in hours spent chasing/entering documents (self-reported + observed)</td><td>The core promise of the product</td></tr>
+<tr><td>Engagement</td><td>Weekly active firms as % of paying firms</td><td>Habitual use vs. one-off trial</td></tr>
+<tr><td>Client-side</td><td>% of document requests fulfilled within 3 days</td><td>Shows the WhatsApp channel actually works better than the status quo</td></tr>
+<tr><td>Trust</td><td>Serious incidents (wrong data used unreviewed, message sent without consent)</td><td>Target: zero, always</td></tr>
+<tr><td>Business</td><td>Monthly recurring revenue, logo churn, gross margin</td><td>Standard SaaS health</td></tr>
+</table></div>
+</section>
+
+<!-- 14 -->
+<section id="risks">
+<h2>14. Risks and assumptions</h2>
+<div class="tw"><table>
+<tr><th>Risk / assumption</th><th>Why it matters</th><th>Mitigation</th></tr>
+<tr><td>Extraction accuracy is lower than needed on messy real-world documents</td><td>Could undermine trust in the whole product</td><td>Human review by default, published accuracy by document type, continuous improvement loop from design-partner data</td></tr>
+<tr><td>Clients won't send documents even on WhatsApp</td><td>The collection loop is the foundation everything else depends on</td><td>Test message tone and timing with real design partners; measure fulfilment rate as a core metric</td></tr>
+<tr><td>Ledger vendors add similar automation themselves</td><td>Reduces our differentiation over time</td><td>Own the firm-wide, multi-ledger, multi-client workflow that a single-ledger vendor has no incentive to build</td></tr>
+<tr><td>Messaging platform policy or pricing changes</td><td>Direct cost and delivery risk since we depend on a third-party platform</td><td>Use only transactional/utility-style messaging, support a fallback channel (email/portal), monitor platform policy closely</td></tr>
+<tr><td>Data protection requirements differ sharply by country</td><td>A single global architecture may not satisfy every jurisdiction</td><td>Configurable data residency, jurisdiction-specific legal review before each market launch</td></tr>
+<tr><td>Regulatory filing rules and formats change</td><td>A worksheet or export mapping built today may go stale</td><td>Rule packs are data, not code, so they can be updated without a release; monitor official sources per country</td></tr>
+<tr><td>Firms are slower to adopt new tools than expected</td><td>Long sales cycles could stretch runway</td><td>Start with small, agile firms as design partners before targeting larger, slower-moving practices</td></tr>
+</table></div>
+</section>
+
+<!-- 15 -->
+<section id="outofscope">
+<h2>15. Explicitly out of scope (v1)</h2>
+<ul style="color:var(--tx2)">
+<li>Full general-ledger accounting (journal entries, trial balance, financial statement production) — this remains the job of the firm's existing accounting software.</li>
+<li>Becoming an accredited e-invoicing transmitter or tax filing agent in any jurisdiction.</li>
+<li>Submitting returns directly to any government portal on a firm's behalf.</li>
+<li>Selling or marketing directly to end-client SMEs; they are users of the product, never the buyer.</li>
+<li>Marketing-style bulk messaging to clients; all outbound messages are service-related to an existing engagement.</li>
+<li>Payroll processing (may be considered as a later, clearly-scoped feature once the core loop is proven).</li>
+</ul>
+</section>
+
+<!-- 16 -->
+<section id="glossary">
+<h2>16. Glossary</h2>
+<div class="tw"><table>
+<tr><th>Term</th><th>Meaning in this document</th></tr>
+<tr><td><b>Firm</b></td><td>The accounting/bookkeeping/tax practice that is Taxflow's paying customer.</td></tr>
+<tr><td><b>Client</b></td><td>The firm's own customer (an SME) whose documents are being collected.</td></tr>
+<tr><td><b>Extraction</b></td><td>The automated reading of structured data out of a document image or PDF.</td></tr>
+<tr><td><b>Confidence score</b></td><td>A per-field measure of how sure the extraction model is about a reading.</td></tr>
+<tr><td><b>Worksheet</b></td><td>A filing-ready summary of figures (by return box or schedule) built from approved documents, for jurisdictions with no direct file upload.</td></tr>
+<tr><td><b>Country pack</b></td><td>A configuration bundle (filing calendars, field rules, worksheet mappings, message templates) that adapts the core product to one jurisdiction.</td></tr>
+<tr><td><b>Vault</b></td><td>The organised, per-client document storage area.</td></tr>
+<tr><td><b>Audit log</b></td><td>The immutable record of every state-changing action in the system.</td></tr>
+</table></div>
+<footer>Prepared for Taxflow.AI. This is a product planning document, not a finished specification — figures, accuracy targets and scope will be refined against real design-partner data before and during the alpha.</footer>
+</section>
+</main>
+</div>
+
+<script>
+(function(){
+'use strict';
+var $=function(s){return document.querySelector(s)};
+$('#thm').addEventListener('click',function(){var r=document.documentElement;r.setAttribute('data-theme',r.getAttribute('data-theme')==='dark'?'light':'dark')});
+var links=Array.prototype.slice.call(document.querySelectorAll('#toc a'));
+var secs=links.map(function(a){return document.getElementById(a.getAttribute('href').slice(1))});
+function spy(){
+  var y=window.scrollY+120,cur=0;
+  secs.forEach(function(s,i){if(s&&s.offsetTop<=y)cur=i});
+  links.forEach(function(a,i){a.classList.toggle('on',i===cur)});
+}
+window.addEventListener('scroll',spy,{passive:true});spy();
+})();
+</script>
+</body>
+</html>

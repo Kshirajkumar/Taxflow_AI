@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Global tax filing guide – India, US, UAE, Singapore, UK</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --font:'Plus Jakarta Sans','Segoe UI',system-ui,-apple-system,sans-serif;
+  --mono:'JetBrains Mono',Consolas,monospace;
+  --bg:#060A13;--panel:#0C1425;--card:#111B31;--card2:#162341;--line:#1E2C4A;--line2:#2B3D63;
+  --tx:#E8EEFB;--tx2:#A6B4D3;--tx3:#7181A6;
+  --blue:#4C8DFF;--blue2:#2F6BFF;--cyan:#3DD6F5;--green:#34D399;--amber:#F6C453;--red:#F87171;--violet:#8B7CFF;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+:root[data-theme="light"]{
+  --bg:#EDF1F9;--panel:#FFFFFF;--card:#FFFFFF;--card2:#F1F5FC;--line:#DAE2F1;--line2:#C3CFE6;
+  --tx:#0E1A33;--tx2:#43537A;--tx3:#6B7BA0;
+  --blue:#2563EB;--blue2:#1D4ED8;--cyan:#0891B2;--green:#059669;--amber:#B7791F;--red:#DC2626;--violet:#6D5BEA;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.6 var(--font);-webkit-font-smoothing:antialiased}
+h1,h2,h3,p{margin:0}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.wrap{max-width:1040px;margin:0 auto;padding:22px 18px 60px}
+header.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:18px}
+header.top h1{font-size:24px;letter-spacing:-.3px;line-height:1.25}
+header.top p{color:var(--tx3);margin-top:6px;max-width:64ch}
+.iconbtn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line2);background:var(--card);display:grid;place-items:center;flex:none}
+.warn{display:flex;gap:10px;padding:11px 14px;border-radius:12px;background:color-mix(in srgb,var(--amber) 10%,transparent);border:1px solid color-mix(in srgb,var(--amber) 32%,transparent);color:var(--tx2);font-size:13px;margin-bottom:16px}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px;position:sticky;top:env(safe-area-inset-top,0px);background:var(--bg);z-index:5;padding-top:6px}
+.tabs button{flex:none;border:1px solid var(--line);background:var(--card);color:var(--tx2);border-radius:99px;padding:7px 15px;font-weight:600;font-size:13px}
+.tabs button.on{background:color-mix(in srgb,var(--blue) 20%,transparent);border-color:var(--blue);color:var(--tx)}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.tools input{flex:1;min-width:180px;height:38px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);padding:0 12px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.pill{border:1px solid var(--line);background:var(--card);color:var(--tx2);padding:4px 12px;border-radius:99px;font-size:12px;font-weight:600}
+.pill.on{background:color-mix(in srgb,var(--blue) 18%,transparent);border-color:var(--blue);color:var(--blue)}
+.btn{border:1px solid var(--line2);background:var(--card2);border-radius:10px;padding:0 12px;height:38px;font-weight:600;font-size:13px}
+.portal{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:16px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.box h3{font-size:13px;color:var(--tx3);font-weight:600;margin-bottom:6px}
+.box p,.box li{color:var(--tx2);font-size:13px}
+.box ul{margin:0;padding-left:18px}
+details.card{background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:10px;overflow:hidden}
+details.card[open]{border-color:var(--line2)}
+details.card summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:flex-start}
+details.card summary::-webkit-details-marker{display:none}
+.car{margin-top:5px;color:var(--tx3);transition:transform .15s;flex:none}
+details[open] .car{transform:rotate(90deg)}
+.sm{flex:1;min-width:0}
+.sm b{font-size:15px;display:block}
+.sm span.p{color:var(--tx2);font-size:13px;display:block;margin-top:2px}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.tag{font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:99px;background:var(--card2);color:var(--tx2)}
+.tag.c1{background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue)}
+.tag.c2{background:color-mix(in srgb,var(--green) 16%,transparent);color:var(--green)}
+.tag.c3{background:color-mix(in srgb,var(--amber) 18%,transparent);color:var(--amber)}
+.tag.c4{background:color-mix(in srgb,var(--violet) 18%,transparent);color:var(--violet)}
+.tag.c5{background:color-mix(in srgb,var(--cyan) 16%,transparent);color:var(--cyan)}
+.body{padding:2px 16px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.blk{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.blk h4{margin:0 0 6px;font-size:12px;color:var(--tx3);font-weight:600}
+.blk p,.blk li{font-size:13px;color:var(--tx2)}
+.blk ul{margin:0;padding-left:18px}
+.blk li{margin:2px 0}
+.full{grid-column:1/-1}
+pre{margin:8px 0 0;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 12px;font:12px/1.55 var(--mono);color:var(--tx2);overflow-x:auto;white-space:pre}
+.auto{border-left:3px solid var(--cyan)}
+.src{margin-top:18px}
+.src a{color:var(--blue);word-break:break-all;font-size:12.5px}
+.src li{margin:3px 0;color:var(--tx3);font-size:12.5px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:14px}
+h2.s{font-size:16px;margin:20px 0 10px}
+.mut{color:var(--tx3)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Filing files and forms by country</h1>
+      <p>India, US, UAE, Singapore and UK. What each return is for, what data goes in it, and how it reaches the government portal.</p>
+    </div>
+    <button class="iconbtn" id="thm" aria-label="Switch light or dark theme">◐</button>
+  </header>
+  <div class="warn"><span>⚠</span><span>Forms, thresholds and dates change often, and some countries are mid-reform. Treat this as a build reference and confirm every item on the official portal before you rely on it. Example files below are simplified illustrations, not official schemas.</span></div>
+  <nav class="tabs" id="tabs" aria-label="Countries"></nav>
+  <div id="view"></div>
+</div>
+
+<script>
+(function(){
+'use strict';
+var CAT={inc:['Income tax','c1'],ind:['GST / VAT','c2'],pay:['Payroll & withholding','c3'],co:['Company filings','c4'],inv:['E-invoicing','c5']};
+
+/* ---------------- DATA ---------------- */
+var D={};
+
+D.overview={name:'Overview'};
+
+D.in={name:'India',
+portal:[
+ ['Portals',['Income Tax e-filing portal (incometax.gov.in): ITR, tax audit, TDS return upload','GST portal: all GST returns and e-invoice IRN','TRACES: TDS statements, Form 16/16A, corrections','MCA portal: company law forms']],
+ ['Login and sign-off',['PAN or TAN login; DSC (digital signature) for companies and audits; EVC or Aadhaar OTP for e-verify','CA files on behalf of client and the client accepts or approves in their own login']],
+ ['Main file formats',['JSON for ITR and GST','.fvu (validated text) for TDS','XML for MCA XBRL and Tally imports']]
+],
+forms:[
+{n:'ITR-1 (Sahaj)',cat:'inc',freq:'Yearly',p:'Simple return for resident individuals with salary, house property and interest income.',
+ who:'Resident individuals with total income up to ₹50 lakh from salary, up to two house properties, other sources such as interest, long-term gains under section 112A up to ₹1.25 lakh, and agricultural income up to ₹5,000. Not for company directors, unlisted share holders or non-residents.',
+ when:'31 July for non-audit cases (AY 2026-27).',
+ data:['PAN, Aadhaar, bank account for refund','Salary details from Form 16','House property and interest income','Deductions under Chapter VI-A (80C, 80D and so on)','Taxes already paid: TDS, advance tax','Pre-filled data from AIS and Form 26AS'],
+ fmt:'Fill online on the portal, or use the offline utility and upload the generated JSON. Older XML uploads are no longer used.',
+ auto:'Collect Form 16, bank interest certificates and 26AS/AIS. Prepare a JSON draft for the CA to verify.'},
+{n:'ITR-2',cat:'inc',freq:'Yearly',p:'Individuals and HUFs with no business income but more complex assets or gains.',
+ who:'Individuals and HUFs without business or professional income. Needed when there are capital gains, foreign assets or income, a directorship, unlisted shares or more than the ITR-1 limits.',
+ when:'31 July (non-audit).',
+ data:['Everything in ITR-1','Schedule CG: capital gains with purchase and sale dates and values','Schedule FA: foreign assets','Schedule for directorship and unlisted shares','Carry-forward of losses'],
+ fmt:'JSON through the common offline utility (ITR-1 to 4) or online.',
+ auto:'Extract broker capital gains statements into a schedule-ready sheet.'},
+{n:'ITR-3',cat:'inc',freq:'Yearly',p:'Individuals and HUFs with business or professional income outside the presumptive scheme.',
+ who:'Proprietors, professionals and also partners in firms, since partner salary and profit share count as business income.',
+ when:'31 July (non-audit) or 31 October when a tax audit applies.',
+ data:['Profit and loss account and balance sheet','Schedule BP: business income, disallowances','Depreciation schedule','Capital gains and other income','Partner details for firm income'],
+ fmt:'JSON via offline utility or online. Financial statements are entered in the form.',
+ auto:'Trial balance to P&L and balance sheet mapping from Tally or Zoho exports.'},
+{n:'ITR-4 (Sugam)',cat:'inc',freq:'Yearly',p:'Presumptive income under sections 44AD, 44ADA and 44AE.',
+ who:'Resident individuals, HUFs and firms other than LLPs with total income up to ₹50 lakh under presumptive taxation.',
+ when:'31 July.',
+ data:['Turnover or gross receipts','Presumptive income at the prescribed percentage','Bank turnover split, GST details','Deductions and taxes paid'],
+ fmt:'JSON via utility or online.',
+ auto:'Sum turnover from invoices and bank statements, and flag when the ₹50 lakh limit is crossed.'},
+{n:'ITR-5, ITR-6 and ITR-7',cat:'inc',freq:'Yearly',p:'ITR-5 for firms, LLPs and AOPs. ITR-6 for companies. ITR-7 for trusts and similar exempt entities.',
+ who:'ITR-5: firms, LLPs, AOPs, BOIs. ITR-6: companies. ITR-7: trusts, political parties and entities claiming exemption.',
+ when:'31 July if no audit, 31 October for audit cases, 30 November for transfer pricing cases.',
+ data:['Full financial statements','Tax computation and schedules','Audit report references and UDIN','Shareholder or partner details','Transfer pricing details where applicable'],
+ fmt:'JSON generated from a separate utility for ITR-5 to 7, uploaded with DSC.',
+ auto:'Financial statement mapping and reconciliation of books to GST and TDS data before the CA signs.'},
+{n:'Tax audit: Forms 3CA/3CB + 3CD',cat:'inc',freq:'Yearly',p:'The audit report under section 44AB and its 44-clause statement of particulars.',
+ who:'Businesses above the turnover limit (₹1 crore, or ₹10 crore for high digital transactions) and professionals above ₹50 lakh receipts.',
+ when:'30 September 2026 for normal cases. Transfer pricing cases 31 October.',
+ data:['3CA if accounts are audited under another law, 3CB if not','3CD clauses: turnover, GST reconciliation, TDS compliance, depreciation, related parties, loans over limits, cash payments','UDIN of the CA'],
+ fmt:'Uploaded by the CA on the portal using DSC, then accepted by the taxpayer. From tax year 2026-27 a single Form 26 replaces 3CA/3CB/3CD under the new Act.',
+ auto:'Pre-build reconciliations: GST turnover vs books, TDS vs AIS, and a clause checklist.'},
+{n:'Form 24Q (TDS on salary)',cat:'pay',freq:'Quarterly',p:'Employer statement of tax deducted from salaries.',
+ who:'Employers holding a TAN.',
+ when:'Q1 31 July, Q2 31 October, Q3 31 January, Q4 31 May.',
+ data:['TAN, PAN of every employee','Salary paid and tax deducted per month','Challan details (BSR code, date, serial number)','Annexure II with yearly salary breakup in Q4'],
+ fmt:'Prepare in a return utility to create a text file, validate it with the FVU tool to produce a .fvu file, then upload on the portal with DSC or EVC.',
+ auto:'Generate the data file from payroll exports and match challans before validation.'},
+{n:'Form 26Q (TDS on other payments)',cat:'pay',freq:'Quarterly',p:'Statement of tax deducted on contractor, professional, rent and interest payments.',
+ who:'Any deductor with a TAN paying residents.',
+ when:'Same quarterly dates as 24Q.',
+ data:['Deductee PAN and name','Section code such as 194C or 194J','Amount paid, rate, tax deducted','Challan number and date','Reason if no or lower deduction'],
+ fmt:'Same text to .fvu flow as 24Q.',
+ auto:'A common error is picking the wrong section code. Suggest the section from the invoice description and flag mismatches.'},
+{n:'Forms 27Q and 27EQ',cat:'pay',freq:'Quarterly',p:'27Q: tax deducted on payments to non-residents. 27EQ: tax collected at source.',
+ who:'Payers to non-residents (27Q) and collectors of TCS (27EQ).',
+ when:'Same quarterly dates.',
+ data:['Non-resident details, PAN or Form 10F','Section, rate and treaty details','TCS collectee data for 27EQ'],
+ fmt:'Same .fvu flow.',
+ auto:'Collect remittance documents and country details from clients.'},
+{n:'Form 16 and Form 16A',cat:'pay',freq:'Yearly / quarterly',p:'TDS certificates issued to employees and other deductees.',
+ who:'Deductors after their returns are processed.',
+ when:'Form 16 by 15 June. Form 16A within 15 days of the return due date.',
+ data:['Part A from TRACES (deposits)','Part B salary breakup and deductions'],
+ fmt:'Downloaded from TRACES as PDFs, signed and issued.',
+ auto:'Bulk-send certificates to clients on WhatsApp with a delivery log.'},
+{n:'GSTR-1 (and IFF)',cat:'ind',freq:'Monthly or quarterly',p:'Details of all sales invoices for the period.',
+ who:'Regular taxpayers. Small taxpayers may use quarterly filing with the optional Invoice Furnishing Facility.',
+ when:'11th of next month. Quarterly filers by the 13th after the quarter.',
+ data:['B2B invoices with buyer GSTIN, invoice number, date, value','B2C summaries by state and rate','Exports, credit and debit notes','HSN summary','Place of supply and tax split: CGST+SGST or IGST'],
+ fmt:'Enter online, upload a JSON generated by the offline tool or a software API. Data flows into the buyer’s GSTR-2B.',
+ auto:'Turn approved sales invoices into the JSON structure with validations for GSTIN and tax split.',
+ ex:'{\n  "gstin": "07AABCS1234F1Z5",\n  "fp": "082026",\n  "b2b": [{\n    "ctin": "07AAACB4521K1ZP",\n    "inv": [{\n      "inum": "SI/26-27/1042",\n      "idt": "12-08-2026",\n      "val": 56876,\n      "pos": "07",\n      "itms": [{ "num": 1, "itm_det": { "txval": 48200, "rt": 18, "camt": 4338, "samt": 4338 }}]\n    }]\n  }]\n}\n// Simplified illustration. Use the official schema from the GST portal.'},
+{n:'GSTR-3B',cat:'ind',freq:'Monthly or quarterly',p:'Summary return that declares tax payable and claims input credit.',
+ who:'Regular taxpayers.',
+ when:'20th of next month. Quarterly filers on the 22nd or 24th depending on state. Small taxpayers pay monthly through PMT-06.',
+ data:['Outward supplies: taxable value and tax','Inward supplies liable to reverse charge','Eligible ITC by type','Exempt and nil-rated inward supplies','Tax payment by cash and credit ledger'],
+ fmt:'Online form or JSON upload. Payment made through challan.',
+ auto:'Compute ITC from purchase invoices and compare with GSTR-2B before filing.'},
+{n:'GSTR-2B and 2A',cat:'ind',freq:'Auto-generated monthly',p:'Read-only statements of purchases reported by your suppliers.',
+ who:'Every regular taxpayer views them. They are not filed.',
+ when:'Available monthly after suppliers file.',
+ data:['Supplier GSTIN, invoice, tax amounts','ITC available flags'],
+ fmt:'Downloaded as JSON or Excel from the portal for reconciliation.',
+ auto:'The biggest reconciliation job for CAs. Match your extracted purchase invoices to 2B and list mismatches by supplier.'},
+{n:'CMP-08 and GSTR-4',cat:'ind',freq:'Quarterly and yearly',p:'Composition scheme returns.',
+ who:'Composition taxpayers, generally up to ₹1.5 crore turnover.',
+ when:'CMP-08 by the 18th after each quarter. GSTR-4 by 30 June after year end.',
+ data:['Turnover and tax at composition rate','Inward supplies summary'],
+ fmt:'Online or JSON.',
+ auto:'Simple quarterly turnover sum from invoices.'},
+{n:'GSTR-9 and GSTR-9C',cat:'ind',freq:'Yearly',p:'Annual return, and the reconciliation with audited accounts.',
+ who:'GSTR-9 mandatory above ₹2 crore turnover. GSTR-9C above ₹5 crore.',
+ when:'31 December after the financial year.',
+ data:['Yearly outward supplies, ITC and tax paid','Reconciliation between GST returns and audited financials'],
+ fmt:'Online or JSON. 9C is certified by the taxpayer.',
+ auto:'Twelve-month reconciliation sheet. Warn before filing if 2B is not fully reconciled.'},
+{n:'GSTR-5, 6, 7, 8',cat:'ind',freq:'Monthly',p:'Special returns.',
+ who:'Non-resident taxpayers (5), Input Service Distributors (6), GST TDS deductors (7), e-commerce operators (8).',
+ when:'Around the 10th to 13th of the next month.',
+ data:['Supplies, credit distribution or tax deducted or collected as applicable'],
+ fmt:'Online or JSON.',
+ auto:'Low volume. Support after the core returns.'},
+{n:'E-invoice (IRN)',cat:'inv',freq:'Per invoice',p:'Every B2B invoice from an in-scope taxpayer is registered with the invoice portal.',
+ who:'Businesses above the notified turnover limit (₹5 crore at last check).',
+ when:'At the time of invoice creation.',
+ data:['Seller and buyer GSTIN, invoice number, date','Item lines with HSN, quantity, rate, tax','Totals'],
+ fmt:'JSON sent to the invoice registration portal. It returns an Invoice Reference Number and signed QR code that must print on the invoice.',
+ auto:'Validate the JSON before submission. Keep the IRN and QR with the invoice file.'},
+{n:'Company law: AOC-4, MGT-7, ADT-1',cat:'co',freq:'Yearly',p:'Financial statements, annual return and auditor appointment for companies.',
+ who:'Companies registered with the Registrar. LLPs use their own forms.',
+ when:'AOC-4 within 30 days and MGT-7 within 60 days of the AGM, as a general rule. Confirm on the MCA portal.',
+ data:['Balance sheet, P&L and audit report','Shareholding, directors, meetings held','Auditor appointment details'],
+ fmt:'Forms filed on the MCA portal. Larger companies also attach XBRL financial data.',
+ auto:'Maintain a company-wise calendar and document checklist. This item is less verified than the others above.'}
+],
+src:['https://www.incometax.gov.in/iec/foportal/downloads','https://www.incometax.gov.in/iec/foportal/downloads/income-tax-forms','https://www.incometaxindia.gov.in/documents/d/guest/form-26-faqs']};
+
+D.us={name:'United States',
+portal:[
+ ['Portals',['IRS e-file for business returns (Modernized e-File, MeF) through IRS-authorised software','IRIS for 1099 and 1042-S information returns','SSA Business Services Online for W-2 and W-3','State tax portals for state returns (not covered here)']],
+ ['Access',['EIN for the business, IRS e-Services account for transmitters','IRIS needs its own Transmitter Control Code (TCC), which can take up to 45 business days']],
+ ['Main file formats',['XML for MeF returns and IRIS','CSV upload in the IRIS portal for small filers','Old FIRE fixed-width files stop being accepted on 19 Nov 2026']]
+],
+forms:[
+{n:'Form 1040 with Schedule C and SE',cat:'inc',freq:'Yearly',p:'Individual return. Sole proprietors and single-member LLCs report business income on Schedule C.',
+ who:'Individuals, including sole proprietors.',
+ when:'15 April. Extension with Form 4868 (extension to file is not extension to pay).',
+ data:['Income, deductions, credits','Schedule C: gross receipts, cost of goods, expenses by category','Schedule SE: self-employment tax','Estimated tax payments made'],
+ fmt:'E-filed as XML through authorised software, or paper.',
+ auto:'Categorise expenses from receipts and bank data into Schedule C lines.'},
+{n:'Form 1065 and Schedule K-1',cat:'inc',freq:'Yearly',p:'Partnership return, with a K-1 for each partner showing their share.',
+ who:'Partnerships and multi-member LLCs.',
+ when:'15 March (16 March in 2026 because the 15th was a Sunday). Extension with Form 7004.',
+ data:['Business income and deductions','Partner capital accounts','K-1: each partner’s share of income, deductions, credits'],
+ fmt:'E-filed via MeF XML. E-file is required if the entity files 10 or more returns of any type in the year.',
+ auto:'Prepare K-1 allocations from the partnership agreement percentages.'},
+{n:'Form 1120-S and Schedule K-1',cat:'inc',freq:'Yearly',p:'S corporation return, passing income to shareholders.',
+ who:'S corporations.',
+ when:'15 March (16 March 2026). Extension with Form 7004.',
+ data:['Income, deductions, balance sheet','Shareholder details and K-1s','Attachments such as Form 1125-A cost of goods sold, Form 8825 rental income'],
+ fmt:'E-file required if 10 or more returns of any type in the year (waiver can be requested). Attachments follow a set order.',
+ auto:'Attachment checklist and reasonable-compensation prompts for shareholder payroll.'},
+{n:'Form 1120',cat:'inc',freq:'Yearly',p:'C corporation return. Corporate tax at a flat rate.',
+ who:'C corporations.',
+ when:'15 April for calendar-year corporations. Extension with Form 7004.',
+ data:['Income statement, balance sheet','Schedules L, M-1 and M-2 reconciling book to tax','Tax computation and credits'],
+ fmt:'E-filed via MeF XML.',
+ auto:'Book-to-tax reconciliation worksheet from the trial balance.'},
+{n:'Forms 7004 and 4868 (extensions)',cat:'inc',freq:'As needed',p:'Automatic extension of time to file business or individual returns.',
+ who:'Any filer who needs more time.',
+ when:'By the original due date.',
+ data:['Entity details, estimated tax liability'],
+ fmt:'E-filed with the return family.',
+ auto:'Auto-suggest an extension when the client’s documents are still missing a few days before the deadline.'},
+{n:'Form 941',cat:'pay',freq:'Quarterly',p:'Employer’s quarterly federal payroll tax return.',
+ who:'Employers.',
+ when:'End of the month after each quarter: 30 April, 31 July, 31 October, 31 January.',
+ data:['Number of employees','Wages, tips, income tax withheld','Employer and employee Social Security and Medicare tax','Deposits made'],
+ fmt:'E-filed with the employment tax e-file program.',
+ auto:'Sum payroll reports and tie deposits to the return.'},
+{n:'Form 940',cat:'pay',freq:'Yearly',p:'Employer’s annual federal unemployment (FUTA) tax return.',
+ who:'Employers.',when:'31 January.',
+ data:['Total payments to employees','Exempt payments','State unemployment contributions and credit'],
+ fmt:'E-filed.',auto:'Pull state contribution proofs from client folders.'},
+{n:'Forms W-2 and W-3',cat:'pay',freq:'Yearly',p:'Wage statements to employees, and the transmittal to the Social Security Administration.',
+ who:'Employers.',when:'31 January.',
+ data:['Employee name, SSN, wages, withholding by box','Employer EIN and totals in W-3'],
+ fmt:'Submitted electronically to SSA. Copies go to employees.',
+ auto:'Validate SSNs and totals against payroll before submission.'},
+{n:'Forms 1099-NEC and related 1099s',cat:'pay',freq:'Yearly',p:'Reports payments to contractors and other non-employees.',
+ who:'Businesses paying contractors $600 or more in tax year 2025. One source reports the threshold rising to $2,000 from tax year 2026, so confirm it.',
+ when:'31 January for 1099-NEC (recipient and IRS). Other 1099 types have their own dates.',
+ data:['Payer and recipient TIN, name, address','Amount paid by box','State tax details if applicable'],
+ fmt:'Through IRIS as XML (or CSV in the taxpayer portal). From filing season 2027 FIRE is retired, and IRIS is the only route. E-file is mandatory at 10 or more information returns.',
+ auto:'Collect W-9s from vendors, then build the 1099 list from paid bills. This is a strong automation candidate.',
+ ex:'IRIS data is structured XML with separate fields for\nfirst name, middle name, last name and business name\n(the old FIRE format lumped names together).\n// Confirm the current schema on the IRS IRIS pages.'},
+{n:'Form W-9 (collected, not filed)',cat:'pay',freq:'On onboarding',p:'How a business collects a vendor’s taxpayer identification number before issuing a 1099.',
+ who:'Vendors and contractors provide it to the payer.',when:'Before the first payment.',
+ data:['Legal name, business type','TIN (SSN or EIN)','Address and certification signature'],
+ fmt:'Kept on file, not sent to the IRS.',
+ auto:'Request W-9s by WhatsApp or SMS link and store them per client folder.'},
+{n:'Form 1042-S',cat:'pay',freq:'Yearly',p:'Reports US-source income paid to foreign persons and tax withheld.',
+ who:'Withholding agents paying foreign persons.',when:'15 March.',
+ data:['Recipient details and country','Income code, gross income, withholding'],
+ fmt:'IRIS supports 1042-S as XML.',
+ auto:'Tag foreign payees during onboarding.'}
+],
+src:['https://www.irs.gov/instructions/i1120s','https://www.irs.gov/node/2486','https://www.eitc.irs.gov/pub/irs-efile/iris-101-07292025.pdf']};
+
+D.ae={name:'UAE',
+portal:[
+ ['Portal',['EmaraTax (Federal Tax Authority): VAT, corporate tax, excise','Peppol accredited service providers for e-invoices']],
+ ['Access',['Tax Registration Number (TRN), UAE Pass or portal credentials','Accountants file through an authorised agent role']],
+ ['Main file formats',['VAT 201 and corporate tax returns are typed into the portal, with no file upload','E-invoices are structured XML (UBL/PINT AE) sent through a provider']]
+],
+forms:[
+{n:'VAT Return (Form VAT 201)',cat:'ind',freq:'Quarterly or monthly',p:'Summary of taxable sales, purchases, output and input VAT for the period.',
+ who:'Every VAT-registered person, even with no activity. Registration is required above AED 375,000 of taxable supplies.',
+ when:'Within 28 days of period end, and payment is due the same day. Quarterly for turnover under AED 150 million, monthly from AED 150 million.',
+ data:['Standard-rated sales by emirate','Zero-rated and exempt supplies (reported separately)','Imports and reverse charge','Output VAT at 5%','Recoverable input VAT on standard-rated and imports','Adjustments and corrections'],
+ fmt:'Typed into the EmaraTax form. Summary figures only, not invoice-level lists.',
+ auto:'Produce a box-by-box worksheet from extracted invoices, with a clean invoice list behind every number. Late filing penalty is AED 1,000 (AED 2,000 repeat), and a 14% a year late-payment charge applies from 14 April 2026.'},
+{n:'Corporate Tax Return',cat:'inc',freq:'Yearly',p:'Annual corporate tax return. 0% up to AED 375,000 of taxable income, 9% above.',
+ who:'Registered taxable persons, including free-zone companies and those owing nothing.',
+ when:'Nine months after the financial year end (30 September 2026 for a December 2025 year end). No blanket extension. Late filing is AED 500 a month for the first 12 months.',
+ data:['Accounting profit and adjustments to reach taxable income','Financial statements (audited if revenue is AED 50 million or more, or for Qualifying Free Zone Persons)','Reliefs: Small Business Relief for revenue up to AED 3 million, for periods ending on or before 31 Dec 2026','Schedules: transfer pricing disclosure, connected persons, participation exemption, foreign permanent establishment','Tax credits for foreign tax paid'],
+ fmt:'Entered on EmaraTax with supporting schedules and statements uploaded where required.',
+ auto:'Trial balance to taxable income bridge and a schedule checklist. The relief election can be irreversible, so prompt the CA to confirm it.'},
+{n:'Electronic invoice (PINT AE)',cat:'inv',freq:'Per invoice',p:'Structured Peppol invoice sent through an Accredited Service Provider, with tax data reported to the FTA.',
+ who:'Large businesses (revenue AED 50 million or more) from 1 January 2027 and the rest from 1 July 2027. B2B and B2G first. Dates are provisional.',
+ when:'At invoice issue. A voluntary pilot started on 1 July 2026.',
+ data:['Seller and buyer TRN, addresses','Invoice number, date, currency AED','Line items with VAT category and rate','Totals and VAT'],
+ fmt:'XML based on UBL / Peppol BIS 3.0 extended for the UAE. PDFs stop being valid tax invoices for in-scope businesses.',
+ auto:'Do not become an accredited provider. Partner with one, and convert client invoices to clean data for their system.',
+ ex:'<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">\n  <cbc:ID>NV-0146</cbc:ID>\n  <cbc:IssueDate>2027-01-15</cbc:IssueDate>\n  <cbc:DocumentCurrencyCode>AED</cbc:DocumentCurrencyCode>\n  <cac:AccountingSupplierParty> ... TRN ... </cac:AccountingSupplierParty>\n  <cac:InvoiceLine> ... quantity, price, VAT 5% ... </cac:InvoiceLine>\n</Invoice>\n<!-- Illustration only. Get the PINT AE specification from the Ministry of Finance. -->'},
+{n:'Voluntary disclosure',cat:'ind',freq:'As needed',p:'Correcting an error in an earlier VAT or corporate tax return.',
+ who:'Any taxpayer that finds an error after filing.',when:'As soon as found.',
+ data:['Original and corrected figures','Reason for the difference'],
+ fmt:'Filed on EmaraTax.',
+ auto:'Reconcile to find differences and propose the correction figures.'},
+{n:'Other UAE filings to check',cat:'pay',freq:'Varies',p:'Excise tax returns, payroll wage-protection files and other filings were not verified in this research.',
+ who:'Depends on the client.',when:'Confirm per client.',
+ data:['Not researched'],fmt:'Not researched',auto:'Add after confirming with a UAE accountant.'}
+],
+src:['https://u.ae/en/information-and-services/finance-and-investment/taxation/vat/filing-a-tax-return-for-vat']};
+
+D.sg={name:'Singapore',
+portal:[
+ ['Portals',['IRAS myTax Portal: GST, corporate tax, employer filings','ACRA BizFile+: company annual filings','CPF EZPay: monthly contributions','InvoiceNow (Peppol) through an accredited solution']],
+ ['Access',['Singpass and Corppass with the right role (for example Approver for corporate tax filing)','Company UEN']],
+ ['Main file formats',['GST F5 and Form C-S are entered in the portal','Employer income records can be submitted electronically','ACRA financial statements use XBRL templates','E-invoices are Peppol XML']]
+],
+forms:[
+{n:'GST Return (Form F5)',cat:'ind',freq:'Quarterly (monthly optional)',p:'Periodic GST return showing output tax, input tax and net GST.',
+ who:'GST-registered businesses. GST rate is 9%.',
+ when:'One month after each accounting period ends. Payment is due on the same date.',
+ data:['Box 1: standard-rated supplies (excluding GST)','Zero-rated and exempt supplies','Box 4: total supplies. Box 5: taxable purchases','Box 6: output tax due','Box 7: input tax claimed','Box 8: net GST payable or refundable','Import GST, reverse charge and pre-registration claims in other boxes'],
+ fmt:'Typed into the myTax Portal. Every input tax claim must be backed by a valid tax invoice addressed to the business.',
+ auto:'Fill the boxes from extracted invoices and block claims that lack a valid supplier tax invoice or GST number.'},
+{n:'Forms F7 and F8',cat:'ind',freq:'As needed',p:'F7 corrects errors in earlier F5 returns. F8 is the final return on deregistration.',
+ who:'GST-registered businesses.',
+ when:'When an error is found or at cancellation. Small errors can sometimes be fixed in the next F5 (net GST error up to S$3,000 and other conditions).',
+ data:['Corrected boxes and reasons'],fmt:'myTax Portal.',
+ auto:'Detect prior-period corrections and suggest F5 adjustment or F7.'},
+{n:'Estimated Chargeable Income (ECI)',cat:'inc',freq:'Yearly',p:'Estimate of the company’s taxable income shortly after year end.',
+ who:'Companies, unless revenue is S$5 million or less and ECI is nil.',
+ when:'Within 3 months of the financial year end.',
+ data:['Estimated chargeable income after adjustments'],
+ fmt:'Submitted in myTax Portal.',
+ auto:'Quick estimate from the management accounts.'},
+{n:'Form C-S (Lite), Form C-S and Form C',cat:'inc',freq:'Yearly',p:'The corporate income tax return, in three sizes.',
+ who:'C-S (Lite): revenue up to S$200,000 with a simple profile. C-S: revenue up to S$5 million, income taxed at 17% only, no complex reliefs. Form C: everyone else. Dormant and loss-making companies still file.',
+ when:'30 November 2026 for all companies (Year of Assessment 2026).',
+ data:['Revenue, profit and key deductions','Tax computation figures','Exemptions such as start-up or partial exemption','Rebates are applied automatically by IRAS'],
+ fmt:'Entered in myTax Portal. C-S and C-S (Lite) do not need financial statements or a tax computation attached, but keep them ready.',
+ auto:'Prepare the tax computation and keep the working papers.'},
+{n:'IR8A / Auto-Inclusion Scheme',cat:'pay',freq:'Yearly',p:'Employee remuneration reported to IRAS so it pre-fills employees’ tax returns.',
+ who:'Employers.',
+ when:'1 March for the previous calendar year. IR21 for foreign employees leaving Singapore, at least one month before departure.',
+ data:['Salary, bonus, allowances, benefits','CPF contributions','Employee identification'],
+ fmt:'Submitted electronically to IRAS.',
+ auto:'Reconcile payroll, CPF and IR8A each January before submission.'},
+{n:'CPF contributions',cat:'pay',freq:'Monthly',p:'Employer and employee retirement contributions.',
+ who:'Employers with Singapore citizen or PR employees.',
+ when:'Monthly.',data:['Employee wages and contribution amounts'],
+ fmt:'CPF EZPay.',auto:'Recurring monthly reminders and payment checklists.'},
+{n:'ACRA annual filings',cat:'co',freq:'Yearly',p:'Annual return and financial statements, with an annual general meeting.',
+ who:'Companies.',
+ when:'AGM within 6 months of year end. Annual return timing follows ACRA rules.',
+ data:['Financial statements','Directors and shareholders','Company particulars'],
+ fmt:'BizFile+ and XBRL financial statement templates (full or simplified). Confirm the current template version.',
+ auto:'Company secretarial calendar, and financial statement to XBRL mapping.'},
+{n:'GST InvoiceNow (e-invoicing)',cat:'inv',freq:'Per invoice',p:'Invoice data sent to IRAS through the Peppol-based InvoiceNow network.',
+ who:'New voluntary GST registrants since 1 April 2026. Existing registrants phase in by size: from 1 April 2028 (up to S$200,000 supplies), 2029 (up to S$1 million), 2030 (up to S$4 million) and 2031 (all others).',
+ when:'From the phase date.',
+ data:['Structured invoice data in Peppol format'],
+ fmt:'XML through an IMDA-accredited InvoiceNow-ready solution. SMEs get grants and free solutions until March 2031.',
+ auto:'Because basic e-invoicing will be free, sell the accountant workflow, not the invoice pipe.'}
+],
+src:['https://www.iras.gov.sg/due-dates','https://www.iras.gov.sg/taxes/goods-services-tax-(gst)/filing-gst/completing-gst-returns','https://www.iras.gov.sg/taxes/corporate-income-tax/form-c-s-form-c-s-(lite)-form-c-filing/guidance-on-filing-form-c-s-form-c-s-(lite)-form-c','https://www.iras.gov.sg/taxes/goods-services-tax-(gst)/gst-invoicenow-requirement']};
+
+D.uk={name:'United Kingdom',
+portal:[
+ ['Portals',['HMRC online services and Making Tax Digital (MTD) APIs','Companies House filing (web and software gateway)']],
+ ['Access',['Government Gateway login, agent authorisation for accountants','HMRC-recognised software for MTD submissions']],
+ ['Main file formats',['MTD returns are sent through the API from compatible software, not uploaded as files','iXBRL for accounts and computations','JSON over API for quarterly updates']]
+],
+forms:[
+{n:'VAT Return (MTD for VAT)',cat:'ind',freq:'Quarterly (usually)',p:'The nine-box VAT return, submitted digitally.',
+ who:'VAT-registered businesses. Registration is required above £90,000 of taxable turnover.',
+ when:'Usually one month and seven days after the period end. Confirm on the HMRC account.',
+ data:['Box 1 VAT due on sales','Box 2 VAT due on acquisitions (Northern Ireland)','Box 3 total VAT due','Box 4 VAT reclaimed on purchases','Box 5 net VAT','Box 6 total sales excluding VAT','Box 7 total purchases excluding VAT','Boxes 8 and 9 EU supplies and acquisitions (Northern Ireland)'],
+ fmt:'Sent through HMRC’s API by compatible software with digital links between records. No manual portal entry for MTD VAT.',
+ auto:'Prepare nine-box values and keep the digital trail from invoice to box.'},
+{n:'MTD for Income Tax: quarterly updates',cat:'inc',freq:'Quarterly',p:'Sole traders and landlords send quarterly income and expense summaries.',
+ who:'From 6 April 2026 with qualifying income over £50,000. The threshold drops to £30,000 from April 2027 and £20,000 from April 2028.',
+ when:'The first 2026/27 update covered 6 April to 5 July 2026 and was due 7 August 2026. Calendar quarters can be elected.',
+ data:['Income and expenses for the quarter per income source','Property income for landlords'],
+ fmt:'Sent through the API from compatible software. Clients must keep digital records.',
+ auto:'This is your best UK wedge. Collect records every quarter by WhatsApp, categorise, and push through partner software.'},
+{n:'MTD for Income Tax: final declaration',cat:'inc',freq:'Yearly',p:'The year-end declaration that replaces the traditional Self Assessment return for those in MTD.',
+ who:'Taxpayers in MTD for Income Tax.',when:'31 January after the tax year.',
+ data:['Final figures, other income, reliefs and adjustments'],
+ fmt:'Through compatible software and the HMRC API.',
+ auto:'Year-end adjustments checklist.'},
+{n:'Self Assessment (SA100)',cat:'inc',freq:'Yearly',p:'Annual return for individuals not yet in MTD for Income Tax.',
+ who:'Sole traders, landlords, directors and others required to file.',when:'31 January online. Confirm details on GOV.UK.',
+ data:['Employment, self-employment, property, dividends, savings','Reliefs and payments on account'],
+ fmt:'HMRC online or commercial software.',
+ auto:'Document collection and a personal tax checklist. Less verified in this research.'},
+{n:'Company Tax Return (CT600) with iXBRL',cat:'inc',freq:'Yearly',p:'Corporation tax return with statutory accounts and computations in machine-readable format.',
+ who:'Limited companies.',
+ when:'File within 12 months of the accounting period end. Pay corporation tax within 9 months and 1 day. An accounting period cannot exceed 12 months, so a 15-month first period needs two CT600s.',
+ data:['Company details, UTR','Profit and loss and balance sheet figures','Tax computation, reliefs and capital allowances','Tax due'],
+ fmt:'Filed online through recognised software. Accounts and computations must be iXBRL, and PDF versions are rejected. Some accounting packages, such as QuickBooks, do not file CT600 directly.',
+ auto:'Trial balance to CT600 mapping and iXBRL tagging through a partner tool.',
+ ex:'<ix:nonFraction name="uk-core:TurnoverRevenue"\n  contextRef="cur" unitRef="GBP" decimals="0">125000\n</ix:nonFraction>\n<!-- Illustration of an inline tag inside an HTML accounts document. -->'},
+{n:'Companies House annual accounts and confirmation statement',cat:'co',freq:'Yearly',p:'Statutory accounts for the public record and an annual confirmation of company details.',
+ who:'Companies.',
+ when:'Accounts within 9 months of the financial year end.',
+ data:['Balance sheet, notes and (where required) profit and loss','Directors, shareholders, registered office'],
+ fmt:'Web filing or the XML gateway through software. Joint filing with HMRC is possible for accounts.',
+ auto:'Deadline calendar and accounts pack assembly.'},
+{n:'PAYE Real Time Information: FPS and EPS',cat:'pay',freq:'Every pay run / monthly',p:'Payroll submissions reported to HMRC each time staff are paid.',
+ who:'Employers.',when:'On or before payday for the Full Payment Submission. Confirm other dates on GOV.UK.',
+ data:['Employee pay, tax, National Insurance','Employer adjustments and recovery'],
+ fmt:'Sent from payroll software to HMRC.',
+ auto:'Not a wedge at first. Integrate with payroll tools instead.'},
+{n:'Benefits in kind (P11D) and payrolling',cat:'pay',freq:'Yearly',p:'Reporting benefits provided to employees. Mandatory payrolling of benefits is confirmed from April 2027.',
+ who:'Employers providing benefits.',when:'Annually after the tax year.',
+ data:['Benefit type, cash equivalent value'],fmt:'Online or software.',
+ auto:'Low priority. Confirm requirements with a UK accountant.'}
+],
+src:['https://www.icaew.com/technical/tax/making-tax-digital']};
+
+/* ---------------- OVERVIEW ---------------- */
+function overview(){
+ return ''+
+ '<h2 class="s">Three ways a filing reaches the government</h2>'+
+ '<div class="grid2">'+
+ '<div class="box"><h3>1. File upload</h3><p>You produce a file and upload it. India: JSON for ITR and GST, .fvu for TDS. US: XML or CSV through IRIS. UK: iXBRL accounts attached to the CT600.</p><p class="mut" style="margin-top:6px">Your product can generate these directly.</p></div>'+
+ '<div class="box"><h3>2. API through recognised software</h3><p>UK Making Tax Digital works this way. Software sends the figures straight to HMRC.</p><p class="mut" style="margin-top:6px">You need to be recognised, or connect to a partner that is.</p></div>'+
+ '<div class="box"><h3>3. Typed into the portal</h3><p>UAE VAT 201 and corporate tax, Singapore GST F5 and Form C-S. There is no file to upload.</p><p class="mut" style="margin-top:6px">Produce a box-by-box worksheet with evidence, and let the accountant key it in.</p></div>'+
+ '</div>'+
+ '<h2 class="s">File formats you will meet</h2>'+
+ '<div class="grid2">'+
+ '<div class="box"><h3>JSON</h3><p>Key-value data. India ITR and GST, UK quarterly updates over API.</p></div>'+
+ '<div class="box"><h3>XML</h3><p>Tagged data. US IRIS and MeF, UAE and Singapore Peppol e-invoices, Tally imports.</p></div>'+
+ '<div class="box"><h3>iXBRL</h3><p>A readable document with machine tags inside. UK accounts and computations. Singapore uses XBRL financial statements.</p></div>'+
+ '<div class="box"><h3>.fvu</h3><p>India TDS: a return utility makes a text file, a validation tool checks it, and the result is the .fvu you upload.</p></div>'+
+ '<div class="box"><h3>CSV</h3><p>Simple table upload. IRIS taxpayer portal for small filers, and useful as an internal exchange format.</p></div>'+
+ '</div>'+
+ '<h2 class="s">What this means for your product</h2>'+
+ '<div class="box"><ul>'+
+ '<li>Generate files where a file exists: India GST and TDS, US 1099 through IRIS, UK iXBRL through a partner.</li>'+
+ '<li>Generate worksheets where the portal is manual: UAE VAT 201, Singapore F5, corporate tax returns.</li>'+
+ '<li>Use partner APIs or recognised software where the law requires it: UK MTD, UAE and Singapore e-invoicing providers, US IRIS transmitter access.</li>'+
+ '<li>Keep every number linked to the source invoice. Regulators reject unsupported claims.</li>'+
+ '<li>Store deadlines as editable data. Dates in the UAE, UK and Singapore are still shifting.</li>'+
+ '</ul></div>'+
+ '<h2 class="s">Not covered here</h2>'+
+ '<div class="box"><p>US state and local returns, sales tax, and audit or assurance filings. UAE excise and payroll files. UK Self Assessment details, CIS, and Companies House confirmation statement specifics. Indian company-law forms are lightly verified. Treat those as open research items.</p></div>';
+}
+
+/* ---------------- RENDER ---------------- */
+var st={tab:'overview',q:'',cat:'all'};
+var tabs=document.getElementById('tabs'),view=document.getElementById('view');
+var order=['overview','in','us','ae','sg','uk'];
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function li(a){return '<ul>'+a.map(function(x){return '<li>'+esc(x)+'</li>'}).join('')+'</ul>'}
+function card(f){
+ var c=CAT[f.cat]||['Other',''];
+ return '<details class="card" data-s="'+esc((f.n+' '+f.p+' '+f.who+' '+f.when+' '+f.fmt+' '+f.data.join(' ')).toLowerCase())+'">'+
+ '<summary><span class="car">▶</span><span class="sm"><b>'+esc(f.n)+'</b><span class="p">'+esc(f.p)+'</span><span class="tags"><span class="tag '+c[1]+'">'+c[0]+'</span><span class="tag">'+esc(f.freq)+'</span></span></span></summary>'+
+ '<div class="body">'+
+ '<div class="blk"><h4>Who files</h4><p>'+esc(f.who)+'</p></div>'+
+ '<div class="blk"><h4>When</h4><p>'+esc(f.when)+'</p></div>'+
+ '<div class="blk full"><h4>What goes in it</h4>'+li(f.data)+'</div>'+
+ '<div class="blk full"><h4>How it is filed and in what format</h4><p>'+esc(f.fmt)+'</p>'+(f.ex?'<pre>'+esc(f.ex)+'</pre>':'')+'</div>'+
+ '<div class="blk full auto"><h4>Automation angle</h4><p>'+esc(f.auto)+'</p></div>'+
+ '</div></details>';
+}
+function country(id){
+ var d=D[id],h='';
+ h+='<div class="portal">'+d.portal.map(function(p){return '<div class="box"><h3>'+esc(p[0])+'</h3>'+li(p[1])+'</div>'}).join('')+'</div>';
+ var cats=[];d.forms.forEach(function(f){if(cats.indexOf(f.cat)<0)cats.push(f.cat)});
+ h+='<div class="tools"><input id="q" type="search" placeholder="Search forms, fields, deadlines" value="'+esc(st.q)+'" aria-label="Search forms"><button class="btn" id="ex">Expand all</button><button class="btn" id="co">Collapse all</button></div>';
+ h+='<div class="chips"><button class="pill '+(st.cat==='all'?'on':'')+'" data-c="all">All ('+d.forms.length+')</button>'+cats.map(function(c){return '<button class="pill '+(st.cat===c?'on':'')+'" data-c="'+c+'">'+CAT[c][0]+'</button>'}).join('')+'</div>';
+ h+='<div id="list">'+d.forms.filter(function(f){return st.cat==='all'||f.cat===st.cat}).map(card).join('')+'</div>';
+ h+='<div class="src"><h2 class="s">Official pages used</h2><ul>'+d.src.map(function(u){return '<li><a href="'+u+'" target="_blank" rel="noopener">'+u+'</a></li>'}).join('')+'</ul></div>';
+ return h;
+}
+function paint(){
+ tabs.innerHTML=order.map(function(k){return '<button class="'+(st.tab===k?'on':'')+'" data-t="'+k+'">'+D[k].name+'</button>'}).join('');
+ view.innerHTML=st.tab==='overview'?overview():country(st.tab);
+ applyFilter();
+}
+function applyFilter(){
+ var q=st.q.trim().toLowerCase();
+ Array.prototype.forEach.call(document.querySelectorAll('#list details'),function(d){d.style.display=(!q||d.getAttribute('data-s').indexOf(q)>=0)?'':'none'});
+}
+document.addEventListener('click',function(e){
+ var t=e.target.closest('[data-t]');if(t){st.tab=t.getAttribute('data-t');st.q='';st.cat='all';paint();window.scrollTo(0,0);return}
+ var c=e.target.closest('[data-c]');if(c){st.cat=c.getAttribute('data-c');paint();return}
+ if(e.target.id==='ex'){Array.prototype.forEach.call(document.querySelectorAll('#list details'),function(d){d.open=true})}
+ if(e.target.id==='co'){Array.prototype.forEach.call(document.querySelectorAll('#list details'),function(d){d.open=false})}
+ if(e.target.id==='thm'){var r=document.documentElement;r.setAttribute('data-theme',r.getAttribute('data-theme')==='dark'?'light':'dark')}
+});
+document.addEventListener('input',function(e){if(e.target.id==='q'){st.q=e.target.value;applyFilter();if(st.q){Array.prototype.forEach.call(document.querySelectorAll('#list details'),function(d){d.open=d.style.display!=='none'})}}});
+paint();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Taxflow.AI — Backend Architecture Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --font:'Plus Jakarta Sans','Segoe UI',system-ui,-apple-system,sans-serif;
+  --mono:'JetBrains Mono',Consolas,monospace;
+  --bg:#060A13;--panel:#0C1425;--card:#111B31;--card2:#162341;--line:#1E2C4A;--line2:#2B3D63;
+  --tx:#E8EEFB;--tx2:#B0BDD8;--tx3:#7987AB;
+  --blue:#4C8DFF;--blue2:#2F6BFF;--cyan:#3DD6F5;--green:#34D399;--amber:#F6C453;--red:#F87171;--violet:#8B7CFF;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+:root[data-theme="light"]{
+  --bg:#EDF1F9;--panel:#FFFFFF;--card:#FFFFFF;--card2:#F1F5FC;--line:#DAE2F1;--line2:#C3CFE6;
+  --tx:#0E1A33;--tx2:#3E4E75;--tx3:#6B7BA0;
+  --blue:#2563EB;--blue2:#1D4ED8;--cyan:#0891B2;--green:#059669;--amber:#B7791F;--red:#DC2626;--violet:#6D5BEA;
+}
+html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 64px);scroll-behavior:smooth}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.65 var(--font);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p{margin:0}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.layout{display:grid;grid-template-columns:250px minmax(0,1fr);max-width:1220px;margin:0 auto;gap:34px;padding:0 20px}
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;padding:24px 0;max-height:100vh;overflow:auto}
+nav.toc b{display:block;font-size:13px;color:var(--tx3);margin:0 0 10px 10px;font-weight:600}
+nav.toc a{display:block;padding:6px 10px;border-radius:8px;color:var(--tx2);text-decoration:none;font-size:13px;border-left:2px solid transparent}
+nav.toc a:hover{background:var(--card)}
+nav.toc a.on{color:var(--tx);border-left-color:var(--blue);background:color-mix(in srgb,var(--blue) 12%,transparent)}
+main{padding:28px 0 90px;min-width:0}
+.hero{padding:26px 26px 24px;border-radius:20px;background:linear-gradient(135deg,color-mix(in srgb,var(--blue2) 34%,var(--card)),var(--card));border:1px solid var(--line2);margin-bottom:26px}
+.hero .k{font-size:13px;color:var(--cyan);font-weight:600}
+.hero h1{font-size:29px;line-height:1.2;letter-spacing:-.5px;margin:8px 0 10px;font-weight:800}
+.hero p{color:var(--tx2);max-width:72ch}
+.hero .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.tag{font-size:12px;font-weight:600;padding:3px 10px;border-radius:99px;background:color-mix(in srgb,var(--tx) 8%,transparent);color:var(--tx2)}
+.tag.b{background:color-mix(in srgb,var(--blue) 18%,transparent);color:var(--blue)}
+.tag.g{background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green)}
+.tag.a{background:color-mix(in srgb,var(--amber) 20%,transparent);color:var(--amber)}
+.topbar{display:flex;justify-content:flex-end;padding-top:14px}
+.iconbtn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line2);background:var(--card);display:grid;place-items:center}
+section{margin-bottom:46px}
+section>h2{font-size:23px;letter-spacing:-.3px;margin-bottom:6px;font-weight:700}
+section>.lead{color:var(--tx3);margin-bottom:18px;max-width:74ch}
+h3{font-size:16px;margin:22px 0 10px;font-weight:700}
+h4{font-size:13px;color:var(--tx3);margin:0 0 6px;font-weight:600}
+p{color:var(--tx2)}
+p+p{margin-top:10px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.card h3{margin-top:0}
+.card ul,.card ol{margin:6px 0 0;padding-left:20px}
+.card li{margin:4px 0;color:var(--tx2)}
+.kpi{padding:14px 16px}
+.kpi b{display:block;font-size:22px;letter-spacing:-.4px;font-weight:800}
+.kpi span{font-size:12.5px;color:var(--tx3)}
+.callout{display:flex;gap:12px;padding:13px 16px;border-radius:14px;border:1px solid color-mix(in srgb,var(--cyan) 35%,transparent);background:color-mix(in srgb,var(--cyan) 9%,transparent);margin:14px 0}
+.callout.warn{border-color:color-mix(in srgb,var(--amber) 38%,transparent);background:color-mix(in srgb,var(--amber) 9%,transparent)}
+.callout.danger{border-color:color-mix(in srgb,var(--red) 40%,transparent);background:color-mix(in srgb,var(--red) 9%,transparent)}
+.callout b{color:var(--tx)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card);margin:10px 0}
+table{width:100%;border-collapse:collapse;min-width:600px}
+th{font-size:12px;color:var(--tx3);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600;background:var(--panel)}
+td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--tx2);font-size:13.5px}
+tr:last-child td{border-bottom:0}
+td b{color:var(--tx)}
+code{font-family:var(--mono);background:var(--card2);padding:1px 6px;border-radius:5px;font-size:12.5px;color:var(--cyan)}
+pre.code{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 15px;font:12.5px/1.62 var(--mono);color:var(--tx2);overflow-x:auto;margin:8px 0;white-space:pre}
+/* flow diagram */
+.flowbox{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin:12px 0;overflow-x:auto}
+.flowrow{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:max-content}
+.flowrow+.flowrow{margin-top:14px}
+.node{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;white-space:nowrap;text-align:center}
+.node.b{border-color:var(--blue);color:var(--blue)}
+.node.g{border-color:var(--green);color:var(--green)}
+.node.v{border-color:var(--violet);color:var(--violet)}
+.node.a{border-color:var(--amber);color:var(--amber)}
+.arrow{color:var(--tx3);font-size:16px;flex:none}
+.svcgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:12px 0}
+.svc{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;border-top:3px solid var(--blue)}
+.svc.v2{border-top-color:var(--violet)}
+.svc.g2{border-top-color:var(--green)}
+.svc.a2{border-top-color:var(--amber)}
+.svc.c2{border-top-color:var(--cyan)}
+.svc h4{color:var(--tx);font-size:14px;margin-bottom:5px}
+.svc p{font-size:13px}
+.stack{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.pillsm{font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:99px;background:var(--card2);color:var(--tx2)}
+.num-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;background:var(--card2);color:var(--blue);font-size:12px;font-weight:700;margin-right:8px}
+footer{color:var(--tx3);font-size:13px;margin-top:30px}
+@media(max-width:900px){
+  .layout{grid-template-columns:1fr;gap:0}
+  nav.toc{position:static;display:flex;gap:6px;overflow-x:auto;padding:14px 0 4px;max-height:none}
+  nav.toc b{display:none}
+  nav.toc a{flex:none;border:1px solid var(--line);border-radius:99px;padding:5px 12px;white-space:nowrap}
+  nav.toc a.on{border-color:var(--blue)}
+  .hero h1{font-size:23px}
+}
+@media print{nav.toc,.topbar{display:none}.layout{display:block}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" id="toc" aria-label="Sections">
+  <b>Contents</b>
+  <a href="#overview">1. Overview</a>
+  <a href="#principles">2. Architecture principles</a>
+  <a href="#bigpicture">3. System at a glance</a>
+  <a href="#services">4. Services</a>
+  <a href="#ingestion">5. Ingestion pipeline</a>
+  <a href="#extraction">6. Extraction & AI layer</a>
+  <a href="#whatsapp">7. WhatsApp integration</a>
+  <a href="#data">8. Database design</a>
+  <a href="#storage">9. Document storage (vault)</a>
+  <a href="#api">10. API design</a>
+  <a href="#auth">11. Auth & multi-tenancy</a>
+  <a href="#security">12. Security architecture</a>
+  <a href="#infra">13. Infrastructure & deployment</a>
+  <a href="#scale">14. Scaling & performance</a>
+  <a href="#observability">15. Observability</a>
+  <a href="#reliability">16. Reliability & DR</a>
+  <a href="#stack">17. Tech stack summary</a>
+  <a href="#cost">18. Cost model</a>
+  <a href="#phasing">19. Build phasing</a>
+  <a href="#appendix">20. Appendix: sample contracts</a>
+</nav>
+<main>
+<div class="topbar"><button class="iconbtn" id="thm" aria-label="Switch light or dark theme">◐</button></div>
+
+<div class="hero">
+  <div class="k">Backend Architecture Plan · v1.0</div>
+  <h1>Taxflow.AI — production-grade backend architecture</h1>
+  <p>How the system is built underneath: services, data flow, the extraction pipeline, database design, security, hosting and how it scales from 10 firms to 10,000.</p>
+  <div class="meta"><span class="tag b">Owner: Engineering</span><span class="tag">20 September 2026</span><span class="tag g">Companion to the Product PRD</span></div>
+</div>
+
+<!-- 1 -->
+<section id="overview">
+<h2>1. Overview</h2>
+<p class="lead">What this document is, and the one decision that shapes everything else.</p>
+<div class="grid g2">
+<div class="card"><h3>Purpose</h3><p>The Product PRD says <i>what</i> Taxflow does. This document says <i>how</i> it's built: which services exist, how a document moves from a WhatsApp photo to an approved, exportable record, how data is stored and secured, and how the system stays up and scales.</p></div>
+<div class="card"><h3>The one big decision</h3><p><b>Start as a modular monolith, not microservices.</b> A small team building an unproven product should optimise for speed of iteration and low operational overhead, not for a distributed-systems problem it doesn't have yet. The codebase is still organised into clear, decoupled modules (section 4) so it can be split into real services later without a rewrite — but there's only one thing to deploy, monitor and debug on day one.</p></div>
+</div>
+<div class="grid g4">
+<div class="card kpi"><b>&lt; 30s</b><span>target time to extract one document</span></div>
+<div class="card kpi"><b>99.9%</b><span>uptime target for the collection hub</span></div>
+<div class="card kpi"><b>Multi-tenant</b><span>one deployment serves every firm, data isolated per firm</span></div>
+<div class="card kpi"><b>Async-first</b><span>slow work (extraction, messaging) never blocks a user request</span></div>
+</div>
+</section>
+
+<!-- 2 -->
+<section id="principles">
+<h2>2. Architecture principles</h2>
+<p class="lead">Six rules that every design decision in this document answers to.</p>
+<div class="grid g3">
+<div class="card"><h3>1. Separate what's uncertain from what's exact</h3><p>AI extraction is probabilistic; tax arithmetic is not. They run as different services with different trust levels, so a bug or a bad model output in one can never silently corrupt the other (see section 6).</p></div>
+<div class="card"><h3>2. Everything slow is a background job</h3><p>Reading a document, sending a WhatsApp message, generating a file — none of these block the user's click. The API responds immediately and the work happens in a queue, with the UI updating when it's done.</p></div>
+<div class="card"><h3>3. Every write is attributable</h3><p>Every row that a person or the system changes is stamped with who/what/when, feeding a single, append-only audit log. This isn't bolted on later — it's a property of the data layer itself (section 8).</p></div>
+<div class="card"><h3>4. Multi-tenant by default, isolated by design</h3><p>One system serves every firm, but a firm can never see another firm's data, even through a bug. This is enforced at the database layer, not just in application code (section 11).</p></div>
+<div class="card"><h3>5. Buy commodity infrastructure, build the workflow</h3><p>Object storage, message queues, OCR baselines and hosting are bought from established providers. The country rules engine, review queue, and deadline logic are what we build and defend.</p></div>
+<div class="card"><h3>6. Design for the country pack, not one country</h3><p>Filing rules, document field requirements and message templates are data (config), never hard-coded logic — because the same backend has to serve every market in the product roadmap without a rewrite.</p></div>
+</div>
+</section>
+
+<!-- 3 -->
+<section id="bigpicture">
+<h2>3. System at a glance</h2>
+<p class="lead">The whole system in one flow: a document's journey from a client's phone to an approved, exportable record.</p>
+<div class="flowbox">
+<div class="flowrow">
+  <span class="node b">Client's WhatsApp</span><span class="arrow">→</span>
+  <span class="node">WhatsApp Cloud API</span><span class="arrow">→</span>
+  <span class="node">Webhook receiver</span><span class="arrow">→</span>
+  <span class="node v">Message queue</span><span class="arrow">→</span>
+  <span class="node">Ingestion worker</span>
+</div>
+<div class="flowrow">
+  <span class="node">Ingestion worker</span><span class="arrow">→</span>
+  <span class="node g">Object storage (Raw)</span><span class="arrow">→</span>
+  <span class="node v">Extraction queue</span><span class="arrow">→</span>
+  <span class="node a">Extraction worker (OCR + AI)</span><span class="arrow">→</span>
+  <span class="node">Database (draft fields)</span>
+</div>
+<div class="flowrow">
+  <span class="node">Database (draft fields)</span><span class="arrow">→</span>
+  <span class="node b">Review queue API</span><span class="arrow">→</span>
+  <span class="node">Accountant approves</span><span class="arrow">→</span>
+  <span class="node g">Database (confirmed)</span><span class="arrow">→</span>
+  <span class="node">Rules engine → worksheet / export</span>
+</div>
+</div>
+<p>Three things to notice: the client never talks to our servers directly (WhatsApp is the intermediary), nothing in the middle row is synchronous with a user waiting on it, and the review step is a hard gate between "the AI's guess" and "data the rest of the system trusts."</p>
+</section>
+
+<!-- 4 -->
+<section id="services">
+<h2>4. Services and modules</h2>
+<p class="lead">Logical services within the monolith (section 1). Each is a separate module with its own folder, its own database tables, and a narrow internal interface to the others — so any one of them can be pulled out into its own deployable service later with minimal disruption.</p>
+<div class="svcgrid">
+<div class="svc"><h4>API Gateway / Web BFF</h4><p>Serves the firm's web app. Auth, request validation, rate limiting. Talks to every other module through internal function calls (not HTTP, while monolithic).</p><div class="stack"><span class="pillsm">REST</span><span class="pillsm">Auth</span></div></div>
+<div class="svc v2"><h4>Messaging Service</h4><p>Owns the WhatsApp integration: templates, consent, outbound sending, inbound webhook handling, delivery status.</p><div class="stack"><span class="pillsm">WhatsApp Cloud API</span><span class="pillsm">Webhooks</span></div></div>
+<div class="svc"><h4>Ingestion Service</h4><p>Validates and deduplicates every incoming file, writes it to the vault, and enqueues it for extraction. The single entry point for any document, regardless of source (WhatsApp, portal upload, email later).</p><div class="stack"><span class="pillsm">Queue consumer</span></div></div>
+<div class="svc a2"><h4>Extraction Service</h4><p>Runs OCR + a document-understanding model, applies validation rules (tax arithmetic, ID format), and writes draft fields with confidence scores. The only module allowed to call external AI providers.</p><div class="stack"><span class="pillsm">OCR</span><span class="pillsm">LLM/vision model</span></div></div>
+<div class="svc g2"><h4>Review & Client Service</h4><p>Owns client records, checklists, the review queue, approvals, and the document status lifecycle.</p><div class="stack"><span class="pillsm">Core CRUD</span></div></div>
+<div class="svc"><h4>Deadline Engine</h4><p>Generates each client's filing calendar from their profile and the active country pack; tracks task steps and progress.</p><div class="stack"><span class="pillsm">Scheduler</span></div></div>
+<div class="svc c2"><h4>Rules Engine (country packs)</h4><p>Pure, deterministic logic that maps confirmed documents to worksheets and export files. No AI, no network calls — just data in, structured output out. This is what makes tax numbers auditable.</p><div class="stack"><span class="pillsm">Deterministic</span></div></div>
+<div class="svc"><h4>Export/Integration Service</h4><p>Converts confirmed data into ledger import formats (Excel, XML) or pushes via API to third-party accounting systems.</p><div class="stack"><span class="pillsm">Format adapters</span></div></div>
+<div class="svc v2"><h4>Vault Service</h4><p>The only module that talks to object storage directly. Enforces per-firm folder structure, retention rules and encryption.</p><div class="stack"><span class="pillsm">Object storage</span></div></div>
+<div class="svc"><h4>Audit Service</h4><p>Appends an immutable event for every state-changing action across every other module. Read-only to everyone except the modules writing events.</p><div class="stack"><span class="pillsm">Append-only log</span></div></div>
+<div class="svc a2"><h4>Billing Service</h4><p>Subscription plans, usage metering (documents, messages), invoicing, payment provider webhooks.</p><div class="stack"><span class="pillsm">Stripe or similar</span></div></div>
+<div class="svc c2"><h4>Notification Service</h4><p>In-app notifications and the daily digest email, built from data already produced by other modules.</p><div class="stack"><span class="pillsm">Scheduled jobs</span></div></div>
+</div>
+<div class="callout"><span>🧩</span><span><b>Module boundary rule:</b> a module never reads another module's database tables directly — only through its defined interface. This is what makes "split into microservices later" realistic instead of aspirational.</span></div>
+</section>
+
+<!-- 5 -->
+<section id="ingestion">
+<h2>5. Document ingestion pipeline, step by step</h2>
+<p class="lead">The most important pipeline in the product — walked through in full detail.</p>
+<div class="tw"><table>
+<tr><th style="width:50px">#</th><th>Step</th><th>Detail</th></tr>
+<tr><td>1</td><td><b>Webhook received</b></td><td>WhatsApp sends a webhook event to our public endpoint when a client sends a message or media. Verified using the provider's signing secret before anything else happens.</td></tr>
+<tr><td>2</td><td><b>Enqueue, don't process</b></td><td>The webhook handler's only job is to validate the signature and push the raw event onto a queue, then return <code>200 OK</code> immediately. WhatsApp retries webhooks that don't respond fast, so this step must never do slow work.</td></tr>
+<tr><td>3</td><td><b>Download media</b></td><td>A worker pulls the event off the queue, calls the WhatsApp media API to download the actual file (media URLs expire quickly), and computes a content hash.</td></tr>
+<tr><td>4</td><td><b>Deduplicate</b></td><td>If a file with the same hash already exists for this client this month, it's linked to the existing record instead of creating a duplicate — clients often resend the same photo.</td></tr>
+<tr><td>5</td><td><b>Validate</b></td><td>File type and size checks. Corrupted or unsupported files are flagged in an "unsorted" list for a human to handle rather than silently dropped.</td></tr>
+<tr><td>6</td><td><b>Write to vault</b></td><td>The Vault Service stores the file in the client's Raw folder for the current year/month, encrypted at rest (section 12).</td></tr>
+<tr><td>7</td><td><b>Create Document record</b></td><td>A row is created in the database with status <code>received</code>, linked to the client, the source message, and the vault path.</td></tr>
+<tr><td>8</td><td><b>Enqueue for extraction</b></td><td>A message is placed on the extraction queue. Status moves to <code>queued</code>.</td></tr>
+<tr><td>9</td><td><b>Checklist update</b></td><td>If the document matches an outstanding checklist item (by type inference), that item is marked as received — pending confirmation once extraction completes.</td></tr>
+</table></div>
+<div class="callout warn"><span>⚠️</span><span><b>Why queues everywhere:</b> WhatsApp can deliver a burst of 50 documents in a minute when a client finally sends everything at once. A synchronous "process on request" design falls over exactly when it matters most. Queues absorb the burst and let workers catch up at their own pace.</span></div>
+</section>
+
+<!-- 6 -->
+<section id="extraction">
+<h2>6. Extraction & AI layer</h2>
+<p class="lead">How a photo becomes structured, trustworthy data — and where the trust boundary actually sits.</p>
+<h3>Pipeline</h3>
+<div class="tw"><table>
+<tr><th style="width:50px">#</th><th>Step</th><th>Detail</th></tr>
+<tr><td>1</td><td><b>Pre-process</b></td><td>Image orientation correction, contrast normalisation, PDF-to-image conversion where needed. Cheap, deterministic, runs on every document.</td></tr>
+<tr><td>2</td><td><b>Classify document type</b></td><td>A lightweight classifier (or rules on filename/context) determines invoice vs. receipt vs. bank statement, since each has a different field schema.</td></tr>
+<tr><td>3</td><td><b>Extract fields</b></td><td>A document-understanding model (OCR combined with a vision-capable LLM) reads the fields defined by the active country pack: date, document number, party name, tax ID, line items, tax rate, totals.</td></tr>
+<tr><td>4</td><td><b>Confidence scoring</b></td><td>Every field gets a 0–1 confidence score, derived from model output probabilities and cross-checks (see step 5). This is stored alongside the value, never discarded.</td></tr>
+<tr><td>5</td><td><b>Deterministic validation</b></td><td>Rule-based checks run against the extracted values: does tax = rate × taxable value, does the tax ID match the expected format, do line items sum to the total. A failed check forces a lower confidence score regardless of what the model reported.</td></tr>
+<tr><td>6</td><td><b>Duplicate & anomaly checks</b></td><td>Same invoice number from the same supplier this period? Amount wildly outside this client's normal range? These flags ride alongside the extraction, visible in the review queue.</td></tr>
+<tr><td>7</td><td><b>Write draft, never confirmed</b></td><td>Results are written to the Extraction table with status <code>draft</code>. Nothing downstream (worksheets, exports, dashboards) reads draft data — only <code>confirmed</code> data, ever (see section 8).</td></tr>
+</table></div>
+<h3>Model strategy</h3>
+<div class="grid g2">
+<div class="card"><h3>Model choice</h3><p>Use a hosted multimodal LLM API (not a self-trained model) for document understanding at launch — training a custom model needs a volume of labelled data a pre-launch product doesn't have yet. Combine it with a dedicated OCR engine for raw text extraction as a cross-check, since relying on one model for everything hides failure modes.</p></div>
+<div class="card"><h3>Cost and routing</h3><p>Route by document complexity: a clean, printed, single-page invoice can go through a cheaper/faster path; a handwritten or multi-page document routes to a stronger (costlier) model. Track cost and accuracy per document type from day one so this routing improves with real data instead of guesswork.</p></div>
+<div class="card"><h3>Data residency for AI calls</h3><p>Sending a client's financial document to an external AI API is a data transfer that some jurisdictions restrict. Where required, use a regional deployment of the model provider, or a provider with an in-region processing option, and document this per country pack.</p></div>
+<div class="card"><h3>Continuous improvement</h3><p>Every human correction in the review queue (section 5 of the PRD) is captured as a labelled example. This becomes the training/evaluation set for improving prompts, routing rules, and eventually a fine-tuned or specialised model — but only after real volume justifies the investment.</p></div>
+</div>
+<div class="callout danger"><span>🚫</span><span><b>Hard rule:</b> the extraction service never writes to any table that worksheets, exports or client-facing summaries read from. There is no code path where an unreviewed AI output reaches a filing. This is enforced by database permissions, not just application logic — see section 8.</span></div>
+</section>
+
+<!-- 7 -->
+<section id="whatsapp">
+<h2>7. WhatsApp integration architecture</h2>
+<div class="grid g2">
+<div class="card"><h3>Provider layer</h3><p>Integrate through a Business Solution Provider (BSP) on top of the official WhatsApp Cloud API, rather than the raw Meta API directly — a BSP handles number provisioning, template approval workflow, and delivery infrastructure, which is not worth building in-house pre-launch.</p></div>
+<div class="card"><h3>Outbound messages</h3><p>Every outbound message outside a live 24-hour conversation window must use a pre-approved template. The Messaging Service maintains a local cache of approved templates and their variable slots, and rejects any attempt to send free-form text outside the window before it ever reaches the API.</p></div>
+<div class="card"><h3>Inbound handling</h3><p>A single webhook endpoint receives all events: messages, media, delivery receipts, read receipts, template status changes. Each event type routes to its own handler via the queue (section 5).</p></div>
+<div class="card"><h3>Consent and opt-out</h3><p>A per-contact consent record is required before any outbound template is sent. An inbound "STOP"-equivalent message immediately flips consent to false and blocks all future sends until re-confirmed — checked at send-time, not just at schedule-time.</p></div>
+</div>
+<h3>Failure handling</h3>
+<div class="tw"><table>
+<tr><th>Failure</th><th>Handling</th></tr>
+<tr><td>Template rejected by Meta</td><td>Surface clearly in the firm's UI with the rejection reason; never silently retry with the same content.</td></tr>
+<tr><td>Message delivery fails</td><td>Retry with exponential backoff up to a limit, then mark as failed and notify the firm — never fail silently.</td></tr>
+<tr><td>Media download expires</td><td>Media URLs from Meta expire in minutes. The ingestion worker downloads immediately on webhook receipt (section 5, step 3) specifically to avoid this.</td></tr>
+<tr><td>BSP outage</td><td>Queue outbound messages and retry once the provider recovers; inbound webhooks queue on the provider's side per their SLA, but a secondary polling fallback is a P1 resilience item.</td></tr>
+</table></div>
+</section>
+
+<!-- 8 -->
+<section id="data">
+<h2>8. Database design</h2>
+<p class="lead">A relational database (PostgreSQL) is the right default: the data is highly relational (clients → documents → extractions → tasks), correctness matters more than raw write throughput, and its maturity around row-level security is exactly what multi-tenancy needs.</p>
+<h3>Core schema (simplified)</h3>
+<pre class="code">firms            (id, name, plan, country_pack, created_at)
+users            (id, firm_id, email, role, mfa_enabled)
+clients          (id, firm_id, legal_name, tax_ids jsonb, jurisdiction,
+                   filing_obligations jsonb, whatsapp_number, language,
+                   consent_status, consent_at)
+checklists       (id, client_id, period_start, period_end, items jsonb)
+messages         (id, firm_id, client_id, direction, template_id,
+                   body, whatsapp_message_id, status, sent_at)
+documents        (id, firm_id, client_id, vault_path, source, content_hash,
+                   status, received_at)
+extractions      (id, document_id, fields jsonb, confidence jsonb,
+                   status,            -- draft | confirmed | rejected
+                   confirmed_by, confirmed_at, edit_history jsonb)
+tasks            (id, client_id, filing_type, steps jsonb, due_date,
+                   status, assignee_id)
+outputs          (id, client_id, task_id, type, file_path,
+                   source_document_ids uuid[], generated_at)
+audit_events     (id, firm_id, actor_id, action, entity_type, entity_id,
+                   before jsonb, after jsonb, at, ip)
+subscriptions    (id, firm_id, plan, status, current_period_end,
+                   documents_used, messages_used)</pre>
+<h3>Key design decisions</h3>
+<div class="grid g2">
+<div class="card"><h3>Documents and Extractions are separate tables</h3><p>Mirrors the PRD's data model exactly: the original file's record never changes once created, while its extraction can go through multiple draft → confirmed → edited cycles. This makes "show me the original next to every version of the reading" a simple join, not a reconstruction.</p></div>
+<div class="card"><h3>Status is a first-class column, not inferred</h3><p><code>extractions.status</code> being explicitly <code>draft</code> or <code>confirmed</code> — rather than inferred from, say, "confidence &gt; 0.9" — means the trust boundary from section 6 is enforced by a <code>WHERE status = 'confirmed'</code> clause that every downstream query uses. It's impossible to accidentally read unreviewed data.</p></div>
+<div class="card"><h3><code>firm_id</code> on every tenant-scoped table</h3><p>Every table that holds firm-specific data carries a <code>firm_id</code> column, enforced at the database level with row-level security policies (section 11) — not just filtered in application code, where a single missing <code>WHERE</code> clause could leak data across firms.</p></div>
+<div class="card"><h3><code>outputs.source_document_ids</code></h3><p>Every generated worksheet or export file stores the exact array of documents it was built from. This is what makes "click any number to see its source invoices" (a core trust principle from the PRD) a database fact, not a UI trick.</p></div>
+<div class="card"><h3><code>audit_events</code> is append-only</h3><p>No update or delete permission is granted on this table to the application role, only insert and select. Even a compromised application server can't rewrite history.</p></div>
+<div class="card"><h3>JSONB for variable, jurisdiction-specific shapes</h3><p><code>tax_ids</code>, <code>filing_obligations</code>, <code>fields</code> and <code>confidence</code> vary by country pack and document type. JSONB keeps the schema stable across markets while still being indexable and queryable in PostgreSQL.</p></div>
+</div>
+<h3>Indexing strategy</h3>
+<ul style="color:var(--tx2)">
+<li>Every foreign key (<code>firm_id</code>, <code>client_id</code>, <code>document_id</code>) is indexed — these are the join paths for nearly every query.</li>
+<li>A composite index on <code>(client_id, period_start, period_end)</code> on checklists and tasks, since "this client's current period" is the single most common lookup in the product.</li>
+<li>A GIN index on the JSONB columns that get searched (e.g. searching extracted party names or amounts, per the vault search feature).</li>
+<li>A partial index on <code>documents</code> where <code>status = 'queued'</code>, since the extraction worker polls this exact condition constantly.</li>
+</ul>
+</section>
+
+<!-- 9 -->
+<section id="storage">
+<h2>9. Document storage (the vault)</h2>
+<div class="grid g2">
+<div class="card"><h3>Structure</h3><p>Object storage (S3-compatible), with keys structured as <code>firm_id/client_id/year/month/bucket/filename</code>, mirroring exactly what the PRD's folder-tree UI displays. The UI never invents this structure — it reads it directly from the storage keys.</p></div>
+<div class="card"><h3>Encryption</h3><p>Server-side encryption at rest, with a separate encryption key per firm (envelope encryption via a key management service) so that a key compromise for one firm never exposes another firm's files.</p></div>
+<div class="card"><h3>Access pattern</h3><p>The application never returns a direct storage URL to the browser. Files are served through short-lived, signed URLs generated on request, and every access is logged as an audit event.</p></div>
+<div class="card"><h3>Retention</h3><p>A per-firm, per-jurisdiction retention policy (e.g. keep VAT records five years) drives an automated lifecycle rule — moving old files to cheaper cold storage rather than deleting, unless the firm explicitly requests deletion.</p></div>
+</div>
+</section>
+
+<!-- 10 -->
+<section id="api">
+<h2>10. API design</h2>
+<div class="grid g2">
+<div class="card"><h3>Style</h3><p>A REST API over HTTPS, versioned in the URL path (<code>/v1/...</code>). REST is chosen over GraphQL because the client app's data needs are well-defined and stable (a handful of screens), not the kind of flexible, ad-hoc querying GraphQL earns its complexity for.</p></div>
+<div class="card"><h3>Conventions</h3><p>Resource-based URLs, standard HTTP verbs and status codes, cursor-based pagination for lists, idempotency keys required on every write endpoint that can be safely retried (critical for "send reminder" and "generate worksheet" actions).</p></div>
+</div>
+<h3>Representative endpoints</h3>
+<div class="tw"><table>
+<tr><th>Endpoint</th><th>Purpose</th></tr>
+<tr><td><code>POST /v1/clients</code></td><td>Create a client record (or bulk import).</td></tr>
+<tr><td><code>GET /v1/clients/{id}/checklist</code></td><td>Current period's outstanding items and progress.</td></tr>
+<tr><td><code>POST /v1/clients/{id}/requests</code></td><td>Queue a WhatsApp document request (goes through approval before send).</td></tr>
+<tr><td><code>GET /v1/documents?status=review</code></td><td>The review queue, filterable by client, status, confidence.</td></tr>
+<tr><td><code>PATCH /v1/documents/{id}/extraction</code></td><td>Edit a field; re-validates and clears the low-confidence flag.</td></tr>
+<tr><td><code>POST /v1/documents/{id}/approve</code></td><td>Flips extraction status from draft to confirmed. The single most important write in the system.</td></tr>
+<tr><td><code>POST /v1/tasks/{id}/generate-output</code></td><td>Runs the rules engine against confirmed documents; returns a worksheet or export file, async via job status polling.</td></tr>
+<tr><td><code>GET /v1/dashboard</code></td><td>Aggregated firm-wide view: at-risk clients, review queue size, recent activity.</td></tr>
+<tr><td><code>POST /webhooks/whatsapp</code></td><td>Inbound provider webhook (signature-verified, not part of the public API surface).</td></tr>
+</table></div>
+<h3>Async job pattern</h3>
+<p>Any request that triggers slow work (extraction, worksheet generation, bulk messaging) returns <code>202 Accepted</code> with a job ID immediately. The client polls <code>GET /v1/jobs/{id}</code> or receives a push update — the API never makes a user's browser wait on an AI call.</p>
+</section>
+
+<!-- 11 -->
+<section id="auth">
+<h2>11. Authentication, authorization & multi-tenancy</h2>
+<div class="grid g2">
+<div class="card"><h3>Authentication</h3><p>Email + password with mandatory two-factor authentication for all firm users (accountants handle financial data; this isn't optional). Session tokens are short-lived JWTs with a refresh-token rotation pattern, stored in an HTTP-only cookie.</p></div>
+<div class="card"><h3>Authorization (roles)</h3><p>Four roles per the PRD — owner, senior, junior, read-only — enforced at the API layer via middleware that checks the requesting user's role against the action, before any handler code runs.</p></div>
+<div class="card"><h3>Multi-tenancy enforcement</h3><p>Every authenticated request carries the user's <code>firm_id</code> from their verified session — never from a client-supplied parameter. The database connection for that request sets a session variable consumed by PostgreSQL row-level security policies, so even a query with a bug can't return another firm's rows.</p></div>
+<div class="card"><h3>Client-facing surfaces</h3><p>The WhatsApp channel and the optional client portal never use firm-user authentication. WhatsApp identity comes from the verified phone number; the portal uses single-use, expiring magic links — neither surface can access the firm's internal dashboard.</p></div>
+</div>
+<pre class="code">-- Simplified row-level security example (PostgreSQL)
+ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
+CREATE POLICY firm_isolation ON clients
+  USING (firm_id = current_setting('app.current_firm_id')::uuid);</pre>
+</section>
+
+<!-- 12 -->
+<section id="security">
+<h2>12. Security architecture</h2>
+<div class="grid g3">
+<div class="card"><h3>Encryption</h3><p>TLS 1.2+ everywhere in transit. AES-256 at rest for the database and object storage, with per-firm keys for the vault (section 9) managed through a cloud key management service, not hand-rolled.</p></div>
+<div class="card"><h3>Secrets management</h3><p>API keys, database credentials and provider tokens live in a dedicated secrets manager, never in code, environment files checked into version control, or logs.</p></div>
+<div class="card"><h3>Least privilege</h3><p>Each service module's database role has only the permissions it needs — the extraction worker can insert into <code>extractions</code> but has no delete permission anywhere, and no service role can write to <code>audit_events</code> except through the Audit Service's own insert path.</p></div>
+<div class="card"><h3>Input validation</h3><p>Every API input is validated against a strict schema before touching business logic. File uploads are checked for type and size, and scanned for malware before being written to the vault.</p></div>
+<div class="card"><h3>Dependency & vulnerability management</h3><p>Automated dependency scanning in CI, with a policy of patching critical vulnerabilities within days, not sprints.</p></div>
+<div class="card"><h3>Independent testing</h3><p>A third-party penetration test before the first paid launch, and at least annually after, plus a private vulnerability disclosure channel from day one.</p></div>
+</div>
+<div class="callout warn"><span>⚠️</span><span><b>Certification path:</b> begin SOC 2 Type II (or ISO 27001) readiness work from month one, even though certification itself takes 6–12 months — enterprise firms and some jurisdictions' data-protection expectations will eventually require it, and retrofitting controls is far more expensive than building them in from the start.</span></div>
+</section>
+
+<!-- 13 -->
+<section id="infra">
+<h2>13. Infrastructure and deployment</h2>
+<div class="grid g2">
+<div class="card"><h3>Hosting</h3><p>A major cloud provider with data centre regions matching the launch market's residency requirements (see the PRD's country packs). Containers (Docker) for every service, orchestrated with a managed container platform rather than self-run Kubernetes — the operational overhead of self-managed Kubernetes isn't justified at this stage.</p></div>
+<div class="card"><h3>Infrastructure as code</h3><p>All infrastructure defined in code (e.g. Terraform), never created by hand in a cloud console. This makes standing up a new region for a new country pack a repeatable, reviewable process instead of tribal knowledge.</p></div>
+<div class="card"><h3>Environments</h3><p>Three environments — development, staging, production — with staging as a full mirror of production topology (using anonymised or synthetic data) so infrastructure and migration changes are tested before they touch real firm data.</p></div>
+<div class="card"><h3>CI/CD</h3><p>Every merge to the main branch runs the automated test suite, then deploys to staging automatically. Production deploys are a deliberate, one-click promotion from a tested staging build — never a direct push to production.</p></div>
+</div>
+<h3>Deployment topology</h3>
+<div class="flowbox">
+<div class="flowrow">
+  <span class="node">Load balancer</span><span class="arrow">→</span>
+  <span class="node b">API containers (autoscaled)</span><span class="arrow">→</span>
+  <span class="node">PostgreSQL (primary + replica)</span>
+</div>
+<div class="flowrow">
+  <span class="node v">Message queue (managed)</span><span class="arrow">→</span>
+  <span class="node a">Worker containers (autoscaled)</span><span class="arrow">→</span>
+  <span class="node g">Object storage</span>
+</div>
+</div>
+</section>
+
+<!-- 14 -->
+<section id="scale">
+<h2>14. Scaling and performance</h2>
+<div class="tw"><table>
+<tr><th>Bottleneck</th><th>Approach</th></tr>
+<tr><td>Extraction worker throughput during a burst (e.g. filing deadline week)</td><td>Workers autoscale on queue depth, not CPU — the queue length is the real signal that more capacity is needed.</td></tr>
+<tr><td>Database read load from dashboards and review queues</td><td>A read replica serves reporting/dashboard queries, keeping the primary free for writes (extraction confirmations, message sends).</td></tr>
+<tr><td>Hot tenants (a large firm with thousands of clients)</td><td>Pagination and query limits enforced at the API layer regardless of plan size; heavy background jobs (bulk reminders) are rate-limited per firm so one tenant can't starve others.</td></tr>
+<tr><td>AI extraction cost at scale</td><td>Model routing by document complexity (section 6) and caching repeated-supplier templates (the same recurring supplier's invoice layout doesn't need full re-analysis every time).</td></tr>
+<tr><td>WhatsApp rate limits</td><td>Outbound sends are queued and paced to stay within the provider's per-number throughput limits; a firm's bulk "remind everyone" action spreads over minutes, not one instant burst.</td></tr>
+</table></div>
+<p>The guiding rule: scale the stateless layers (API, workers) horizontally first — they're cheap and simple to add — and only reach for database sharding or a services split once a specific, measured bottleneck justifies the added complexity.</p>
+</section>
+
+<!-- 15 -->
+<section id="observability">
+<h2>15. Observability</h2>
+<div class="grid g3">
+<div class="card"><h3>Logging</h3><p>Structured (JSON) logs from every service, correlated by a request/trace ID that follows a document from webhook receipt through extraction to approval — so a single support ticket can be traced end to end.</p></div>
+<div class="card"><h3>Metrics</h3><p>Queue depth, extraction latency and accuracy by document type, WhatsApp delivery rate, API error rate and latency by endpoint, database connection pool saturation.</p></div>
+<div class="card"><h3>Tracing</h3><p>Distributed tracing across the async pipeline (webhook → queue → worker → database), essential for diagnosing "why is this document stuck in review" issues in production.</p></div>
+<div class="card"><h3>Alerting</h3><p>Paged alerts for: extraction queue depth growing unbounded, WhatsApp webhook failures, elevated API error rates, and any database replication lag — these directly threaten the product's core promises.</p></div>
+<div class="card"><h3>Business dashboards</h3><p>A separate, non-paging dashboard tracking the PRD's own success metrics (documents processed, review time, fulfilment rate) so product and engineering watch the same numbers.</p></div>
+<div class="card"><h3>Error tracking</h3><p>Automatic capture and grouping of unhandled exceptions across all services, with the same trace ID linking an error back to the specific document or request that caused it.</p></div>
+</div>
+</section>
+
+<!-- 16 -->
+<section id="reliability">
+<h2>16. Reliability and disaster recovery</h2>
+<div class="tw"><table>
+<tr><th>Concern</th><th>Approach</th></tr>
+<tr><td>Database backups</td><td>Automated daily full backups plus continuous point-in-time recovery, tested with an actual restore drill on a schedule, not just assumed to work.</td></tr>
+<tr><td>Object storage durability</td><td>Rely on the cloud provider's built-in multi-region redundancy for the vault; cross-region replication for the highest tier of business continuity if a firm's contract requires it.</td></tr>
+<tr><td>Queue message loss</td><td>Use a managed queue with at-least-once delivery and a dead-letter queue for messages that repeatedly fail processing, so a bad document never silently vanishes.</td></tr>
+<tr><td>Service outage</td><td>Health checks with automatic container restart; the load balancer routes only to healthy instances.</td></tr>
+<tr><td>Recovery targets</td><td>A concrete RPO (recovery point objective) and RTO (recovery time objective) — for example, RPO of 5 minutes and RTO of 1 hour — set explicitly and tested, not left implicit.</td></tr>
+<tr><td>Incident response</td><td>A written runbook and an on-call rotation from the first paying customer onward; every incident gets a blameless post-mortem.</td></tr>
+</table></div>
+</section>
+
+<!-- 17 -->
+<section id="stack">
+<h2>17. Tech stack summary</h2>
+<div class="tw"><table>
+<tr><th>Layer</th><th>Choice</th><th>Why</th></tr>
+<tr><td>Backend language/framework</td><td>Node.js (TypeScript) or Python, behind a REST framework</td><td>Strong ecosystem for both web APIs and AI/document-processing libraries; TypeScript's types help keep a multi-module monolith's internal contracts honest.</td></tr>
+<tr><td>Database</td><td>PostgreSQL (managed)</td><td>Relational integrity, JSONB flexibility, mature row-level security for multi-tenancy (section 11).</td></tr>
+<tr><td>Queue</td><td>A managed message queue (e.g. SQS-equivalent) or Redis-backed queue</td><td>Decouples every slow step from the request/response cycle (section 5).</td></tr>
+<tr><td>Object storage</td><td>S3-compatible managed storage</td><td>Durable, cheap, and the natural fit for the vault's folder-key structure.</td></tr>
+<tr><td>OCR / document AI</td><td>A dedicated OCR engine + a hosted multimodal LLM API</td><td>Buying proven document-understanding capability beats building a model from scratch pre-launch (section 6).</td></tr>
+<tr><td>WhatsApp integration</td><td>A licensed BSP on the WhatsApp Cloud API</td><td>Handles number provisioning and template approval workflow (section 7).</td></tr>
+<tr><td>Containers</td><td>Docker + a managed container platform</td><td>Portable, reproducible deployments without self-managed Kubernetes overhead.</td></tr>
+<tr><td>Infrastructure as code</td><td>Terraform</td><td>Repeatable environments, essential once a second country/region launches.</td></tr>
+<tr><td>Observability</td><td>A unified logging/metrics/tracing platform (e.g. an APM suite)</td><td>One place to correlate a document's journey across every service (section 15).</td></tr>
+<tr><td>CI/CD</td><td>GitHub Actions or equivalent</td><td>Automated tests and staged deploys on every change (section 13).</td></tr>
+</table></div>
+</section>
+
+<!-- 18 -->
+<section id="cost">
+<h2>18. Cost model (illustrative)</h2>
+<p class="lead">Rough shape of backend cost per document processed, to sanity-check pricing decisions made in the business plan. Treat these as planning assumptions to validate, not quotes.</p>
+<div class="tw"><table>
+<tr><th>Cost driver</th><th>Scales with</th><th>Note</th></tr>
+<tr><td>AI/OCR extraction</td><td>Per document</td><td>The single largest variable cost; model routing (section 6) is the primary lever to control it.</td></tr>
+<tr><td>WhatsApp messaging</td><td>Per message, per country</td><td>Provider fees are billed by destination market and message category (utility vs. marketing); see the business plan for current rates.</td></tr>
+<tr><td>Compute (API + workers)</td><td>Requests and queue depth</td><td>Autoscaled, so cost tracks usage rather than a fixed baseline — the main lever is keeping worker efficiency high.</td></tr>
+<tr><td>Database</td><td>Data volume and query load</td><td>Grows steadily with firm and document count; a read replica adds a predictable fixed increment.</td></tr>
+<tr><td>Object storage</td><td>Total documents stored, over time</td><td>Low per-GB cost, but retention rules (section 9) mean it only grows — budget for it as a long-term, not one-time, cost.</td></tr>
+</table></div>
+<div class="callout"><span>💡</span><span>Track "cost to process one document" and "cost to send one message" as explicit, dashboarded metrics from the first real firm onward — they are the two numbers that most directly determine gross margin.</span></div>
+</section>
+
+<!-- 19 -->
+<section id="phasing">
+<h2>19. Build phasing</h2>
+<div class="tw"><table>
+<tr><th>Phase</th><th>Backend scope</th></tr>
+<tr><td><b>Foundations</b></td><td>Auth, multi-tenancy, client records, the Vault Service, and the audit log. Nothing else works without these.</td></tr>
+<tr><td><b>Collection loop</b></td><td>Messaging Service, ingestion pipeline, webhook handling. Prove a document can travel from a client's WhatsApp into the vault reliably before building anything downstream of it.</td></tr>
+<tr><td><b>Extraction loop</b></td><td>Extraction Service, review queue APIs, the draft/confirmed trust boundary in the database. This is where accuracy gets measured against real design-partner documents.</td></tr>
+<tr><td><b>Output loop</b></td><td>Deadline Engine, Rules Engine (first country pack), Export/Integration Service. Closes the full loop from document to filing-ready output.</td></tr>
+<tr><td><b>Hardening for paid launch</b></td><td>Billing Service, observability, backup/DR drills, independent security review.</td></tr>
+<tr><td><b>Scale-out</b></td><td>Second country pack, read replicas, model-routing optimisation, and — only once a specific service is a proven, measured bottleneck — splitting it out of the monolith.</td></tr>
+</table></div>
+</section>
+
+<!-- 20 -->
+<section id="appendix">
+<h2>20. Appendix: sample contracts</h2>
+<h3>A. Extraction result (internal shape)</h3>
+<pre class="code">{
+  "document_id": "doc_8f2a...",
+  "status": "draft",
+  "document_type": "sales_invoice",
+  "fields": {
+    "date": { "value": "2026-09-12", "confidence": 0.97 },
+    "invoice_number": { "value": "SI/26-27/1042", "confidence": 0.99 },
+    "party_name": { "value": "Bansal Hardware", "confidence": 0.95 },
+    "tax_id": { "value": "07AAACB4521K1ZP", "confidence": 0.71 },
+    "taxable_value": { "value": 48200, "confidence": 0.98 },
+    "tax_rate": { "value": 18, "confidence": 0.99 }
+  },
+  "validation_flags": ["tax_id_format_uncertain"],
+  "duplicate_of": null
+}
+// Illustrative shape only — the real schema is versioned per country pack.</pre>
+<h3>B. Approve-document endpoint</h3>
+<pre class="code">POST /v1/documents/{id}/approve
+Headers: Idempotency-Key: &lt;client-generated-uuid&gt;
+
+Request body:
+{ "corrected_fields": { "tax_id": "07AAACB4521K1ZP" } }
+
+Response 200:
+{
+  "document_id": "doc_8f2a...",
+  "extraction_status": "confirmed",
+  "confirmed_by": "user_44a1...",
+  "confirmed_at": "2026-09-19T10:32:00Z"
+}</pre>
+<h3>C. Audit event (internal shape)</h3>
+<pre class="code">{
+  "id": "evt_5c11...",
+  "firm_id": "firm_02...",
+  "actor_id": "user_44a1...",
+  "action": "document.approve",
+  "entity_type": "extraction",
+  "entity_id": "ext_9b3e...",
+  "before": { "status": "draft", "tax_id": "07AAACB4521K1ZR" },
+  "after":  { "status": "confirmed", "tax_id": "07AAACB4521K1ZP" },
+  "at": "2026-09-19T10:32:00Z",
+  "ip": "203.0.113.7"
+}</pre>
+<footer>Prepared for Taxflow.AI. A companion to the Product PRD — engineering scope, priorities and even specific technology choices will be refined as the team and real usage data confirm or challenge the assumptions here.</footer>
+</section>
+</main>
+</div>
+
+<script>
+(function(){
+'use strict';
+var $=function(s){return document.querySelector(s)};
+$('#thm').addEventListener('click',function(){var r=document.documentElement;r.setAttribute('data-theme',r.getAttribute('data-theme')==='dark'?'light':'dark')});
+var links=Array.prototype.slice.call(document.querySelectorAll('#toc a'));
+var secs=links.map(function(a){return document.getElementById(a.getAttribute('href').slice(1))});
+function spy(){
+  var y=window.scrollY+120,cur=0;
+  secs.forEach(function(s,i){if(s&&s.offsetTop<=y)cur=i});
+  links.forEach(function(a,i){a.classList.toggle('on',i===cur)});
+}
+window.addEventListener('scroll',spy,{passive:true});spy();
+})();
+</script>
+</body>
+</html>

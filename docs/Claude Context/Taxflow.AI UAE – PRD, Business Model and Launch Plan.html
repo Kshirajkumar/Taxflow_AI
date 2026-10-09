@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Taxflow.AI UAE – PRD, Business Model and Launch Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --font:'Plus Jakarta Sans','Segoe UI',system-ui,-apple-system,sans-serif;
+  --mono:'JetBrains Mono',Consolas,monospace;
+  --bg:#060A13;--panel:#0C1425;--card:#111B31;--card2:#162341;--line:#1E2C4A;--line2:#2B3D63;
+  --tx:#E8EEFB;--tx2:#B0BDD8;--tx3:#7987AB;
+  --blue:#4C8DFF;--blue2:#2F6BFF;--cyan:#3DD6F5;--green:#34D399;--amber:#F6C453;--red:#F87171;--violet:#8B7CFF;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+:root[data-theme="light"]{
+  --bg:#EDF1F9;--panel:#FFFFFF;--card:#FFFFFF;--card2:#F1F5FC;--line:#DAE2F1;--line2:#C3CFE6;
+  --tx:#0E1A33;--tx2:#3E4E75;--tx3:#6B7BA0;
+  --blue:#2563EB;--blue2:#1D4ED8;--cyan:#0891B2;--green:#059669;--amber:#B7791F;--red:#DC2626;--violet:#6D5BEA;
+}
+html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 64px);scroll-behavior:smooth}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.65 var(--font);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p{margin:0}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.layout{display:grid;grid-template-columns:230px minmax(0,1fr);max-width:1180px;margin:0 auto;gap:34px;padding:0 20px}
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;padding:24px 0;max-height:100vh;overflow:auto}
+nav.toc b{display:block;font-size:13px;color:var(--tx3);margin:0 0 10px 10px;font-weight:600}
+nav.toc a{display:block;padding:6px 10px;border-radius:8px;color:var(--tx2);text-decoration:none;font-size:13.5px;border-left:2px solid transparent}
+nav.toc a:hover{background:var(--card)}
+nav.toc a.on{color:var(--tx);border-left-color:var(--blue);background:color-mix(in srgb,var(--blue) 12%,transparent)}
+main{padding:28px 0 90px;min-width:0}
+.hero{padding:26px 26px 24px;border-radius:20px;background:linear-gradient(135deg,color-mix(in srgb,var(--blue2) 34%,var(--card)),var(--card));border:1px solid var(--line2);margin-bottom:26px}
+.hero .k{font-size:13px;color:var(--cyan);font-weight:600}
+.hero h1{font-size:32px;line-height:1.18;letter-spacing:-.6px;margin:8px 0 10px;font-weight:800}
+.hero p{color:var(--tx2);max-width:68ch}
+.hero .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.tag{font-size:12px;font-weight:600;padding:3px 10px;border-radius:99px;background:color-mix(in srgb,var(--tx) 8%,transparent);color:var(--tx2)}
+.tag.b{background:color-mix(in srgb,var(--blue) 18%,transparent);color:var(--blue)}
+.tag.g{background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green)}
+.tag.a{background:color-mix(in srgb,var(--amber) 20%,transparent);color:var(--amber)}
+.tag.r{background:color-mix(in srgb,var(--red) 18%,transparent);color:var(--red)}
+.tag.v{background:color-mix(in srgb,var(--violet) 20%,transparent);color:var(--violet)}
+.topbar{display:flex;justify-content:flex-end;padding-top:14px}
+.iconbtn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line2);background:var(--card);display:grid;place-items:center}
+section{margin-bottom:46px}
+section>h2{font-size:24px;letter-spacing:-.3px;margin-bottom:6px;font-weight:700}
+section>.lead{color:var(--tx3);margin-bottom:18px;max-width:70ch}
+h3{font-size:16px;margin:22px 0 10px;font-weight:700}
+h4{font-size:13px;color:var(--tx3);margin:0 0 6px;font-weight:600}
+p+p{margin-top:10px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.card h3{margin-top:0}
+.card ul,.card ol{margin:6px 0 0;padding-left:20px}
+.card li{margin:4px 0;color:var(--tx2)}
+.card p{color:var(--tx2)}
+.kpi{padding:14px 16px}
+.kpi b{display:block;font-size:26px;letter-spacing:-.5px;font-weight:800}
+.kpi span{font-size:12.5px;color:var(--tx3)}
+.callout{display:flex;gap:12px;padding:13px 16px;border-radius:14px;border:1px solid color-mix(in srgb,var(--cyan) 35%,transparent);background:color-mix(in srgb,var(--cyan) 9%,transparent);color:var(--tx2);margin:14px 0}
+.callout.warn{border-color:color-mix(in srgb,var(--amber) 38%,transparent);background:color-mix(in srgb,var(--amber) 9%,transparent)}
+.callout b{color:var(--tx)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card);margin:10px 0}
+table{width:100%;border-collapse:collapse;min-width:620px}
+th{font-size:12px;color:var(--tx3);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600;background:var(--panel)}
+td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--tx2);font-size:14px}
+tr:last-child td{border-bottom:0}
+td b{color:var(--tx)}
+.tl{position:relative;margin:14px 0 6px;padding-left:24px}
+.tl::before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--line2)}
+.ev{position:relative;padding:0 0 16px}
+.ev::before{content:"";position:absolute;left:-23px;top:6px;width:10px;height:10px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 4px color-mix(in srgb,var(--blue) 22%,transparent)}
+.ev.hot::before{background:var(--amber);box-shadow:0 0 0 4px color-mix(in srgb,var(--amber) 24%,transparent)}
+.ev b{display:block}
+.ev span{color:var(--tx3);font-size:13.5px}
+.price{display:flex;flex-direction:column;gap:8px;position:relative}
+.price .n{font-size:14px;color:var(--tx3);font-weight:600}
+.price .p{font-size:30px;font-weight:800;letter-spacing:-.6px}
+.price .p small{font-size:13px;color:var(--tx3);font-weight:500}
+.price.pop{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset}
+.price ul{list-style:none;padding:0;margin:4px 0 0}
+.price li{padding-left:22px;position:relative;font-size:13.5px}
+.price li::before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:700}
+.pri{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:6px}
+.p0{background:color-mix(in srgb,var(--red) 18%,transparent);color:var(--red)}
+.p1{background:color-mix(in srgb,var(--amber) 20%,transparent);color:var(--amber)}
+.p2{background:color-mix(in srgb,var(--blue) 18%,transparent);color:var(--blue)}
+.calc{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media(max-width:760px){.calc{grid-template-columns:1fr}}
+.field{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px;color:var(--tx2)}
+.field input{width:96px;height:32px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);padding:0 8px;text-align:right}
+.out{display:grid;gap:8px}
+.out .o{display:flex;justify-content:space-between;padding:9px 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+.out .o b{font-size:17px}
+.bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--blue2),var(--cyan))}
+.gantt{display:grid;gap:8px;margin:10px 0}
+.gr{display:grid;grid-template-columns:170px minmax(0,1fr);gap:12px;align-items:center;font-size:13px}
+.gr span{color:var(--tx2)}
+.gt{position:relative;height:22px;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.gt i{position:absolute;top:2px;bottom:2px;border-radius:6px;background:linear-gradient(90deg,var(--blue2),var(--blue));font-style:normal}
+.gt i.c{background:linear-gradient(90deg,var(--cyan),var(--blue))}
+.gt i.a{background:var(--amber)}
+.axis{display:grid;grid-template-columns:170px minmax(0,1fr);gap:12px;font-size:11.5px;color:var(--tx3)}
+.axis div:last-child{display:grid;grid-template-columns:repeat(12,1fr)}
+pre.code{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font:12.5px/1.6 var(--mono);color:var(--tx2);overflow-x:auto;margin:8px 0}
+.ar{direction:rtl;text-align:right;font-family:'Segoe UI',Tahoma,system-ui,sans-serif;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;color:var(--tx2)}
+.src li{margin:5px 0;font-size:13px;word-break:break-all}
+footer{color:var(--tx3);font-size:13px;margin-top:30px}
+@media(max-width:900px){
+  .layout{grid-template-columns:1fr;gap:0}
+  nav.toc{position:static;display:flex;gap:6px;overflow-x:auto;padding:14px 0 4px;max-height:none}
+  nav.toc b{display:none}
+  nav.toc a{flex:none;border:1px solid var(--line);border-radius:99px;padding:5px 12px;white-space:nowrap}
+  nav.toc a.on{border-color:var(--blue)}
+  .hero h1{font-size:26px}
+  .gr,.axis{grid-template-columns:110px minmax(0,1fr)}
+}
+@media print{nav.toc,.topbar{display:none}.layout{display:block}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" id="toc" aria-label="Sections">
+  <b>Contents</b>
+  <a href="#summary">1. Executive summary</a>
+  <a href="#market">2. Why UAE, why now</a>
+  <a href="#customers">3. Customers</a>
+  <a href="#competitors">4. Competition</a>
+  <a href="#product">5. Product (PRD)</a>
+  <a href="#nfr">6. Requirements</a>
+  <a href="#arch">7. Architecture</a>
+  <a href="#model">8. Business model</a>
+  <a href="#gtm">9. Go-to-market</a>
+  <a href="#roadmap">10. Roadmap</a>
+  <a href="#kpis">11. Metrics</a>
+  <a href="#risks">12. Risks</a>
+  <a href="#legal">13. Legal and compliance</a>
+  <a href="#actions">14. Next 10 actions</a>
+  <a href="#appendix">15. Appendix</a>
+  <a href="#sources">16. Sources</a>
+</nav>
+<main>
+<div class="topbar"><button class="iconbtn" id="thm" aria-label="Switch light or dark theme">◐</button></div>
+
+<div class="hero">
+  <div class="k">Taxflow.AI · UAE launch</div>
+  <h1>Product requirements, business model and launch plan</h1>
+  <p>A WhatsApp-first platform that helps UAE accounting firms collect client documents, read them automatically, track FTA deadlines and prepare filing-ready worksheets.</p>
+  <div class="meta"><span class="tag b">Version 1.0</span><span class="tag">20 September 2026</span><span class="tag g">Beachhead market: UAE</span><span class="tag a">Numbers marked “assumption” must be validated</span></div>
+</div>
+
+<!-- ============ 1 ============ -->
+<section id="summary">
+<h2>1. Executive summary</h2>
+<p class="lead">The shortest useful version of this whole plan.</p>
+<div class="grid g4">
+  <div class="card kpi"><b>640,000+</b><span>businesses registered for UAE corporate tax</span></div>
+  <div class="card kpi"><b>1 Jan 2027</b><span>e-invoicing go-live for large businesses</span></div>
+  <div class="card kpi"><b>80–90%</b><span>WhatsApp reach in the UAE (reported range)</span></div>
+  <div class="card kpi"><b>~AED 0.05</b><span>Meta cost of one utility WhatsApp message</span></div>
+</div>
+<div class="grid g2" style="margin-top:12px">
+  <div class="card"><h3>What we build</h3><p>A workspace for UAE accounting firms and tax agents. Clients send bills on WhatsApp. Taxflow files them, reads the tax invoice fields in English and Arabic, chases what is missing, tracks every FTA deadline per client, and produces VAT 201 and corporate tax worksheets with invoice evidence behind each number.</p></div>
+  <div class="card"><h3>What we do not build</h3><ul><li>Not a full accounting ledger. We export to Zoho, QuickBooks, Xero and Tally.</li><li>Not an FTA-accredited e-invoicing provider. We partner with one.</li><li>Not a filing agent. The licensed firm files on EmaraTax.</li></ul></div>
+  <div class="card"><h3>Who pays</h3><p>Boutique accounting firms, corporate tax consultancies, registered tax agents and freelance accountants serving SMEs. We charge the firm, not the end client.</p></div>
+  <div class="card"><h3>How we make money</h3><p>Monthly subscription per firm: AED 249, AED 799 or AED 1,999 by client volume, plus fair usage on documents and WhatsApp messages. Later add-ons: client portal, e-invoicing referral share, network plans.</p></div>
+</div>
+<div class="callout"><span>🎯</span><span><b>Recommended strategy:</b> win 10 design-partner firms by December 2026, ship the core loop (collect, read, track, prepare) before the 1 January 2027 e-invoicing go-live, then launch paid plans in Q1 2027 with 40+ paying firms by September 2027.</span></div>
+<div class="callout warn"><span>⚠️</span><span><b>Honest scale note:</b> UAE alone is a strong beachhead, not a large outcome on its own. A base case reaches roughly AED 4M annual recurring revenue by year three (section 8). Bigger scale comes from expanding to Saudi Arabia and the wider GCC, and from client-side add-ons.</span></div>
+<h3>Decisions needed this week</h3>
+<ol style="color:var(--tx2)">
+<li>Confirm UAE-first and “sell to accountants, not SMEs.”</li>
+<li>Choose the legal entity and location (mainland or free zone).</li>
+<li>Choose a WhatsApp Business provider (BSP) and an e-invoicing partner shortlist.</li>
+<li>Decide where AI processing runs, in the UAE or under approved transfer safeguards (section 7).</li>
+<li>Pick five to ten firms to approach as design partners.</li>
+</ol>
+</section>
+
+<!-- ============ 2 ============ -->
+<section id="market">
+<h2>2. Why UAE, why now</h2>
+<p class="lead">Five forces make the next 12 months unusually favourable.</p>
+<div class="grid g2">
+<div class="card"><h3>1. Corporate tax created bookkeeping demand</h3><p>More than 640,000 businesses are registered for corporate tax, and the first filing round for December 2024 year-ends completed by end of September 2025. Almost every licensed business, including free zone companies, must register. Books must now be IFRS-based and kept for years (VAT records 5 years, corporate tax records 7 years).</p></div>
+<div class="card"><h3>2. E-invoicing forces structured data</h3><p>Invoices must be structured XML in the PINT AE format, sent through a Ministry of Finance accredited provider. A PDF emailed to a client is not an e-invoice under this system. The FTA receives tax data through the five-corner Peppol model. B2C is excluded for now.</p></div>
+<div class="card"><h3>3. WhatsApp is the default business channel</h3><p>Reported WhatsApp penetration is above 80–90% of UAE smartphone users. Clients already send photos of bills to their accountant on WhatsApp. Today that is unmanaged chat history.</p></div>
+<div class="card"><h3>4. Accountants are price-squeezed and busy</h3><p>Outsourced accounting is commonly quoted between AED 500 and AED 5,000 a month per client, with many SMEs at AED 1,500–5,000. Firms win by handling more clients with the same staff, so tools that remove document chasing pay for themselves quickly.</p></div>
+<div class="card"><h3>5. The software gap is the workflow, not the ledger</h3><p>Zoho Books, Wafeq, QuickBooks, Xero and Tally all cover UAE VAT. What accountants still do by hand is collect documents, reconcile evidence and track deadlines across dozens of clients.</p></div>
+<div class="card"><h3>Key dates</h3>
+<div class="tl">
+<div class="ev hot"><b>30 Sep 2026</b><span>Corporate tax return due for December 2025 year-ends</span></div>
+<div class="ev"><b>28 Oct 2026</b><span>VAT 201 due for the quarter ending 30 September</span></div>
+<div class="ev hot"><b>30 Oct 2026</b><span>Deadline to appoint an e-invoicing provider for businesses with AED 50M+ revenue (extended from 31 July)</span></div>
+<div class="ev hot"><b>1 Jan 2027</b><span>Mandatory e-invoicing go-live for large businesses</span></div>
+<div class="ev"><b>31 Mar 2027</b><span>Provider appointment deadline for smaller businesses and government entities</span></div>
+<div class="ev"><b>Mid-2027 (verify)</b><span>Go-live for the remaining businesses, reported as 1 July 2027</span></div>
+</div></div>
+</div>
+<div class="callout warn"><span>⚠️</span><span><b>Dates move.</b> The provider appointment deadline has already been extended once. Store every deadline as editable data and confirm on the Ministry of Finance and FTA sites before you publish anything to customers.</span></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section id="customers">
+<h2>3. Customers and personas</h2>
+<p class="lead">We sell to the firm. The firm’s clients are users but not buyers.</p>
+<h3>Ideal customer profile (ICP)</h3>
+<div class="tw"><table>
+<tr><th>Attribute</th><th>Best fit</th></tr>
+<tr><td><b>Firm type</b></td><td>Boutique accounting and bookkeeping firms, corporate tax consultancies, FTA-registered tax agents, freelance accountants who hold a trade licence</td></tr>
+<tr><td><b>Size</b></td><td>2–20 staff, 30–300 monthly clients</td></tr>
+<tr><td><b>Clients</b></td><td>SMEs, free zone companies, trading firms, consultants, e-commerce sellers</td></tr>
+<tr><td><b>Tools today</b></td><td>Zoho Books, QuickBooks, Xero or Tally, plus WhatsApp groups, email and Excel</td></tr>
+<tr><td><b>Trigger to buy</b></td><td>Corporate tax season, VAT deadlines, client growth, e-invoicing readiness worries</td></tr>
+<tr><td><b>Not yet</b></td><td>Big Four and large groups (long sales cycles), and end-client SMEs buying directly</td></tr>
+</table></div>
+<div class="grid g3">
+<div class="card"><h3>Persona A: Owner of a boutique firm</h3><p><b>Wants:</b> more clients without hiring, fewer late filings.</p><p><b>Pain:</b> team spends hours chasing invoices and bank statements on WhatsApp, then re-typing them.</p><p><b>Buys when:</b> a demo shows one client collected end to end in ten minutes.</p></div>
+<div class="card"><h3>Persona B: Senior accountant or bookkeeper</h3><p><b>Wants:</b> a clean queue of documents to review, not a chat inbox.</p><p><b>Pain:</b> unreadable photos, duplicate bills, missing TRN, unclear VAT treatment.</p><p><b>Adopts when:</b> review is faster than typing and every number links to its source.</p></div>
+<div class="card"><h3>Persona C: SME owner (the client)</h3><p><b>Wants:</b> to send bills without learning software.</p><p><b>Pain:</b> forgets, sends blurry photos, gets asked the same thing twice.</p><p><b>Accepts when:</b> it stays inside WhatsApp, in Arabic or English, with polite reminders.</p></div>
+</div>
+<h3>Jobs to be done</h3>
+<ul style="color:var(--tx2)">
+<li>“Get every client’s documents in on time without me messaging each one.”</li>
+<li>“Turn bills into clean data I can trust and post to our accounting system.”</li>
+<li>“Never miss an FTA deadline, and see who is behind at a glance.”</li>
+<li>“Prepare the VAT and corporate tax numbers with evidence I can defend in an audit.”</li>
+<li>“Be ready when my clients’ e-invoicing dates arrive.”</li>
+</ul>
+</section>
+
+<!-- ============ 4 ============ -->
+<section id="competitors">
+<h2>4. Competitive landscape in the UAE</h2>
+<p class="lead">Prices are as reported by third-party UAE guides in 2026 and vary by source. Verify before quoting.</p>
+<div class="tw"><table>
+<tr><th>Player</th><th>What it is</th><th>Price (AED)</th><th>Strength</th><th>Gap we can use</th></tr>
+<tr><td><b>Zoho Books UAE</b></td><td>Cloud accounting for SMEs</td><td>Roughly 50–300 a month by plan; free tier</td><td>Low price, bilingual Arabic invoices, VAT and corporate tax modules, bank feeds</td><td>Built for the business owner, not for an accountant managing 100 clients. WhatsApp reminders need extra tools.</td></tr>
+<tr><td><b>Wafeq</b></td><td>Arabic-first GCC accounting and e-invoicing</td><td>Free tier; higher plan about 291 a month</td><td>Local, Arabic-first, e-invoicing focus</td><td>Ledger-centric. Not a document collection and deadline hub for firms.</td></tr>
+<tr><td><b>QuickBooks Online</b></td><td>Global accounting</td><td>About 110 a month up, or about 1,800 a year</td><td>Integrations, familiar to accountants</td><td>Reported workarounds for WPS payroll, corporate tax depth and Arabic invoices</td></tr>
+<tr><td><b>Xero</b></td><td>Global accounting</td><td>About 50–600 a month, sources differ</td><td>Good ecosystem</td><td>Reported no direct VAT filing to the FTA and manual Arabic templates</td></tr>
+<tr><td><b>TallyPrime</b></td><td>Desktop accounting popular with trading businesses</td><td>About 1,830 a year</td><td>Huge installed base among Indian-origin businesses</td><td>Desktop-first. Its own AI document feature helps Tally users only.</td></tr>
+<tr><td><b>Odoo, Sage, NetSuite</b></td><td>ERP and mid-market accounting</td><td>Higher, project-based</td><td>Depth</td><td>Too heavy for boutique firms</td></tr>
+<tr><td><b>Free tools (for example Qaspro)</b></td><td>Free UAE accounting plans</td><td>Free</td><td>Price</td><td>Pushes SME price down, which is why we do not sell to SMEs</td></tr>
+<tr><td><b>Practice tools (TaxDome, Karbon and others)</b></td><td>Client portals and workflow, US and UK style</td><td>Per user, USD</td><td>Mature workflow</td><td>Not built for WhatsApp, FTA calendars, AED or Arabic (to validate)</td></tr>
+</table></div>
+<h3>Where we win</h3>
+<div class="grid g3">
+<div class="card"><h3>WhatsApp-native</h3><p>Everything happens where the client already is, with consent, quiet hours and Arabic templates.</p></div>
+<div class="card"><h3>Made for firms</h3><p>Multi-client queues, deadline progress per client, team roles and audit log. Ledgers are single-business tools.</p></div>
+<div class="card"><h3>UAE-specific brain</h3><p>TRN checks, 5%, 0% and exempt tagging, emirate-level VAT boxes, corporate tax bridge, and PINT AE readiness checks.</p></div>
+</div>
+<div class="callout"><span>🧭</span><span><b>Positioning:</b> “The document and deadline hub for UAE accounting firms. Collect on WhatsApp, read automatically, file with confidence.” Compete on workflow, not on ledgers, and stay friendly with Zoho, QuickBooks, Xero and Tally by exporting to them.</span></div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section id="product">
+<h2>5. Product requirements (PRD)</h2>
+<p class="lead">Priority key: <span class="pri p0">P0</span> must ship in the MVP, <span class="pri p1">P1</span> within six months after launch, <span class="pri p2">P2</span> later.</p>
+<h3>Vision and problem</h3>
+<p style="color:var(--tx2)">UAE accountants lose hours every week chasing, sorting and retyping client documents that arrive as photos in WhatsApp chats. Corporate tax and e-invoicing raise the stakes: more filings, stricter evidence and structured data. Taxflow gives the firm one place where documents arrive, get read, get checked, and turn into filing-ready work.</p>
+<h3>Core loop</h3>
+<div class="grid g4">
+<div class="card"><b>1. Collect</b><p>Checklist and reminders on WhatsApp</p></div>
+<div class="card"><b>2. Read</b><p>Extract tax invoice data in English and Arabic</p></div>
+<div class="card"><b>3. Check</b><p>Review queue, duplicates, TRN and VAT rules</p></div>
+<div class="card"><b>4. Prepare</b><p>Worksheets and exports for filing</p></div>
+</div>
+
+<h3>Feature list</h3>
+<div class="tw"><table>
+<tr><th style="width:70px">ID</th><th>Feature</th><th style="width:60px">Pri.</th><th>What it does</th></tr>
+<tr><td>F1</td><td><b>Firm and client setup</b></td><td><span class="pri p0">P0</span></td><td>Import clients from Excel. Store legal name, licence, emirate or free zone, VAT TRN and period (monthly or quarterly), corporate tax TRN, financial year end, small business relief status and contact on WhatsApp.</td></tr>
+<tr><td>F2</td><td><b>WhatsApp collection hub</b></td><td><span class="pri p0">P0</span></td><td>Connect a firm number through a BSP. Record consent. Send Arabic and English templates on a schedule. Two-way chat per client. Automatically capture incoming photos and PDFs into the client’s folder. Approval mode before sending. Quiet hours.</td></tr>
+<tr><td>F3</td><td><b>Document extraction</b></td><td><span class="pri p0">P0</span></td><td>Read supplier and customer invoices, receipts and bank statements. Fields: invoice number, date, supplier or customer, TRN, currency, taxable amount, VAT amount, total, VAT category (5%, 0%, exempt, reverse charge). Arabic and English. Confidence score per field.</td></tr>
+<tr><td>F4</td><td><b>Review queue</b></td><td><span class="pri p0">P0</span></td><td>Side-by-side original and extracted data. Low-confidence fields highlighted. Duplicate detection. TRN format check. Approve, edit or reject. All edits logged.</td></tr>
+<tr><td>F5</td><td><b>Client vault</b></td><td><span class="pri p0">P0</span></td><td>Folder per client, then year, then month, with Raw, Extracted and Generated subfolders. Retention rules. Search. Stored in a UAE region.</td></tr>
+<tr><td>F6</td><td><b>Deadline engine</b></td><td><span class="pri p0">P0</span></td><td>Calendar per client from their profile: VAT 201, corporate tax registration and return, audit needs above AED 50M revenue, e-invoicing milestones. Step-by-step progress bars. Alerts for at-risk clients. Editable dates.</td></tr>
+<tr><td>F7</td><td><b>VAT 201 worksheet</b></td><td><span class="pri p0">P0</span></td><td>Box-by-box values by emirate from approved invoices, with an invoice-level annex. The accountant types the figures into EmaraTax.</td></tr>
+<tr><td>F8</td><td><b>Exports</b></td><td><span class="pri p0">P0</span></td><td>Excel and CSV. Zoho Books and QuickBooks import formats first.</td></tr>
+<tr><td>F9</td><td><b>Roles and audit log</b></td><td><span class="pri p0">P0</span></td><td>Owner, senior, junior and read-only roles. Every action logged. Two-factor sign-in.</td></tr>
+<tr><td>F10</td><td><b>Corporate tax workings</b></td><td><span class="pri p1">P1</span></td><td>Accounting profit to taxable income bridge, small business relief prompt, schedule checklist, supporting documents pack.</td></tr>
+<tr><td>F11</td><td><b>Xero, Tally and Odoo exports</b></td><td><span class="pri p1">P1</span></td><td>More import formats and direct API pushes.</td></tr>
+<tr><td>F12</td><td><b>Assistant chat</b></td><td><span class="pri p1">P1</span></td><td>Ask “who has not sent documents?” or “prepare VAT for Client X” and jump to the right page. Never sends or files without approval.</td></tr>
+<tr><td>F13</td><td><b>Client portal</b></td><td><span class="pri p1">P1</span></td><td>Optional link for clients to upload, view checklists and pay fee invoices.</td></tr>
+<tr><td>F14</td><td><b>E-invoice readiness</b></td><td><span class="pri p1">P1</span></td><td>Check supplier and customer invoices against PINT AE field requirements, flag missing data, and show a per-client readiness score. Hand off to a partner provider.</td></tr>
+<tr><td>F15</td><td><b>FTA audit file (FAF) export</b></td><td><span class="pri p1">P1</span></td><td>Generate the audit file from approved data (to validate the current format).</td></tr>
+<tr><td>F16</td><td><b>Windows desktop agent</b></td><td><span class="pri p1">P1</span></td><td>Sync the vault to a local folder for firms that want files on their own machines.</td></tr>
+<tr><td>F17</td><td><b>Bank statement parsing</b></td><td><span class="pri p1">P1</span></td><td>UAE bank PDFs and Excel into transactions, with matching to invoices.</td></tr>
+<tr><td>F18</td><td><b>Partner provider connector</b></td><td><span class="pri p2">P2</span></td><td>Send validated invoice data to an accredited e-invoicing provider.</td></tr>
+<tr><td>F19</td><td><b>Payroll (WPS) helper</b></td><td><span class="pri p2">P2</span></td><td>Collect payroll inputs and produce checks before the payroll file goes out.</td></tr>
+<tr><td>F20</td><td><b>Multi-office and SSO</b></td><td><span class="pri p2">P2</span></td><td>For larger firms.</td></tr>
+</table></div>
+
+<h3>Key user stories and acceptance criteria (MVP)</h3>
+<div class="grid g2">
+<div class="card"><h3>Collect documents</h3>
+<p><b>As</b> a firm owner, <b>I want</b> to send a document request to 50 clients in one action <b>so that</b> I stop messaging them one by one.</p>
+<ul><li>Select clients, template, language and send time.</li><li>Only clients with recorded consent receive messages.</li><li>No message goes out between 8 pm and 8 am, or on weekends, unless the owner overrides.</li><li>Delivery and read status visible per client.</li></ul></div>
+<div class="card"><h3>Capture incoming files</h3>
+<p><b>As</b> an accountant, <b>I want</b> every photo a client sends to land in the right folder <b>so that</b> nothing stays buried in chat.</p>
+<ul><li>Attachment saved within 30 seconds to the client’s Raw folder for the correct month.</li><li>Checklist item ticks when a matching document type arrives.</li><li>Unmatched files go to an “Unsorted” list for a one-click assignment.</li></ul></div>
+<div class="card"><h3>Read invoices</h3>
+<p><b>As</b> a bookkeeper, <b>I want</b> data extracted automatically <b>so that</b> I review instead of type.</p>
+<ul><li>Target for printed English tax invoices: at least 95% of key fields correct without edit (measured on design-partner data).</li><li>Arabic and bilingual invoices supported, with a lower first-release target that we publish honestly.</li><li>Fields below the confidence limit are highlighted and must be confirmed.</li></ul></div>
+<div class="card"><h3>Track deadlines</h3>
+<p><b>As</b> an owner, <b>I want</b> to see who is behind <b>so that</b> I act before a late filing.</p>
+<ul><li>Each client shows a progress bar built from its task steps.</li><li>Clients with a filing due within 7 days and less than 60% progress show as at risk.</li><li>Dates are editable and every change is logged.</li></ul></div>
+<div class="card"><h3>Prepare VAT 201</h3>
+<p><b>As</b> an accountant, <b>I want</b> box values with evidence <b>so that</b> I can file quickly and defend the numbers.</p>
+<ul><li>Standard-rated sales appear by emirate, with zero-rated, exempt, imports and reverse charge in their own lines.</li><li>Every figure opens the list of invoices behind it.</li><li>Draft only. The system never submits to the FTA.</li></ul></div>
+<div class="card"><h3>Stay in control</h3>
+<p><b>As</b> an owner, <b>I want</b> approvals and logs <b>so that</b> I stay professionally responsible.</p>
+<ul><li>Approval mode is on by default for outgoing messages.</li><li>Every edit records who, when, before and after.</li><li>Export the audit log as a file.</li></ul></div>
+</div>
+<h3>Explicit non-goals for v1</h3>
+<ul style="color:var(--tx2)">
+<li>Posting journal entries or replacing the accounting system.</li>
+<li>Becoming an accredited e-invoicing provider.</li>
+<li>Submitting to the FTA on the firm’s behalf.</li>
+<li>Selling directly to end-client SMEs.</li>
+<li>Marketing broadcasts. We use utility messages tied to the firm’s existing service.</li>
+</ul>
+</section>
+
+<!-- ============ 6 ============ -->
+<section id="nfr">
+<h2>6. Non-functional requirements</h2>
+<div class="tw"><table>
+<tr><th>Area</th><th>Requirement</th></tr>
+<tr><td><b>Language</b></td><td>Full Arabic and English interface with right-to-left layout. Arabic and English OCR. Arabic WhatsApp templates approved by Meta.</td></tr>
+<tr><td><b>Data residency</b></td><td>Client files and extracted data stored in a UAE cloud region. E-invoice data must be stored within the UAE or in line with the Tax Procedures Law, so keep that path in-country from day one.</td></tr>
+<tr><td><b>Privacy</b></td><td>Comply with the UAE PDPL. The firm is the data controller for its clients’ data and Taxflow is the processor. Provide a data processing agreement, deletion and export on request, breach notification process. DIFC and ADGM have their own data laws, so track them separately.</td></tr>
+<tr><td><b>Security</b></td><td>Encryption in transit and at rest, per-firm data isolation, role-based access, two-factor authentication, immutable audit log, regular penetration tests. Start ISO 27001 or SOC 2 readiness in year one.</td></tr>
+<tr><td><b>Accuracy and trust</b></td><td>Never auto-file. Show confidence. Keep the original beside the extraction. Publish accuracy by document type honestly.</td></tr>
+<tr><td><b>Performance</b></td><td>Document read in under 30 seconds for a single invoice. Page loads under 2 seconds. Availability 99.9% target.</td></tr>
+<tr><td><b>Messaging rules</b></td><td>Consent captured and stored. Opt-out honoured within one message. Only approved templates outside the 24-hour window. Respect 24-hour customer service windows.</td></tr>
+<tr><td><b>Retention</b></td><td>Configurable retention with defaults of 5 years for VAT records and 7 years for corporate tax records (confirm with the firm’s advisor).</td></tr>
+<tr><td><b>Integrations</b></td><td>Stable export formats, webhooks and a documented API from launch of the Practice plan.</td></tr>
+<tr><td><b>Accessibility</b></td><td>Keyboard-friendly, readable contrast, works on mobile browsers for approvals.</td></tr>
+</table></div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section id="arch">
+<h2>7. Architecture and technology choices</h2>
+<p class="lead">Keep the first version simple. Buy commodity parts, build the workflow.</p>
+<div class="grid g2">
+<div class="card"><h3>System components</h3><ul>
+<li><b>Web app</b> for firms, with Arabic and English.</li>
+<li><b>WhatsApp service</b> through a BSP’s API, with webhooks for inbound media and delivery status.</li>
+<li><b>Ingestion pipeline</b> that validates files, removes duplicates and queues them.</li>
+<li><b>Extraction service</b> that combines OCR with a language model and rule checks (TRN format, arithmetic, VAT rate).</li>
+<li><b>Rules engine</b> for UAE deadlines, VAT categories and worksheet mapping.</li>
+<li><b>Vault</b> in UAE-region object storage with per-firm encryption keys.</li>
+<li><b>Export and API layer</b> for accounting systems.</li>
+<li><b>Audit and billing services.</b></li></ul></div>
+<div class="card"><h3>Hosting and AI processing</h3><ul>
+<li>Host in a UAE region from a major cloud with UAE data centres.</li>
+<li>Personal data may leave the UAE only to countries or under safeguards allowed by the PDPL. Sending client documents to a foreign AI service can be a cross-border transfer.</li>
+<li>Prefer model processing inside the UAE. If you use an outside provider, use contractual safeguards, minimise what is sent and get legal review first.</li>
+<li>Measure cost and accuracy per document type and route easy documents to cheaper paths.</li></ul></div>
+<div class="card"><h3>Buy vs build</h3><ul>
+<li><b>Buy:</b> WhatsApp BSP, cloud, OCR baseline, payments, email, monitoring.</li>
+<li><b>Build:</b> UAE rules engine, review queue, deadline engine, worksheets, firm workflow.</li>
+<li><b>Partner:</b> e-invoicing provider. Becoming one needs Peppol certification and verifiable operating experience, which a new company will not have.</li></ul></div>
+<div class="card"><h3>Core data model</h3>
+<pre class="code">Firm ── Users (roles)
+ └─ Client (TRNs, emirate, VAT period, year end)
+     ├─ Contact (WhatsApp number, consent, language)
+     ├─ Checklist ── Requests ── Messages
+     ├─ Document (raw file, status)
+     │    └─ Extraction (fields, confidence, edits)
+     ├─ Task (filing, due date, steps)
+     └─ Output (VAT 201 worksheet, export files)
+AuditEvent (who, what, when, before, after)</pre></div>
+</div>
+</section>
+
+<!-- ============ 8 ============ -->
+<section id="model">
+<h2>8. Business model</h2>
+<p class="lead">Price on client volume, keep it predictable, and pass message costs through fairly.</p>
+<h3>Pricing (proposed, to validate with design partners)</h3>
+<div class="grid g3">
+<div class="card price"><div class="n">Starter</div><div class="p">AED 249<small> / month</small></div><p>Freelancers and very small firms</p>
+<ul><li>1 user, up to 30 clients</li><li>600 documents a month</li><li>WhatsApp collection and reminders</li><li>Deadline tracking and vault</li><li>Excel and CSV exports</li><li>600 utility messages included</li></ul></div>
+<div class="card price pop"><div class="n">Growth · most firms</div><div class="p">AED 799<small> / month</small></div><p>Boutique firms and tax consultancies</p>
+<ul><li>5 users, up to 120 clients</li><li>3,000 documents a month</li><li>Zoho, QuickBooks, Xero, Tally exports</li><li>VAT 201 and corporate tax workings</li><li>Client portal and Arabic templates</li><li>2,400 utility messages included</li></ul></div>
+<div class="card price"><div class="n">Practice</div><div class="p">AED 1,999<small> / month</small></div><p>Larger firms</p>
+<ul><li>15 users, up to 400 clients</li><li>12,000 documents a month</li><li>API access and audit log export</li><li>E-invoice readiness and provider connector</li><li>Custom branding, dedicated onboarding</li><li>8,000 utility messages included</li></ul></div>
+</div>
+<div class="grid g2" style="margin-top:12px">
+<div class="card"><h3>Add-ons and overages</h3><ul><li>Extra documents: AED 0.30 each above the plan.</li><li>Extra clients: AED 4 per client per month.</li><li>WhatsApp beyond the included amount: Meta’s rate plus 10%.</li><li>Client portal for Starter: AED 99 a month.</li><li>Annual plans: two months free.</li></ul></div>
+<div class="card"><h3>Design partner offer</h3><ul><li>First 10 firms: free for 60 days, then 40% off for 12 months.</li><li>In return: weekly feedback, sample documents, and a permitted case study.</li><li>Cap of one partner per business type at first, so we learn different workflows.</li></ul></div>
+</div>
+<h3>Why this pricing works</h3>
+<ul style="color:var(--tx2)">
+<li>A firm charges AED 1,500–5,000 a month per client. At 80 clients on Growth, our price is under AED 10 per client, a tiny share of what they earn.</li>
+<li>It sits far below the cost of hiring an accountant in Dubai (reported AED 10,000–20,000 a month all-in), so one saved half-day per week pays for it.</li>
+<li>It is comparable to what firms already pay for ledger software, so it feels like a normal tool expense.</li>
+</ul>
+<h3>WhatsApp cost reality</h3>
+<p style="color:var(--tx2)">Meta now bills per delivered template message. Reported UAE rates are roughly AED 0.04–0.06 for utility and about AED 0.16–0.18 for marketing. Replies inside a customer’s 24-hour window are free, and Meta has billed in AED since April 2026. A firm with 100 clients sending 8 utility messages each a month spends around AED 40. That is small, so the real cost risk is marketing-style messaging, which we avoid.</p>
+<h3>Unit economics and revenue calculator</h3>
+<p style="color:var(--tx3);margin-bottom:8px">Change the yellow assumptions. Defaults are placeholders to test, not facts.</p>
+<div class="card">
+<div class="calc">
+<div>
+<h4>Firms per plan</h4>
+<div class="field"><label for="s1">Starter firms</label><input id="s1" type="number" min="0" value="20"></div>
+<div class="field"><label for="g1">Growth firms</label><input id="g1" type="number" min="0" value="20"></div>
+<div class="field"><label for="p1">Practice firms</label><input id="p1" type="number" min="0" value="5"></div>
+<h4 style="margin-top:14px">Assumptions</h4>
+<div class="field"><label for="cd">Cost per document (AED)</label><input id="cd" type="number" step="0.01" min="0" value="0.08"></div>
+<div class="field"><label for="mc">Messages per client per month</label><input id="mc" type="number" min="0" value="8"></div>
+<div class="field"><label for="mp">Cost per message (AED)</label><input id="mp" type="number" step="0.01" min="0" value="0.05"></div>
+<div class="field"><label for="ov">Infra and support (% of revenue)</label><input id="ov" type="number" min="0" max="100" value="15"></div>
+<div class="field"><label for="dc">Avg documents a month: Starter / Growth / Practice</label><span class="mono" style="font-family:var(--mono);font-size:12px">300 / 1,200 / 5,000</span></div>
+<div class="field"><label for="cl">Avg clients: Starter / Growth / Practice</label><span class="mono" style="font-family:var(--mono);font-size:12px">20 / 80 / 250</span></div>
+</div>
+<div class="out" id="calcout" aria-live="polite">
+<div class="o"><span>Monthly recurring revenue</span><b id="o1">–</b></div>
+<div class="o"><span>Annual recurring revenue</span><b id="o2">–</b></div>
+<div class="o"><span>AI and OCR cost</span><b id="o3">–</b></div>
+<div class="o"><span>WhatsApp cost</span><b id="o4">–</b></div>
+<div class="o"><span>Infra and support</span><b id="o5">–</b></div>
+<div class="o"><span>Gross margin</span><b id="o6">–</b></div>
+<div class="bar"><i id="gmbar" style="width:0"></i></div>
+<div class="o"><span>Average revenue per firm</span><b id="o7">–</b></div>
+</div>
+</div>
+</div>
+<h3>Revenue scenarios (illustrative)</h3>
+<div class="tw"><table>
+<tr><th>Scenario</th><th>Paying firms end of year 1</th><th>End of year 2</th><th>End of year 3</th><th>ARR at year 3</th></tr>
+<tr><td><b>Conservative</b></td><td>25</td><td>90</td><td>250</td><td>≈ AED 2.0M</td></tr>
+<tr><td><b>Base</b></td><td>45</td><td>180</td><td>500</td><td>≈ AED 4.3M</td></tr>
+<tr><td><b>Ambitious</b></td><td>70</td><td>300</td><td>900</td><td>≈ AED 8.5M</td></tr>
+</table></div>
+<p style="color:var(--tx3);font-size:13.5px">Base case assumes an average of about AED 720 per firm per month in year three as more firms move up plans. The UAE has no reliable public count of accounting firms. Build your own target list from FTA registered tax agents and licensed firms to size the market.</p>
+<h3>Bottom-up market check (assumption)</h3>
+<p style="color:var(--tx2)">If 2,000–3,000 firms fit the ICP and each spends about AED 9,000 a year on this category, the UAE revenue pool is roughly AED 18–27M a year. Winning 15–20% of it equals the base scenario. This is a guess until your interviews confirm the firm count and willingness to pay.</p>
+<h3>Other revenue lines, later</h3>
+<ul style="color:var(--tx2)">
+<li><b>E-invoicing referral share</b> from an accredited provider partner.</li>
+<li><b>Client portal and payments</b> add-on per end client.</li>
+<li><b>Network plans</b> for corporate service providers and free zone consultancies with many clients.</li>
+<li><b>Data-quality services:</b> paid clean-up of supplier and customer master data for e-invoicing readiness.</li>
+</ul>
+<h3>Target unit economics</h3>
+<div class="grid g4">
+<div class="card kpi"><b>75%+</b><span>gross margin target after optimisation</span></div>
+<div class="card kpi"><b>&lt; 4 mo</b><span>CAC payback target</span></div>
+<div class="card kpi"><b>&lt; 3%</b><span>monthly logo churn target</span></div>
+<div class="card kpi"><b>3× +</b><span>LTV to CAC target</span></div>
+</div>
+</section>
+
+<!-- ============ 9 ============ -->
+<section id="gtm">
+<h2>9. Go-to-market plan</h2>
+<h3>Motion: founder-led sales, then partners</h3>
+<div class="grid g2">
+<div class="card"><h3>Phase 1: design partners (Oct–Dec 2026)</h3><ul>
+<li>Interview 20 firms. Ask how they collect documents today, hours lost per week, and what they pay for tools.</li>
+<li>Recruit 10 design partners from FTA-registered tax agents, boutique firms and freelancers across Dubai, Abu Dhabi and Sharjah.</li>
+<li>Onboard each with 10 real clients, in Arabic and English.</li>
+<li>Success: at least 50% less time chasing documents and at least 8 of 10 firms willing to pay.</li></ul></div>
+<div class="card"><h3>Phase 2: paid launch (Jan–Mar 2027)</h3><ul>
+<li>Convert partners to paid plans. Publish two case studies.</li>
+<li>Lead with e-invoicing readiness: a free “Is your client ready?” checker.</li>
+<li>Run webinars with a tax agent or an ASP partner around the 31 March 2027 appointment deadline.</li>
+<li>Ramadan is expected around February to early March 2027, so schedule quieter outreach and Ramadan-aware reminder times.</li></ul></div>
+<div class="card"><h3>Phase 3: scale (Apr–Sep 2027)</h3><ul>
+<li>Referral programme: one free month for each firm referred.</li>
+<li>Partner with corporate service providers and free zone consultancies who have many SME clients needing accounting.</li>
+<li>Prepare for the corporate tax filing season, with the next big deadline on 30 September 2027 for December 2026 year-ends.</li>
+<li>Hire a customer success lead who speaks Arabic.</li></ul></div>
+<div class="card"><h3>Phase 4: extend (from Q4 2027)</h3><ul>
+<li>Evaluate Saudi Arabia and the wider GCC, where e-invoicing rules already apply, using the same core with a new country pack.</li>
+<li>Evaluate Singapore and the UK after that (see the multi-country plan).</li></ul></div>
+</div>
+<h3>Channels, in order of expected return</h3>
+<div class="tw"><table>
+<tr><th>Channel</th><th>How</th><th>Why</th></tr>
+<tr><td><b>Direct outreach</b></td><td>LinkedIn and WhatsApp to tax agents and boutique firms, short demo, 60-day trial</td><td>Fast feedback, no middleman</td></tr>
+<tr><td><b>E-invoicing partner</b></td><td>Co-marketing with an accredited provider and referral share</td><td>They need clean data and accountants’ trust</td></tr>
+<tr><td><b>Software partners</b></td><td>Listings and joint content with Zoho, QuickBooks and Xero implementation partners</td><td>Their partners sell to the same firms</td></tr>
+<tr><td><b>Content</b></td><td>Deadline calendar, VAT 201 worksheet template, e-invoice readiness checklist, Arabic guides</td><td>Search traffic and trust</td></tr>
+<tr><td><b>Community</b></td><td>Accountant WhatsApp and LinkedIn groups, free zone events, professional meetups</td><td>Word of mouth is strong in this market</td></tr>
+<tr><td><b>Referrals</b></td><td>Free month per referred firm</td><td>Low cost</td></tr>
+</table></div>
+<h3>Sales pitch in one line</h3>
+<div class="callout"><span>💬</span><span>“Let your clients keep using WhatsApp. We turn what they send into checked data and a filing-ready worksheet, and we remind them for you.”</span></div>
+</section>
+
+<!-- ============ 10 ============ -->
+<section id="roadmap">
+<h2>10. Roadmap and timeline</h2>
+<div class="axis"><div></div><div><span>Oct 26</span><span>Nov</span><span>Dec</span><span>Jan 27</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span></div></div>
+<div class="gantt">
+<div class="gr"><span>Discovery and interviews</span><div class="gt"><i style="left:0;width:12%"></i></div></div>
+<div class="gr"><span>Legal, BSP, hosting</span><div class="gt"><i class="a" style="left:0;width:16%"></i></div></div>
+<div class="gr"><span>MVP build (F1–F9)</span><div class="gt"><i style="left:8%;width:33%"></i></div></div>
+<div class="gr"><span>Design-partner pilot</span><div class="gt"><i class="c" style="left:25%;width:25%"></i></div></div>
+<div class="gr"><span>Paid launch</span><div class="gt"><i class="c" style="left:42%;width:12%"></i></div></div>
+<div class="gr"><span>P1: corporate tax, exports</span><div class="gt"><i style="left:45%;width:30%"></i></div></div>
+<div class="gr"><span>P1: e-invoice readiness</span><div class="gt"><i class="a" style="left:33%;width:30%"></i></div></div>
+<div class="gr"><span>Security certification prep</span><div class="gt"><i style="left:50%;width:50%"></i></div></div>
+<div class="gr"><span>Corporate tax season prep</span><div class="gt"><i class="c" style="left:70%;width:28%"></i></div></div>
+</div>
+<h3>First 90 days, week by week</h3>
+<div class="tw"><table>
+<tr><th style="width:120px">Weeks</th><th>Focus</th><th>Output</th></tr>
+<tr><td>1–2</td><td>Discovery, legal entity, BSP choice, hosting choice, ASP partner shortlist</td><td>20 interviews, signed design-partner intents, final scope</td></tr>
+<tr><td>3–4</td><td>Foundations: sign-in, roles, client import, vault, audit log, Arabic and English shell</td><td>Working skeleton on UAE-region hosting</td></tr>
+<tr><td>5–6</td><td>WhatsApp hub: consent, templates, inbound capture, checklist</td><td>First real client collected end to end</td></tr>
+<tr><td>7–8</td><td>Extraction and review queue for English and Arabic tax invoices</td><td>Accuracy report on partner documents</td></tr>
+<tr><td>9–10</td><td>Deadline engine and VAT 201 worksheet</td><td>Worksheet checked by a tax agent</td></tr>
+<tr><td>11–12</td><td>Exports, billing, onboarding flow, security review</td><td>Pilot with 10 firms</td></tr>
+<tr><td>13</td><td>Review and decide</td><td>Go or no-go for paid launch based on pilot metrics</td></tr>
+</table></div>
+<h3>Team (lean plan)</h3>
+<div class="grid g3">
+<div class="card"><h3>Core (months 1–6)</h3><ul><li>Founder / product lead</li><li>2 full-stack engineers</li><li>1 ML or data engineer</li><li>1 part-time UAE tax agent as domain advisor</li></ul></div>
+<div class="card"><h3>Add after launch</h3><ul><li>Customer success (Arabic and English)</li><li>Sales or partnerships lead</li><li>Security and compliance lead (part-time)</li></ul></div>
+<div class="card"><h3>Budget (assumption)</h3><p>A lean team of about five costs roughly AED 120,000–180,000 a month all-in. Plan at least 12 months of runway before revenue covers costs. Adjust to your own funding.</p></div>
+</div>
+</section>
+
+<!-- ============ 11 ============ -->
+<section id="kpis">
+<h2>11. Success metrics</h2>
+<div class="callout"><span>⭐</span><span><b>North-star metric:</b> documents collected and approved per firm per month. It rises only when clients send, the system reads, and accountants trust the result.</span></div>
+<div class="tw"><table>
+<tr><th>Stage</th><th>Metric</th><th>Target</th></tr>
+<tr><td><b>Activation</b></td><td>Firm sends first document request within 48 hours of sign-up</td><td>70%</td></tr>
+<tr><td><b>Activation</b></td><td>First client fully collected within 7 days</td><td>60%</td></tr>
+<tr><td><b>Product quality</b></td><td>Key fields approved without edit (printed English invoices)</td><td>≥ 95%</td></tr>
+<tr><td><b>Product quality</b></td><td>Median review time per invoice</td><td>&lt; 30 seconds</td></tr>
+<tr><td><b>Value</b></td><td>Reduction in time spent chasing documents</td><td>≥ 50%</td></tr>
+<tr><td><b>Engagement</b></td><td>Weekly active firms</td><td>≥ 80% of paying</td></tr>
+<tr><td><b>Client side</b></td><td>Share of requests answered within 3 days</td><td>≥ 65%</td></tr>
+<tr><td><b>Business</b></td><td>Monthly recurring revenue, logo churn, CAC payback, gross margin</td><td>See section 8</td></tr>
+<tr><td><b>Trust</b></td><td>Serious incidents (data or wrong-send)</td><td>0</td></tr>
+</table></div>
+</section>
+
+<!-- ============ 12 ============ -->
+<section id="risks">
+<h2>12. Risks and how to reduce them</h2>
+<div class="tw"><table>
+<tr><th>Risk</th><th>Impact</th><th>Response</th></tr>
+<tr><td><b>E-invoicing dates or rules change</b></td><td>Wrong urgency, wrong features</td><td>Editable rule data, monitor Ministry of Finance notices, keep messaging factual</td></tr>
+<tr><td><b>Big vendors add the same features</b></td><td>Tally already has AI document reading for its users; Zoho or Wafeq may add WhatsApp</td><td>Own the multi-system firm workflow, be faster in Arabic and UAE rules, integrate instead of fight</td></tr>
+<tr><td><b>Meta policy or price changes</b></td><td>Cost and delivery risk</td><td>Use utility templates, pass costs through, support email and SMS fallback, avoid marketing use</td></tr>
+<tr><td><b>Accuracy failures</b></td><td>Loss of trust, wrong filings</td><td>Human review by default, confidence scores, visible originals, audit trail, never auto-file</td></tr>
+<tr><td><b>PDPL and cross-border transfer</b></td><td>Fines, blocked deals</td><td>UAE-region hosting, processing agreements, minimise data sent to outside services, legal review</td></tr>
+<tr><td><b>Arabic OCR quality</b></td><td>Weak first impressions</td><td>Test on real partner documents early, publish accuracy by language, improve with feedback</td></tr>
+<tr><td><b>Seasonal demand</b></td><td>Signups spike near deadlines then churn</td><td>Annual plans, month-round value (bank, payroll, VAT), deadline-based onboarding offers</td></tr>
+<tr><td><b>Price pressure from free tools</b></td><td>Low willingness to pay</td><td>Sell to firms, price against staff time saved, not against SME ledger price</td></tr>
+<tr><td><b>Dependence on one partner</b></td><td>E-invoicing provider or BSP failure</td><td>Two shortlisted vendors, thin integration layer</td></tr>
+<tr><td><b>Slow sales cycles with larger firms</b></td><td>Cash strain</td><td>Focus on boutique firms and freelancers first</td></tr>
+</table></div>
+</section>
+
+<!-- ============ 13 ============ -->
+<section id="legal">
+<h2>13. Legal and compliance checklist</h2>
+<div class="grid g2">
+<div class="card"><h3>Company</h3><ul><li>Choose mainland or a free zone for the operating company. Confirm licence activity for software.</li><li>Register for VAT once taxable supplies exceed the threshold (AED 375,000) and charge 5% on subscriptions to UAE customers, subject to advice.</li><li>Register for corporate tax within the required period.</li><li>Bank account and a UAE payment gateway for AED billing.</li></ul></div>
+<div class="card"><h3>WhatsApp</h3><ul><li>Meta business verification needs a UAE trade licence and authorised signatory details.</li><li>Approved templates in Arabic and English. Approval is usually within a day.</li><li>Documented opt-in for each client contact. Honour opt-outs.</li></ul></div>
+<div class="card"><h3>Data protection</h3><ul><li>Data processing agreement with every firm.</li><li>Record of processing activities and a breach procedure.</li><li>Check whether a Data Protection Officer is needed for your scale.</li><li>Note that the PDPL executive regulations have been reported inconsistently. Ask a UAE data protection lawyer for the current status.</li></ul></div>
+<div class="card"><h3>Professional boundaries</h3><ul><li>Taxflow prepares drafts. The licensed firm reviews and files.</li><li>Only FTA registered tax agents can represent taxpayers before the FTA, so market to them accurately.</li><li>Terms of service should make the firm responsible for its professional judgement.</li></ul></div>
+<div class="card"><h3>E-invoicing</h3><ul><li>Do not claim to be an accredited provider.</li><li>Sign a partner agreement with an accredited provider that appears on the Ministry of Finance list.</li><li>Keep any invoice data routed to the partner inside the UAE.</li></ul></div>
+<div class="card"><h3>Security</h3><ul><li>Independent penetration test before paid launch.</li><li>ISO 27001 or SOC 2 readiness plan.</li><li>Incident response and customer notification policy.</li></ul></div>
+</div>
+<div class="callout warn"><span>⚠️</span><span>This is a planning document, not legal or tax advice. Have a UAE lawyer and a registered tax agent review the items above before launch.</span></div>
+</section>
+
+<!-- ============ 14 ============ -->
+<section id="actions">
+<h2>14. Your next 10 actions</h2>
+<ol style="color:var(--tx2)">
+<li>Write a list of 200 target firms: FTA registered tax agents, boutique firms and freelancers in Dubai, Abu Dhabi and Sharjah.</li>
+<li>Book 20 interviews with the discovery script (Appendix C) and record hours lost to document chasing.</li>
+<li>Choose the legal entity and start company setup.</li>
+<li>Pick a WhatsApp BSP with pass-through pricing and AED billing. Start Meta business verification.</li>
+<li>Shortlist two accredited e-invoicing providers and ask about partnership terms.</li>
+<li>Choose UAE-region hosting and confirm where AI processing will run.</li>
+<li>Collect 200 real invoices from design partners (English, Arabic, bilingual, handwritten) as your test set.</li>
+<li>Build the clickable prototype into a working skeleton (F1, F2, F5).</li>
+<li>Hire or contract a part-time UAE tax agent as your domain reviewer.</li>
+<li>Draft terms, data processing agreement and privacy policy with a UAE lawyer.</li>
+</ol>
+</section>
+
+<!-- ============ 15 ============ -->
+<section id="appendix">
+<h2>15. Appendix</h2>
+<h3>A. UAE deadline calendar template</h3>
+<div class="tw"><table>
+<tr><th>Item</th><th>Rule</th><th>Notes</th></tr>
+<tr><td>VAT 201 return</td><td>28 days after each period end; quarterly for most, monthly for AED 150M+ turnover</td><td>Payment due the same date. Late filing penalty AED 1,000, AED 2,000 on repeat.</td></tr>
+<tr><td>Corporate tax return</td><td>9 months after financial year end</td><td>Late filing AED 500 a month for the first 12 months. Small business relief returns are simplified.</td></tr>
+<tr><td>Corporate tax registration</td><td>Within 3 months of incorporation</td><td>Free zone and zero-liability companies also register.</td></tr>
+<tr><td>Audited financial statements</td><td>Required for corporate tax when revenue is AED 50M or more, and for qualifying free zone persons</td><td>Many free zones also require audits.</td></tr>
+<tr><td>E-invoicing</td><td>Provider appointment and go-live dates in section 2</td><td>Confirm on the Ministry of Finance site.</td></tr>
+</table></div>
+<h3>B. Sample WhatsApp templates</h3>
+<div class="grid g2">
+<div class="card"><h4>Document request (English)</h4><p>Hello {name}, please send your sales and purchase invoices for {period} by {due} so we can prepare your VAT return on time. You can reply here with photos or PDFs.</p></div>
+<div class="card"><h4>Document request (Arabic)</h4><div class="ar">مرحباً {name}، يرجى إرسال فواتير المبيعات والمشتريات لفترة {period} قبل {due} حتى نتمكن من إعداد إقرار ضريبة القيمة المضافة في الموعد. يمكنك الرد هنا بالصور أو ملفات PDF.</div><p style="font-size:12.5px;color:var(--tx3);margin-top:6px">Have a native Arabic speaker review all templates before submitting them to Meta.</p></div>
+<div class="card"><h4>Missing item (English)</h4><p>Hi {name}, we have not received the {doc} for {period}. Please send it on this chat when you can. Thank you.</p></div>
+<div class="card"><h4>Received (English)</h4><p>Thank you {name}. We received your {doc}. We will let you know if anything else is needed.</p></div>
+</div>
+<h3>C. Discovery interview script (20 minutes)</h3>
+<ol style="color:var(--tx2)">
+<li>How many clients do you handle each month, and how many are VAT-registered?</li>
+<li>Walk me through last month’s VAT for one client. Where did the documents come from?</li>
+<li>How many hours a week does your team spend chasing or retyping documents?</li>
+<li>What tools do you use, and what do you pay for them?</li>
+<li>What happens when a client misses a deadline?</li>
+<li>How ready are your clients for e-invoicing, and who will guide them?</li>
+<li>Would you use a WhatsApp-based collection tool? What would worry you?</li>
+<li>What price feels fair for 50, 100 and 200 clients?</li>
+</ol>
+<h3>D. Invoice fields the extraction must capture</h3>
+<div class="tw"><table>
+<tr><th>Field</th><th>Check</th></tr>
+<tr><td>Supplier and customer names</td><td>Arabic and English both accepted</td></tr>
+<tr><td>TRN (tax registration number)</td><td>15 digits, format check, flag if missing on a tax invoice</td></tr>
+<tr><td>Invoice number and date</td><td>Duplicate check against the same supplier</td></tr>
+<tr><td>Currency and amounts</td><td>Line totals equal invoice totals, VAT equals rate times taxable value</td></tr>
+<tr><td>VAT category</td><td>5%, 0%, exempt, reverse charge, out of scope</td></tr>
+<tr><td>Emirate of supply</td><td>Needed for VAT 201 boxes</td></tr>
+</table></div>
+</section>
+
+<!-- ============ 16 ============ -->
+<section id="sources" class="src">
+<h2>16. Sources and how to read them</h2>
+<p class="lead">Most market figures come from vendor and consultancy blogs, so treat them as directional. The official pages below are the ones to rely on.</p>
+<ul>
+<li>UAE e-invoicing status, deadlines and provider lists: <a href="https://www.cleartax.com/ae/e-invoicing-uae" target="_blank" rel="noopener">cleartax.com/ae/e-invoicing-uae</a>, <a href="https://finline.ae/en/articles/uae-e-invoicing-asp-list" target="_blank" rel="noopener">finline.ae/en/articles/uae-e-invoicing-asp-list</a>, <a href="https://www.e-invoice.app/guides/uae-e-invoicing" target="_blank" rel="noopener">e-invoice.app/guides/uae-e-invoicing</a>. Confirm on the Ministry of Finance site.</li>
+<li>Corporate tax registrations: <a href="https://gulfnews.com/business/corporate-tax/640000-firms-now-under-uae-corporate-tax-as-fta-reports-record-compliance-1.500295210" target="_blank" rel="noopener">Gulf News, FTA compliance report</a></li>
+<li>Accounting price ranges: <a href="https://bcl.ae/resources/guides-and-insights/accounting-bookkeeping/what-accounting-services-and-costs-are-available-in-dubai-uae/" target="_blank" rel="noopener">bcl.ae</a>, <a href="https://www.henryclub.ae/banking-finance/accounting-bookkeeping-uae/" target="_blank" rel="noopener">henryclub.ae</a>, <a href="https://risiansaccounting.com/how-much-do-accounting-bookkeeping-services-cost-in-dubai-a-realistic-2026-guide/" target="_blank" rel="noopener">risiansaccounting.com</a></li>
+<li>Accounting software in the UAE: <a href="https://www.uaetaxfiling.ae/blog/the-best-accounting-software-for-uae-2026" target="_blank" rel="noopener">uaetaxfiling.ae</a>, <a href="https://www.startupu.ae/guides/accounting-software-uae" target="_blank" rel="noopener">startupu.ae</a>, <a href="https://perfonec.com/best-accounting-software-uae-2026/" target="_blank" rel="noopener">perfonec.com</a></li>
+<li>WhatsApp pricing: <a href="https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing" target="_blank" rel="noopener">Meta pricing page</a>, <a href="https://adjoltz.com/blog/whatsapp-marketing-cost-uae/" target="_blank" rel="noopener">adjoltz.com</a>, <a href="https://remarketly.io/whatsapp-api-pricing" target="_blank" rel="noopener">remarketly.io</a></li>
+<li>Data protection and residency: <a href="https://www.freit.io/blogs/cybersecurity/uae-data-residency-laws-cloud-compliance/" target="_blank" rel="noopener">freit.io</a>, <a href="https://aws.amazon.com/compliance/uae_data_privacy/" target="_blank" rel="noopener">AWS UAE data privacy page</a></li>
+<li>Filing rules used in the appendix: <a href="https://u.ae/en/information-and-services/finance-and-investment/taxation/vat/filing-a-tax-return-for-vat" target="_blank" rel="noopener">u.ae VAT filing</a></li>
+</ul>
+<footer>Prepared for Taxflow.AI. Planning document only. Confirm legal, tax and regulatory points with qualified UAE professionals.</footer>
+</section>
+</main>
+</div>
+
+<script>
+(function(){
+'use strict';
+var $=function(s){return document.querySelector(s)};
+$('#thm').addEventListener('click',function(){var r=document.documentElement;r.setAttribute('data-theme',r.getAttribute('data-theme')==='dark'?'light':'dark')});
+
+/* revenue calculator */
+var P={s:249,g:799,p:1999},DOCS={s:300,g:1200,p:5000},CL={s:20,g:80,p:250};
+function n(id){var v=parseFloat($('#'+id).value);return isNaN(v)||v<0?0:v}
+function fmt(x){return 'AED '+Math.round(x).toLocaleString('en-US')}
+function calc(){
+  var s=n('s1'),g=n('g1'),p=n('p1'),cd=n('cd'),mc=n('mc'),mp=n('mp'),ov=n('ov')/100;
+  var mrr=s*P.s+g*P.g+p*P.p,docs=s*DOCS.s+g*DOCS.g+p*DOCS.p,clients=s*CL.s+g*CL.g+p*CL.p;
+  var aiCost=docs*cd,wa=clients*mc*mp,oth=mrr*ov,gm=mrr>0?(mrr-aiCost-wa-oth)/mrr:0,firms=s+g+p;
+  $('#o1').textContent=fmt(mrr);$('#o2').textContent=fmt(mrr*12);$('#o3').textContent=fmt(aiCost);$('#o4').textContent=fmt(wa);$('#o5').textContent=fmt(oth);
+  $('#o6').textContent=(gm*100).toFixed(1)+'%';$('#gmbar').style.width=Math.max(0,Math.min(100,gm*100))+'%';
+  $('#o7').textContent=firms?fmt(mrr/firms):'–';
+}
+['s1','g1','p1','cd','mc','mp','ov'].forEach(function(id){$('#'+id).addEventListener('input',calc)});
+calc();
+
+/* table of contents highlight */
+var links=Array.prototype.slice.call(document.querySelectorAll('#toc a'));
+var secs=links.map(function(a){return document.getElementById(a.getAttribute('href').slice(1))});
+function spy(){
+  var y=window.scrollY+120,cur=0;
+  secs.forEach(function(s,i){if(s&&s.offsetTop<=y)cur=i});
+  links.forEach(function(a,i){a.classList.toggle('on',i===cur)});
+}
+window.addEventListener('scroll',spy,{passive:true});spy();
+})();
+</script>
+</body>
+</html>
