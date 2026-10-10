@@ -14,6 +14,7 @@
 const express = require('express');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
+const { requireAuth } = require('../middleware/requireAuth');
 
 const WA_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 const WA_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -57,7 +58,7 @@ let fallbackMessages = [
 ];
 
 // GET /api/v1/whatsapp/messages — List all WhatsApp messages
-router.get('/messages', async (req, res) => {
+router.get('/messages', requireAuth, async (req, res) => {
   try {
     if (isConnected) {
       let query = supabase.from('whatsapp_messages').select('*').order('created_at', { ascending: false });
@@ -159,7 +160,7 @@ router.post('/webhook', async (req, res) => {
 /**
  * POST /api/v1/whatsapp/send — Send a manual message from CA to client
  */
-router.post('/send', async (req, res) => {
+router.post('/send', requireAuth, async (req, res) => {
   try {
     const { toPhone, message, clientId } = req.body;
     if (!toPhone || !message) {

@@ -4,6 +4,7 @@ import { Titlebar } from './components/Titlebar';
 import { Sidebar } from './components/Sidebar';
 import { Chat } from './components/Chat';
 import { AuthPage } from './pages/AuthPage';
+import { OnboardingFlow } from './pages/OnboardingFlow';
 import { Dashboard } from './pages/Dashboard';
 import { ExtractPage } from './pages/Extract';
 import { WhatsAppPage } from './pages/WhatsApp';
@@ -27,9 +28,14 @@ function Shell() {
     document.body.classList.toggle('sidebar-collapsed', !!s.sidebarCollapsed);
   }, [s.sidebarCollapsed]);
 
-  // When user is not authenticated, show the Login/Signup page first!
+  // Not authenticated → show login / signup page
   if (!s.currentUser) {
     return <AuthPage />;
+  }
+
+  // Authenticated but onboarding not complete → show onboarding flow
+  if (!s.currentUser.onboardingComplete) {
+    return <OnboardingFlow />;
   }
 
   const Page = {
@@ -56,7 +62,6 @@ function Shell() {
         <span><i className="sdot" /><b>WhatsApp API connected</b></span>
         <span>Vault <b>D:\Taxflow\Clients</b></span>
         <span className="sp" />
-        <span>Demo build · sample data only</span>
       </footer>
     </div>
   );

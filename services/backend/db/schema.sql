@@ -10,16 +10,62 @@
  *  - Physical files are stored in Local Vault Storage (configured in .env VAULT_PATH)
  */
 
+-- Supabase Auth profile row. The trigger below runs after a real Auth user is
+-- created, so every account gets an onboarding record before first login.
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id                  UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name           VARCHAR(255),
+  firm_name           VARCHAR(255),
+  practice_type       VARCHAR(100),
+  membership_no       VARCHAR(100),
+  role                VARCHAR(100) NOT NULL DEFAULT 'Managing Partner',
+  vault_path          TEXT,
+  onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can read their own profile" ON user_profiles;
+CREATE POLICY "Users can read their own profile" ON user_profiles FOR SELECT USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Users can update their own profile" ON user_profiles;
+CREATE POLICY "Users can update their own profile" ON user_profiles FOR UPDATE USING (auth.uid() = id);
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.user_profiles (id, full_name, firm_name, practice_type, membership_no)
+  VALUES (
+    NEW.id,
+    NEW.raw_user_meta_data ->> 'full_name',
+    NEW.raw_user_meta_data ->> 'firm_name',
+    COALESCE(NEW.raw_user_meta_data ->> 'practice_type', 'Chartered Accountant (CA)'),
+    NEW.raw_user_meta_data ->> 'membership_no'
+  )
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
 -- ═══════════════════════════════════════════════════
 -- TABLE 1: clients — CA Firm's Client Master Registry
 -- ═══════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS clients (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id        UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   name            VARCHAR(255) NOT NULL,
   entity_type     VARCHAR(50) NOT NULL CHECK (entity_type IN ('Individual', 'Pvt Ltd', 'LLP', 'Partnership', 'Trust', 'HUF', 'OPC')),
   pan             VARCHAR(10) UNIQUE,
   gstin           VARCHAR(15),
-  phone           VARCHAR(20) UNIQUE NOT NULL,
+  phone           VARCHAR(20) UNIQUE,
   email           VARCHAR(255),
   status          VARCHAR(20) DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive', 'Suspended')),
   assigned_ca     VARCHAR(255),
@@ -30,6 +76,14 @@ CREATE TABLE IF NOT EXISTS clients (
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage their own clients" ON clients;
+CREATE POLICY "Users can manage their own clients" ON clients
+  FOR ALL USING (auth.uid() = owner_id) WITH CHECK (auth.uid() = owner_id);
+CREATE INDEX IF NOT EXISTS idx_clients_owner_id ON clients(owner_id);
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- TABLE 2: documents_metadata — Pointer Table for Local Vault Documents

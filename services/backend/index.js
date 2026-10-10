@@ -52,6 +52,7 @@ const extractionRouter = require('./routes/extraction');
 const whatsappRouter = require('./routes/whatsapp');
 const deadlinesRouter = require('./routes/deadlines');
 const generateRouter = require('./routes/generate');
+const { requireAuth } = require('./middleware/requireAuth');
 
 const { supabase, isConnected } = require('./db/supabase');
 
@@ -74,17 +75,18 @@ initVault();
 
 // ─── Mount Routes ─────────────────────────────────────────────
 app.use('/api/v1/auth', authRouter);
-app.use('/api/v1/clients', clientsRouter);
-app.use('/api/v1/documents', documentsRouter);
-app.use('/api/v1/extraction', extractionRouter);
+app.use('/api/v1/clients', requireAuth, clientsRouter);
+app.use('/api/v1/documents', requireAuth, documentsRouter);
+app.use('/api/v1/extraction', requireAuth, extractionRouter);
 app.use('/api/v1/whatsapp', whatsappRouter);
-app.use('/api/v1/deadlines', deadlinesRouter);
-app.use('/api/v1/generate', generateRouter);
+app.use('/api/v1/deadlines', requireAuth, deadlinesRouter);
+app.use('/api/v1/generate', requireAuth, generateRouter);
 
 // ─── Health & System Status ────────────────────────────────────
 app.get('/api/v1/health', async (req, res) => {
-  const { VAULT_BASE_DIR } = require('./vault/vaultManager');
+  const { getVaultBaseDir } = require('./vault/vaultManager');
   const fs = require('fs');
+  const vaultDir = getVaultBaseDir();
 
   let dbStatus = 'demo_mode';
   let totalClients = 0;
@@ -109,8 +111,8 @@ app.get('/api/v1/health', async (req, res) => {
       totalClients
     },
     vault: {
-      status: fs.existsSync(VAULT_BASE_DIR) ? 'active' : 'error',
-      path: VAULT_BASE_DIR
+      status: fs.existsSync(vaultDir) ? 'active' : 'not_configured',
+      path: vaultDir
     },
     ai: {
       provider: 'Google Gemini',

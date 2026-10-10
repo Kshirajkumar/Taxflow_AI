@@ -1,5 +1,49 @@
-// TaxFlow.AI API Client Service
+// TaxFlow.AI — API Client Service (Production Grade)
+// All API calls require Authorization header when user is authenticated.
+
 const API_BASE_URL = 'http://localhost:5000/api/v1';
+
+// ─── Token helpers ─────────────────────────────────────────────
+function getToken(): string | null {
+  try {
+    const raw = localStorage.getItem('taxflow_session');
+    if (!raw) return null;
+    return JSON.parse(raw).token || null;
+  } catch { return null; }
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) h['Authorization'] = `Bearer ${token}`;
+  return h;
+}
+
+// ─── Types ─────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  firmName: string;
+  email: string;
+  practiceType: string;
+  membershipNo?: string | null;
+  role: string;
+  onboardingComplete: boolean;
+  vaultConfigured: boolean;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  message?: string;
+  token?: string;
+  refreshToken?: string;
+  user?: AuthUser;
+  needsEmailConfirmation?: boolean;
+  rateLimited?: boolean;
+  secondsLeft?: number;
+  remainingAttempts?: number;
+}
 
 export interface Client {
   id: string;
@@ -55,21 +99,75 @@ export interface ComplianceTask {
   assignedTo: string;
 }
 
-// Fetch Backend Health & Local Vault Storage Status
-export async function getHealthStatus() {
-  try {
-    const res = await fetch(`${API_BASE_URL}/health`);
-    return await res.json();
-  } catch (err) {
-    console.error('Backend server offline', err);
-    return { status: 'offline' };
-  }
+// ─── Auth API ──────────────────────────────────────────────────
+
+export async function apiSignup(data: {
+  name: string;
+  firmName?: string;
+  email: string;
+  password: string;
+  practiceType?: string;
+  membershipNo?: string;
+}): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/signup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return res.json();
 }
 
-// Client Metadata Operations (DB)
+export async function apiLogin(email: string, password: string): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  return res.json();
+}
+
+export async function apiForgotPassword(email: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+  return res.json();
+}
+
+export async function apiGetMe(): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/me`, { headers: authHeaders() });
+  return res.json();
+}
+
+export async function apiUpdateProfile(data: {
+  name?: string;
+  firmName?: string;
+  practiceType?: string;
+  membershipNo?: string;
+}): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/profile`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(data)
+  });
+  return res.json();
+}
+
+export async function apiSetupVault(vaultPath: string): Promise<{ success: boolean; message: string; vaultPath?: string }> {
+  const res = await fetch(`${API_BASE_URL}/auth/vault-setup`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ vaultPath })
+  });
+  return res.json();
+}
+
+// ─── Client API ────────────────────────────────────────────────
+
 export async function fetchClients(): Promise<Client[]> {
   try {
-    const res = await fetch(`${API_BASE_URL}/clients`);
+    const res = await fetch(`${API_BASE_URL}/clients`, { headers: authHeaders() });
     const json = await res.json();
     return json.data || [];
   } catch (err) {
@@ -80,10 +178,19 @@ export async function fetchClients(): Promise<Client[]> {
 
 export async function createClient(clientData: Partial<Client>): Promise<Client | null> {
   try {
+    const payload = {
+      name: clientData.name,
+      entity_type: clientData.entityType === 'Private Limited' ? 'Pvt Ltd' : (clientData.entityType === 'Other' ? 'Individual' : clientData.entityType),
+      pan: clientData.pan || null,
+      gstin: clientData.gstin || null,
+      phone: clientData.phone || `not-provided-${crypto.randomUUID()}`,
+      email: clientData.email || null,
+      assigned_ca: clientData.assignedCA || null,
+    };
     const res = await fetch(`${API_BASE_URL}/clients`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(clientData)
+      headers: authHeaders(),
+      body: JSON.stringify(payload)
     });
     const json = await res.json();
     return json.data;
@@ -93,11 +200,12 @@ export async function createClient(clientData: Partial<Client>): Promise<Client 
   }
 }
 
-// Local Vault Storage & Document Operations
+// ─── Documents API ─────────────────────────────────────────────
+
 export async function fetchDocuments(clientId?: string): Promise<DocumentItem[]> {
   try {
     const url = clientId ? `${API_BASE_URL}/documents?clientId=${clientId}` : `${API_BASE_URL}/documents`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: authHeaders() });
     const json = await res.json();
     return json.data || [];
   } catch (err) {
@@ -106,7 +214,6 @@ export async function fetchDocuments(clientId?: string): Promise<DocumentItem[]>
   }
 }
 
-// Save physical file directly into Local Vault Storage folder
 export async function uploadToLocalVault(payload: {
   clientId: string;
   fileName: string;
@@ -118,7 +225,7 @@ export async function uploadToLocalVault(payload: {
   try {
     const res = await fetch(`${API_BASE_URL}/documents/upload-vault`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(payload)
     });
     const json = await res.json();
@@ -129,16 +236,15 @@ export async function uploadToLocalVault(payload: {
   }
 }
 
-// Direct URL for viewing/downloading local files stored in the Local Vault
 export function getVaultFileUrl(docId: string): string {
   return `${API_BASE_URL}/vault/files/${docId}`;
 }
 
-export async function verifyDocumentExtraction(documentId: string, verifiedBy: string = 'CA Admin') {
+export async function verifyDocumentExtraction(documentId: string, verifiedBy = 'CA Admin') {
   try {
     const res = await fetch(`${API_BASE_URL}/extraction/verify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify({ documentId, verifiedBy })
     });
     return await res.json();
@@ -148,10 +254,11 @@ export async function verifyDocumentExtraction(documentId: string, verifiedBy: s
   }
 }
 
-// WhatsApp API Calls
+// ─── WhatsApp API ──────────────────────────────────────────────
+
 export async function fetchWhatsAppMessages(): Promise<WhatsAppMessage[]> {
   try {
-    const res = await fetch(`${API_BASE_URL}/whatsapp/messages`);
+    const res = await fetch(`${API_BASE_URL}/whatsapp/messages`, { headers: authHeaders() });
     const json = await res.json();
     return json.data || [];
   } catch (err) {
@@ -160,10 +267,11 @@ export async function fetchWhatsAppMessages(): Promise<WhatsAppMessage[]> {
   }
 }
 
-// Compliance & Deadlines API Calls
+// ─── Compliance API ────────────────────────────────────────────
+
 export async function fetchComplianceTasks(): Promise<ComplianceTask[]> {
   try {
-    const res = await fetch(`${API_BASE_URL}/deadlines`);
+    const res = await fetch(`${API_BASE_URL}/deadlines`, { headers: authHeaders() });
     const json = await res.json();
     return json.data || [];
   } catch (err) {
@@ -172,7 +280,8 @@ export async function fetchComplianceTasks(): Promise<ComplianceTask[]> {
   }
 }
 
-// Generate Notice Response Draft
+// ─── Generate API ──────────────────────────────────────────────
+
 export async function generateNoticeResponse(payload: {
   clientId: string;
   noticeText: string;
@@ -181,7 +290,7 @@ export async function generateNoticeResponse(payload: {
   try {
     const res = await fetch(`${API_BASE_URL}/generate/notice-response`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(payload)
     });
     return await res.json();
@@ -191,111 +300,13 @@ export async function generateNoticeResponse(payload: {
   }
 }
 
-// ─── Authentication API ──────────────────────────────────────────
+// ─── Health ────────────────────────────────────────────────────
 
-export interface AuthUser {
-  id: string;
-  name: string;
-  firmName: string;
-  email: string;
-  practiceType: string;
-  membershipNo?: string | null;
-  role: string;
-}
-
-export interface AuthResponse {
-  success: boolean;
-  message?: string;
-  token?: string;
-  user?: AuthUser;
-  rateLimited?: boolean;
-  secondsLeft?: number;
-  remainingAttempts?: number;
-}
-
-export async function apiLogin(email: string, password: string): Promise<AuthResponse> {
+export async function getHealthStatus() {
   try {
-    const res = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    const json = await res.json();
-    return json;
-  } catch (err) {
-    console.warn('[API] Auth login network fallback', err);
-    // Offline / Demo fallback
-    if (email === 'ca@taxflow.ai' || email.includes('@')) {
-      return {
-        success: true,
-        message: 'Signed in (Local Vault Mode)',
-        token: 'txf_local_' + Date.now(),
-        user: {
-          id: 'usr_local_01',
-          name: email === 'ca@taxflow.ai' ? 'CA Rajesh Sharma' : email.split('@')[0].toUpperCase(),
-          firmName: 'Sharma & Associates Chartered Accountants',
-          email,
-          practiceType: 'Chartered Accountant (CA)',
-          role: 'Managing Partner'
-        }
-      };
-    }
-    return {
-      success: false,
-      message: 'Unable to reach authentication server. Please check your local connection.'
-    };
-  }
-}
-
-export async function apiSignup(data: {
-  name: string;
-  firmName?: string;
-  email: string;
-  password: string;
-  practiceType?: string;
-  membershipNo?: string;
-}): Promise<AuthResponse> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/auth/signup`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    const json = await res.json();
-    return json;
-  } catch (err) {
-    console.warn('[API] Auth signup network fallback', err);
-    // Offline local vault fallback
-    return {
-      success: true,
-      message: 'Account created (Local Vault Mode)',
-      token: 'txf_local_' + Date.now(),
-      user: {
-        id: 'usr_local_' + Date.now(),
-        name: data.name,
-        firmName: data.firmName || `${data.name} & Associates`,
-        email: data.email,
-        practiceType: data.practiceType || 'Chartered Accountant (CA)',
-        membershipNo: data.membershipNo || null,
-        role: 'Managing Partner'
-      }
-    };
-  }
-}
-
-export async function apiForgotPassword(email: string): Promise<{ success: boolean; message: string }> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
-    });
+    const res = await fetch(`${API_BASE_URL}/health`);
     return await res.json();
   } catch (err) {
-    return {
-      success: true,
-      message: `Password reset link dispatched for ${email}. Check your email or local vault security log.`
-    };
+    return { status: 'offline' };
   }
 }
-

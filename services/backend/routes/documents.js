@@ -11,7 +11,8 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const { supabase, isConnected } = require('../db/supabase');
-const { saveFileToVault, vaultFileExists, VAULT_BASE_DIR } = require('../vault/vaultManager');
+const { saveFileToVault, vaultFileExists, getVaultBaseDir } = require('../vault/vaultManager');
+const VAULT_BASE_DIR = getVaultBaseDir();
 
 // --- In-Memory Fallback ---
 let fallbackDocuments = [

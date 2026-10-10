@@ -283,8 +283,8 @@ export function AuthPage() {
       setErrorMessage('Please provide a valid work/practice email address.');
       return;
     }
-    if (signupPassword.length < 6) {
-      setErrorMessage('Password must be at least 6 characters long.');
+    if (signupPassword.length < 8) {
+      setErrorMessage('Password must be at least 8 characters long.');
       return;
     }
     if (signupPassword !== signupConfirm) {
@@ -306,11 +306,19 @@ export function AuthPage() {
         practiceType: signupType,
       });
 
-      if (res.success && res.user) {
-        setSuccessMessage('Practice workspace provisioned! Entering dashboard...');
-        setTimeout(() => {
-          dispatch({ type: 'LOGIN', user: res.user!, token: res.token });
-        }, 600);
+      if (res.success) {
+        if (res.needsEmailConfirmation) {
+          // Email confirmation required — show confirmation screen
+          setSuccessMessage(
+            '✅ Account created! A confirmation email has been sent to ' + signupEmail.trim() + '. Please check your inbox and click the link to activate your account, then come back to log in.'
+          );
+        } else if (res.user && res.token) {
+          // Auto-confirmed — go straight in
+          setSuccessMessage('Practice account created! Launching your workspace...');
+          setTimeout(() => {
+            dispatch({ type: 'LOGIN', user: res.user!, token: res.token!, refreshToken: res.refreshToken });
+          }, 600);
+        }
       } else {
         setErrorMessage(res.message || 'Signup failed. Please try again.');
       }
@@ -347,11 +355,11 @@ export function AuthPage() {
     try {
       const res = await apiLogin(loginEmail.trim(), loginPassword);
 
-      if (res.success && res.user) {
+      if (res.success && res.user && res.token) {
         failedAttemptsRef.current = 0;
         setSuccessMessage('Credentials verified. Launching workspace...');
         setTimeout(() => {
-          dispatch({ type: 'LOGIN', user: res.user!, token: res.token });
+          dispatch({ type: 'LOGIN', user: res.user!, token: res.token!, refreshToken: res.refreshToken });
         }, 500);
       } else {
         if (res.rateLimited && res.secondsLeft) {
@@ -374,36 +382,7 @@ export function AuthPage() {
     }
   };
 
-  // Fast Pass Demo Login
-  const handleDemoLogin = async () => {
-    setIsLoading(true);
-    setErrorMessage(null);
-    try {
-      const res = await apiLogin('ca@taxflow.ai', 'password123');
-      if (res.success && res.user) {
-        setSuccessMessage('Logged in as CA Rajesh Sharma (Demo Partner)');
-        setTimeout(() => {
-          dispatch({ type: 'LOGIN', user: res.user!, token: res.token });
-        }, 400);
-      }
-    } catch (e) {
-      // Fallback
-      dispatch({
-        type: 'LOGIN',
-        user: {
-          id: 'usr_ca_001',
-          name: 'CA Rajesh Sharma',
-          firmName: 'Sharma & Associates Chartered Accountants',
-          email: 'ca@taxflow.ai',
-          practiceType: 'Chartered Accountant (CA)',
-          membershipNo: 'FCA-402918',
-          role: 'Managing Partner',
-        },
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // (Demo login removed — use your real Supabase account)
 
   // Fast Fill Signup Demo
   const handleFillDemoSignup = () => {
@@ -908,24 +887,7 @@ export function AuthPage() {
                   </form>
 
                   {/* Fast Pass Demo Access Button */}
-                  <div className="auth-demo-divider">
-                    <span>OR INSTANT EVALUATION</span>
-                  </div>
 
-                  <button
-                    type="button"
-                    className="auth-demo-ca-btn"
-                    onClick={handleDemoLogin}
-                    disabled={isLoading}
-                  >
-                    <div className="demo-ca-icon">
-                      <Icon name="spark" size={16} />
-                    </div>
-                    <div className="demo-ca-text">
-                      <b>⚡ Instant Access as CA Partner (Demo Mode)</b>
-                      <small>No password required • Opens preloaded practice data</small>
-                    </div>
-                  </button>
 
                   <div className="card-footer-switch">
                     <span>Need to register a new firm or practitioner?</span>

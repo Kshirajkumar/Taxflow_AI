@@ -26,9 +26,27 @@
 const fs = require('fs');
 const path = require('path');
 
-const VAULT_BASE_DIR = process.env.VAULT_PATH
-  ? process.env.VAULT_PATH
-  : path.join(__dirname, '..', '..', '..', 'vault');
+const CONFIG_PATH = path.join(__dirname, 'config.json');
+
+function getVaultBaseDir() {
+  if (fs.existsSync(CONFIG_PATH)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+      if (config.vaultPath) return config.vaultPath;
+    } catch (e) {
+      console.error('[Vault] Error reading config.json:', e);
+    }
+  }
+  return process.env.VAULT_PATH ? process.env.VAULT_PATH : path.join(__dirname, '..', '..', '..', 'vault');
+}
+
+function updateVaultBaseDir(newPath) {
+  if (!fs.existsSync(newPath)) {
+    fs.mkdirSync(newPath, { recursive: true });
+  }
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify({ vaultPath: newPath }));
+  console.log(`[Vault] 🔄 Vault path updated to: ${newPath}`);
+}
 
 const ALLOWED_CATEGORIES = ['GST', 'IncomeTax', 'Form16', 'BankStatement', 'Notice', 'TDS', 'Audit', 'General', 'Generated'];
 const CURRENT_AY = '2026-27';
@@ -37,11 +55,12 @@ const CURRENT_AY = '2026-27';
  * Initialize root vault directories on startup
  */
 function initVault() {
-  if (!fs.existsSync(VAULT_BASE_DIR)) {
-    fs.mkdirSync(VAULT_BASE_DIR, { recursive: true });
-    console.log(`[Vault] ✅ Root vault initialized at: ${VAULT_BASE_DIR}`);
+  const dir = getVaultBaseDir();
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`[Vault] ✅ Root vault initialized at: ${dir}`);
   } else {
-    console.log(`[Vault] ✅ Local Vault Storage active at: ${VAULT_BASE_DIR}`);
+    console.log(`[Vault] ✅ Local Vault Storage active at: ${dir}`);
   }
 }
 
@@ -60,7 +79,7 @@ function getClientVaultDir(clientId, category = 'General', ay = CURRENT_AY) {
   const safeId = sanitizeName(clientId);
   const safeCat = ALLOWED_CATEGORIES.includes(category) ? category : 'General';
   const safeAY = sanitizeName(ay);
-  const dirPath = path.join(VAULT_BASE_DIR, 'clients', safeId, safeCat, safeAY);
+  const dirPath = path.join(getVaultBaseDir(), 'clients', safeId, safeCat, safeAY);
 
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
@@ -145,6 +164,7 @@ module.exports = {
   vaultFileExists,
   listClientVaultFiles,
   deleteVaultFile,
-  VAULT_BASE_DIR,
+  getVaultBaseDir,
+  updateVaultBaseDir,
   CURRENT_AY
 };

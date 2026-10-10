@@ -7,7 +7,7 @@ import {
 } from '../data/seed';
 import { vnow, ago } from '../lib/format';
 import { nextTaskFor, pendingBill, missing } from '../lib/domain';
-import { fetchClients, fetchDocuments, fetchWhatsAppMessages, fetchComplianceTasks, AuthUser } from '../lib/api';
+import { apiGetMe, fetchClients, fetchDocuments, fetchWhatsAppMessages, fetchComplianceTasks, AuthUser } from '../lib/api';
 
 export interface Settings {
   autoExtract: boolean;
@@ -65,8 +65,9 @@ type Action =
   | { type: 'TOGGLE_THEME' }
   | { type: 'TOGGLE_CHAT' }
   | { type: 'TOGGLE_SIDEBAR' }
-  | { type: 'LOGIN'; user: AuthUser; token?: string }
+  | { type: 'LOGIN'; user: AuthUser; token: string; refreshToken?: string }
   | { type: 'LOGOUT' }
+  | { type: 'COMPLETE_ONBOARDING' }
   | { type: 'WA_CLIENT'; id: string }
   | { type: 'WA_TAB'; tab: 'chats' | 'reminders' | 'templates' }
   | { type: 'WA_SEND'; client: string; text: string }
@@ -121,11 +122,11 @@ const initialState: AppState = {
   log: INITIAL_LOG,
   settings: { autoExtract: true, autoRemind: true, approve: true, dupes: true },
   ui: {
-    wa: { client: 'sharma', tab: 'chats' },
-    ex: { sel: 'd3', filter: 'all' },
-    fs: { open: new Set(['c:sharma', 'y:sharma:2026', 'm:sharma:2026:8']), sel: null, q: '' },
-    dl: { open: new Set(['kapoor', 'sharma']) },
-    gen: { client: 'iyer', period: '2026-08', types: new Set(['gstr3b', 'recon', 'reg']) },
+    wa: { client: '', tab: 'chats' },
+    ex: { sel: '', filter: 'all' },
+    fs: { open: new Set(), sel: null, q: '' },
+    dl: { open: new Set() },
+    gen: { client: '', period: '2026-08', types: new Set(['gstr3b', 'recon', 'reg']) },
   },
 };
 
@@ -142,13 +143,23 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'LOGIN': {
       try {
-        localStorage.setItem('taxflow_session', JSON.stringify({ user: action.user, token: action.token }));
+        localStorage.setItem('taxflow_session', JSON.stringify({ user: action.user, token: action.token, refreshToken: action.refreshToken }));
       } catch (e) {}
       return {
         ...state,
         currentUser: action.user,
         log: [{ at: vnow(), ic: 'user', t: `Signed in as ${action.user.name} (${action.user.firmName})` }, ...state.log]
       };
+    }
+    case 'COMPLETE_ONBOARDING': {
+      if (!state.currentUser) return state;
+      const updatedUser = { ...state.currentUser, onboardingComplete: true, vaultConfigured: true };
+      try {
+        const raw = localStorage.getItem('taxflow_session');
+        const session = raw ? JSON.parse(raw) : {};
+        localStorage.setItem('taxflow_session', JSON.stringify({ ...session, user: updatedUser }));
+      } catch (e) {}
+      return { ...state, currentUser: updatedUser };
     }
     case 'LOGOUT': {
       try {
@@ -157,6 +168,14 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         currentUser: null,
+        clients: [],
+        docs: [],
+        files: [],
+        threads: {},
+        reminders: [],
+        tasks: [],
+        bills: [],
+        checks: {},
         log: [{ at: vnow(), ic: 'power', t: 'Signed out of practice workspace' }, ...state.log]
       };
     }
@@ -281,13 +300,13 @@ function reducer(state: AppState, action: Action): AppState {
       const { apiClients, apiDocs, apiMsgs, apiTasks } = action.payload;
       
       // Map API Clients
-      const mappedClients = apiClients && apiClients.length > 0 ? apiClients.map((c: any) => ({
+      const mappedClients = Array.isArray(apiClients) ? apiClients.map((c: any) => ({
         id: c.id,
         name: c.name || '',
         short: (c.name || 'CLI').substring(0, 3).toUpperCase(),
         city: 'Local',
         country: 'India',
-        cur: 'INR',
+        cur: 'INR' as const,
         gstin: c.gstin || '',
         pan: c.pan || '',
         svc: ['GST', 'Income Tax'],
@@ -326,8 +345,8 @@ function reducer(state: AppState, action: Action): AppState {
       }
 
       // Map Documents to Vault Files
-      const mappedFiles = [...state.files];
-      if (apiDocs && apiDocs.length > 0) {
+      const mappedFiles = Array.isArray(apiDocs) ? [] : [...state.files];
+      if (Array.isArray(apiDocs)) {
         apiDocs.forEach((d: any) => {
           if (!d.clientId) return;
           mappedFiles.push({
@@ -376,6 +395,7 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         clients: mappedClients,
+        docs: [],
         tasks: mappedTasks,
         threads: mappedThreads,
         files: mappedFiles,
@@ -396,6 +416,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     async function loadData() {
       try {
+        const rawSession = localStorage.getItem('taxflow_session');
+        const savedSession = rawSession ? JSON.parse(rawSession) : null;
+        if (!state.currentUser || !savedSession?.token) return;
+        if (savedSession?.token) {
+          const sessionCheck = await apiGetMe();
+          if (!sessionCheck.success || !sessionCheck.user) {
+            dispatch({ type: 'LOGOUT' });
+            return;
+          }
+          dispatch({ type: 'LOGIN', user: sessionCheck.user, token: savedSession.token, refreshToken: savedSession.refreshToken });
+        }
+
         const [apiClients, apiDocs, apiMsgs, apiTasks] = await Promise.all([
           fetchClients(),
           fetchDocuments(),
@@ -412,7 +444,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     }
     loadData();
-  }, []);
+  }, [state.currentUser?.id]);
 
   return (
     <StateCtx.Provider value={state}>

@@ -48,6 +48,7 @@ router.get('/', async (req, res) => {
       const { data, error } = await supabase
         .from('clients')
         .select('*')
+        .eq('owner_id', req.user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return res.json({ success: true, count: data.length, source: 'supabase', data });
@@ -63,7 +64,7 @@ router.get('/:id', async (req, res) => {
   try {
     if (isConnected) {
       const { data, error } = await supabase
-        .from('clients').select('*').eq('id', req.params.id).single();
+        .from('clients').select('*').eq('id', req.params.id).eq('owner_id', req.user.id).single();
       if (error) throw error;
       return res.json({ success: true, source: 'supabase', data });
     }
@@ -80,14 +81,14 @@ router.post('/', async (req, res) => {
   try {
     const { name, entity_type, pan, gstin, phone, email, assigned_ca } = req.body;
 
-    if (!name || !phone || !entity_type) {
-      return res.status(400).json({ success: false, message: 'name, phone, and entity_type are required' });
+    if (!name || !entity_type) {
+      return res.status(400).json({ success: false, message: 'name and entity_type are required' });
     }
 
     if (isConnected) {
       const { data, error } = await supabase
         .from('clients')
-        .insert([{ name, entity_type, pan, gstin, phone, email, assigned_ca, status: 'Active' }])
+        .insert([{ owner_id: req.user.id, name, entity_type, pan, gstin, phone, email, assigned_ca, status: 'Active' }])
         .select()
         .single();
       if (error) throw error;
@@ -116,7 +117,7 @@ router.patch('/:id', async (req, res) => {
   try {
     if (isConnected) {
       const { data, error } = await supabase
-        .from('clients').update(req.body).eq('id', req.params.id).select().single();
+        .from('clients').update(req.body).eq('id', req.params.id).eq('owner_id', req.user.id).select().single();
       if (error) throw error;
       return res.json({ success: true, source: 'supabase', data });
     }
