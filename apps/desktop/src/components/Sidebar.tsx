@@ -1,8 +1,10 @@
+import React from 'react';
 import { Icon } from './Icon';
 import { useAppState, useDispatch } from '../state/store';
 import type { Page } from '../types';
 import { allTasks } from '../lib/domain';
 import { dayDiff, vnow } from '../lib/format';
+import { getHealthStatus } from '../lib/api';
 
 const NAV: Array<{ g: string; items: Array<[Page, string, string]> }> = [
   { g: 'Workspace', items: [['dashboard', 'Dashboard', 'grid']] },
@@ -30,6 +32,32 @@ export function Sidebar() {
   const s = useAppState();
   const dispatch = useDispatch();
   const collapsed = s.sidebarCollapsed;
+  const [vaultUsage, setVaultUsage] = React.useState({ path: 'Local vault', usedBytes: 0, capacityBytes: 500 * 1024 ** 3, fileCount: 0, ready: false });
+
+  React.useEffect(() => {
+    let disposed = false;
+    async function loadVaultUsage() {
+      const health = await getHealthStatus();
+      if (disposed || !health?.vault) return;
+      setVaultUsage({
+        path: health.vault.path || 'Local vault',
+        usedBytes: health.vault.usage?.usedBytes || 0,
+        capacityBytes: health.vault.usage?.capacityBytes || 500 * 1024 ** 3,
+        fileCount: health.vault.usage?.fileCount || 0,
+        ready: health.vault.status === 'active'
+      });
+    }
+    void loadVaultUsage();
+    const timer = window.setInterval(loadVaultUsage, 30000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, []);
+
+  const formatStorage = (bytes: number) => {
+    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+    return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  };
+  const usagePercent = Math.min(100, Math.max(0, (vaultUsage.usedBytes / Math.max(vaultUsage.capacityBytes, 1)) * 100));
+  const compactVaultPath = vaultUsage.path.length > 28 ? `…${vaultUsage.path.slice(-27)}` : vaultUsage.path;
 
   const badge = (id: Page): { n: number; hot?: boolean } | null => {
     if (id === 'extract') {
@@ -110,14 +138,14 @@ export function Sidebar() {
       {/* Storage Vault */}
       <div className="vault">
         {collapsed ? (
-          <div className="vault-icon-collapsed" title="Local Vault: 3.2 GB used of 500 GB">
+          <div className="vault-icon-collapsed" title={`Local Vault: ${formatStorage(vaultUsage.usedBytes)} used of ${formatStorage(vaultUsage.capacityBytes)}`}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <ellipse cx="12" cy="5" rx="9" ry="3" />
               <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
               <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
             </svg>
             <div className="vault-bar-mini">
-              <i style={{ width: `${(3.2 + s.files.length / 1000) / 5 * 100}%` }} />
+              <i style={{ width: `${usagePercent}%` }} />
             </div>
           </div>
         ) : (
@@ -130,9 +158,9 @@ export function Sidebar() {
               </svg>
               <b>Local Vault</b>
             </div>
-            <span className="vault-path">D:\Taxflow · {(3.2 + s.files.length / 1000).toFixed(1)} GB of 500 GB</span>
+            <span className="vault-path" title={vaultUsage.path}>{compactVaultPath} · {formatStorage(vaultUsage.usedBytes)} of {formatStorage(vaultUsage.capacityBytes)}</span>
             <div className="bar" style={{ marginTop: 8 }}>
-              <i style={{ width: `${(3.2 + s.files.length / 1000) / 5 * 100}%` }} />
+              <i style={{ width: `${usagePercent}%` }} />
             </div>
           </>
         )}

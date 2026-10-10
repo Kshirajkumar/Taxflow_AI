@@ -13,7 +13,7 @@
  *   └── clients/
  *       └── {client_id}/
  *           └── {client_name}/
- *               └── {calendar_year}/{month}/{category}/{assessment_year}/
+ *               └── {calendar_year}/{month}/{Raw|Extracted}/
  *
  * SECURITY: The vault folder should NEVER be inside a cloud-synced folder
  * (e.g. OneDrive, Dropbox, Google Drive) to protect client data privacy.
@@ -36,6 +36,28 @@ function getVaultBaseDir() {
   return process.env.VAULT_PATH ? process.env.VAULT_PATH : path.join(__dirname, '..', '..', '..', 'vault');
 }
 
+function getVaultUsage() {
+  const root = getVaultBaseDir();
+  const capacityBytes = Number(process.env.VAULT_CAPACITY_GB || 500) * 1024 ** 3;
+  let usedBytes = 0;
+  let fileCount = 0;
+  function scan(dir) {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) continue;
+      const fullPath = path.join(dir, entry.name);
+      try {
+        if (entry.isDirectory()) scan(fullPath);
+        else { usedBytes += fs.statSync(fullPath).size; fileCount += 1; }
+      } catch (error) {
+        console.warn(`[Vault] Could not inspect ${fullPath}:`, error.message);
+      }
+    }
+  }
+  scan(root);
+  return { usedBytes, capacityBytes, fileCount };
+}
+
 function updateVaultBaseDir(newPath) {
   if (!fs.existsSync(newPath)) {
     fs.mkdirSync(newPath, { recursive: true });
@@ -45,6 +67,7 @@ function updateVaultBaseDir(newPath) {
 }
 
 const ALLOWED_CATEGORIES = ['GST', 'IncomeTax', 'Form16', 'BankStatement', 'Notice', 'TDS', 'Audit', 'General', 'Generated'];
+const VAULT_BUCKETS = ['Raw', 'Extracted'];
 const CURRENT_AY = '2026-27';
 
 function getCurrentVaultPeriod(date = new Date()) {
@@ -75,9 +98,25 @@ function ensureClientVaultStructure(clientName, date = new Date()) {
 
   const { year, month } = getCurrentVaultPeriod(date);
   const clientRoot = getClientVaultRoot(clientName);
+  ensureClientVaultBuckets(clientRoot, date);
   const periodDir = path.join(clientRoot, year, month);
+
+  return { clientRoot, periodDir, year, month, buckets: VAULT_BUCKETS.slice() };
+}
+
+function ensureClientVaultBuckets(clientRoot, date = new Date()) {
+  const safeRoot = path.resolve(clientRoot);
+  const clientsRoot = path.resolve(getVaultBaseDir(), 'clients');
+  if (!safeRoot.startsWith(`${clientsRoot}${path.sep}`)) {
+    throw new Error('Refused to create folders outside the clients vault.');
+  }
+  const { year, month } = getCurrentVaultPeriod(date);
+  const periodDir = path.join(safeRoot, year, month);
   fs.mkdirSync(periodDir, { recursive: true });
-  return { clientRoot, periodDir, year, month };
+  // Materialize exactly two working folders at client creation time.
+  for (const bucket of VAULT_BUCKETS) {
+    fs.mkdirSync(path.join(periodDir, bucket), { recursive: true });
+  }
 }
 
 /**
@@ -101,14 +140,14 @@ function sanitizeName(name) {
 }
 
 /**
- * Get or create the vault path for a client's category folder
+ * Get or create the vault path for a client's raw or extracted bucket.
+ * Document categories remain metadata only; they never become filesystem folders.
  * Returns the absolute directory path
  */
 function getClientVaultDir(clientName, category = 'General', ay = CURRENT_AY) {
-  const safeCat = ALLOWED_CATEGORIES.includes(category) ? category : 'General';
-  const safeAY = sanitizeName(ay);
+  const bucket = category === 'Extracted' || category === 'Generated' ? 'Extracted' : 'Raw';
   const { periodDir } = ensureClientVaultStructure(clientName);
-  const dirPath = path.join(periodDir, safeCat, safeAY);
+  const dirPath = path.join(periodDir, bucket);
 
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
@@ -117,9 +156,12 @@ function getClientVaultDir(clientName, category = 'General', ay = CURRENT_AY) {
 }
 
 /** Delete the complete client vault, never anything outside VAULT_PATH/clients. */
-function deleteClientVault(clientId) {
+function deleteClientVault(clientVaultRoot) {
   const clientsRoot = path.resolve(getVaultBaseDir(), 'clients');
-  const clientDir = path.resolve(clientsRoot, sanitizeName(clientId));
+  const suppliedPath = String(clientVaultRoot || '');
+  const clientDir = path.isAbsolute(suppliedPath)
+    ? path.resolve(suppliedPath)
+    : path.resolve(clientsRoot, sanitizeName(suppliedPath));
   if (!clientDir.startsWith(`${clientsRoot}${path.sep}`)) {
     throw new Error('Refused to delete a vault path outside the clients vault.');
   }
@@ -187,6 +229,38 @@ function listClientVaultFiles(clientId, category, ay = CURRENT_AY) {
 }
 
 /**
+ * Return a bounded, read-only tree for the client vault. Symlinks are ignored
+ * so a vault cannot expose files outside the configured root.
+ */
+function listClientVaultTree(clientRoot, maxEntries = 5000) {
+  const root = path.resolve(clientRoot);
+  const vaultClientsRoot = path.resolve(getVaultBaseDir(), 'clients');
+  if (!root.startsWith(`${vaultClientsRoot}${path.sep}`)) {
+    throw new Error('Refused to inspect a vault path outside the clients vault.');
+  }
+  if (!fs.existsSync(root)) return [];
+
+  let count = 0;
+  function walk(dir, depth = 0) {
+    if (depth > 8 || count >= maxEntries) return [];
+    return fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).flatMap(entry => {
+      if (count >= maxEntries || entry.isSymbolicLink()) return [];
+      const fullPath = path.join(dir, entry.name);
+      const stat = fs.lstatSync(fullPath);
+      count += 1;
+      return [{
+        name: entry.name,
+        type: entry.isDirectory() ? 'folder' : 'file',
+        size: entry.isDirectory() ? undefined : stat.size,
+        modifiedAt: stat.mtime.toISOString(),
+        children: entry.isDirectory() ? walk(fullPath, depth + 1) : undefined
+      }];
+    });
+  }
+  return walk(root);
+}
+
+/**
  * Delete a file from the vault (use with caution — irreversible)
  */
 function deleteVaultFile(vaultPath) {
@@ -198,9 +272,39 @@ function deleteVaultFile(vaultPath) {
   return false;
 }
 
+/**
+ * Permanently delete one regular file from a specific client vault. The
+ * relative path is validated here so routes cannot remove files outside the
+ * client's configured local folder.
+ */
+function deleteClientVaultFile(clientRoot, relativePath) {
+  const root = path.resolve(clientRoot);
+  const vaultClientsRoot = path.resolve(getVaultBaseDir(), 'clients');
+  const requestedPath = String(relativePath || '');
+  if (!requestedPath || path.isAbsolute(requestedPath)) {
+    throw new Error('A valid vault file path is required.');
+  }
+
+  const target = path.resolve(root, requestedPath);
+  if (!root.startsWith(`${vaultClientsRoot}${path.sep}`) || !target.startsWith(`${root}${path.sep}`)) {
+    throw new Error('Refused to delete a file outside the client vault.');
+  }
+  if (!fs.existsSync(target)) return false;
+
+  const stat = fs.lstatSync(target);
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new Error('Only files stored directly in the local vault can be deleted.');
+  }
+
+  fs.unlinkSync(target);
+  console.log(`[Vault] Deleted client file: ${target}`);
+  return true;
+}
+
 module.exports = {
   initVault,
   ensureClientVaultStructure,
+  ensureClientVaultBuckets,
   getClientVaultRoot,
   getClientVaultDir,
   deleteClientVault,
@@ -208,9 +312,13 @@ module.exports = {
   saveTextFileToVault,
   vaultFileExists,
   listClientVaultFiles,
+  listClientVaultTree,
   deleteVaultFile,
+  deleteClientVaultFile,
   getVaultBaseDir,
+  getVaultUsage,
   updateVaultBaseDir,
   CURRENT_AY,
-  sanitizeName
+  sanitizeName,
+  VAULT_BUCKETS
 };

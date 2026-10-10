@@ -99,7 +99,11 @@ Draft the response letter in formal English, including:
         cost_usd: ((inputTokens * 0.000075 + outputTokens * 0.0003) / 1000),
         duration_ms: duration, success: true
       }]);
-      await supabase.rpc('increment_client_ai_calls', { cid: clientId }).catch(() => {});
+      try {
+        await supabase.rpc('increment_client_ai_calls', { cid: clientId });
+      } catch (rpcError) {
+        console.warn('[Generate] Could not increment client AI call count:', rpcError.message);
+      }
     }
 
     res.json({

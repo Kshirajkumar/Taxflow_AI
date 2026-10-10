@@ -17,7 +17,7 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { supabase, isConnected } = require('../db/supabase');
-const { vaultFileExists } = require('../vault/vaultManager');
+const { vaultFileExists, saveTextFileToVault } = require('../vault/vaultManager');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
@@ -159,6 +159,21 @@ router.post('/process', async (req, res) => {
       .eq('id', documentId).select().single();
     if (updateErr) throw updateErr;
 
+    let extractedVaultPath = null;
+    try {
+      const sourceName = doc.file_name || documentId;
+      const baseName = path.basename(sourceName, path.extname(sourceName));
+      const savedExtraction = saveTextFileToVault(
+        doc.client_name || doc.client_id,
+        `${baseName}_extracted`,
+        JSON.stringify({ documentId, confidenceScore, extractedData }, null, 2),
+        'Extracted'
+      );
+      extractedVaultPath = savedExtraction.vaultPath;
+    } catch (vaultError) {
+      console.error('[Extraction] Could not save local extracted result:', vaultError.message);
+    }
+
     // Step 5: Log AI usage to Supabase ai_usage_log
     await supabase.from('ai_usage_log').insert([{
       client_id: doc.client_id, document_id: documentId,
@@ -169,12 +184,16 @@ router.post('/process', async (req, res) => {
     }]);
 
     // Step 6: Increment AI call counter for this client
-    await supabase.rpc('increment_client_ai_calls', { cid: doc.client_id }).catch(() => {});
+    try {
+      await supabase.rpc('increment_client_ai_calls', { cid: doc.client_id });
+    } catch (rpcError) {
+      console.warn('[Extraction] Could not increment client AI call count:', rpcError.message);
+    }
 
     res.json({
       success: true, source: 'supabase',
       message: `Document extracted with ${confidenceScore}% confidence`,
-      data: updatedDoc
+      data: { ...updatedDoc, extracted_vault_path: extractedVaultPath }
     });
 
   } catch (err) {

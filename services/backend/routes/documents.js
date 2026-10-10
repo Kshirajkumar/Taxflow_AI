@@ -116,10 +116,30 @@ router.post('/upload-vault', async (req, res) => {
     if (isConnected) {
       const { data, error } = await supabase
         .from('documents_metadata').insert([docMeta]).select().single();
-      if (error) throw error;
+      if (error) {
+        // The binary has already been safely written to the local vault. Keep
+        // that file visible instead of reporting a misleading total failure
+        // when a database migration has not been applied yet.
+        if (isMissingDocumentsMetadataTable(error)) {
+          console.error('[Documents] Metadata table is unavailable:', error.message);
+          return res.status(201).json({
+            success: true,
+            source: 'local-vault',
+            message: 'File saved to the Local Vault, but database metadata was not saved.',
+            warning: 'Run services/backend/db/schema.sql in the Supabase SQL Editor to enable document metadata and AI extraction.',
+            metadataSaved: false,
+            data: { id: `local-${Date.now()}`, ...docMeta }
+          });
+        }
+        throw error;
+      }
 
       // Increment client's total_docs counter in Supabase
-      await supabase.rpc('increment_client_docs', { cid: clientId }).catch(() => {});
+      try {
+        await supabase.rpc('increment_client_docs', { cid: clientId });
+      } catch (rpcError) {
+        console.warn('[Documents] Could not increment client document count:', rpcError.message);
+      }
 
       return res.status(201).json({
         success: true, source: 'supabase',
@@ -141,6 +161,11 @@ router.post('/upload-vault', async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+function isMissingDocumentsMetadataTable(error) {
+  const text = `${error?.code || ''} ${error?.message || ''}`.toLowerCase();
+  return text.includes('pgrst205') || (text.includes('documents_metadata') && text.includes('schema cache'));
+}
 
 /**
  * GET /api/v1/documents/:id/serve

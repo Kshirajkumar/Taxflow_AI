@@ -210,12 +210,6 @@ function reducer(state: AppState, action: Action): AppState {
       try {
         localStorage.setItem('taxflow_theme', nextTheme);
       } catch (e) {}
-      if (typeof document !== 'undefined') {
-        document.documentElement.classList.add('theme-transitioning');
-        setTimeout(() => {
-          document.documentElement.classList.remove('theme-transitioning');
-        }, 500);
-      }
       return { ...state, theme: nextTheme };
     }
     case 'TOGGLE_CHAT':

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { AppProvider, useAppState } from './state/store';
 import { Titlebar } from './components/Titlebar';
@@ -18,9 +18,37 @@ import { ClientsPage, BillingPage, SettingsPage } from './pages/Other';
 
 function Shell() {
   const s = useAppState();
+  const hasMountedTheme = useRef(false);
+  const themeTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', s.theme);
+    const root = document.documentElement;
+    const previousTheme = root.getAttribute('data-theme');
+    root.setAttribute('data-theme', s.theme);
+
+    // Do not animate the initial paint. For later changes, keep the transition
+    // lifecycle here so rapid toggles cannot cancel one another incorrectly.
+    if (!hasMountedTheme.current || previousTheme === s.theme) {
+      hasMountedTheme.current = true;
+      return;
+    }
+
+    if (themeTransitionTimer.current) {
+      clearTimeout(themeTransitionTimer.current);
+    }
+    root.classList.add('theme-transitioning');
+    themeTransitionTimer.current = setTimeout(() => {
+      root.classList.remove('theme-transitioning');
+      themeTransitionTimer.current = null;
+    }, 420);
+
+    return () => {
+      if (themeTransitionTimer.current) {
+        clearTimeout(themeTransitionTimer.current);
+        themeTransitionTimer.current = null;
+      }
+      root.classList.remove('theme-transitioning');
+    };
   }, [s.theme]);
 
   useEffect(() => {

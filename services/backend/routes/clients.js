@@ -7,7 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
-const { ensureClientVaultStructure } = require('../vault/vaultManager');
+const { ensureClientVaultStructure, listClientVaultTree, getClientVaultRoot, deleteClientVaultFile } = require('../vault/vaultManager');
 
 // --- In-Memory Fallback Data (used when Supabase is not connected) ---
 let fallbackClients = [
@@ -175,6 +175,9 @@ router.delete('/:id', async (req, res) => {
     if (isConnected) {
       const { data: existing, error: lookupError } = await supabase
         .from('clients')
+        // The local filesystem is the source of truth for the vault location.
+        // Do not require the optional clients.vault_folder column here: existing
+        // Supabase installations may not have received that schema addition.
         .select('id, name')
         .eq('id', clientId)
         .eq('user_id', req.user.id)
@@ -211,7 +214,7 @@ router.delete('/:id', async (req, res) => {
 // GET /api/v1/clients/:id/vault-summary — Show vault folder contents for a client
 router.get('/:id/vault-summary', async (req, res) => {
   const { listClientVaultFiles } = require('../vault/vaultManager');
-  const categories = ['GST', 'IncomeTax', 'Form16', 'BankStatement', 'Notice', 'TDS', 'General'];
+  const categories = ['Raw', 'Extracted'];
   const summary = {};
   let clientName = req.params.id;
   if (isConnected) {
@@ -226,6 +229,79 @@ router.get('/:id/vault-summary', async (req, res) => {
     if (files.length > 0) summary[cat] = files;
   }
   res.json({ success: true, clientId: req.params.id, vaultSummary: summary });
+});
+
+// DELETE /api/v1/clients/:id/vault-file — permanently remove one local file
+router.delete('/:id/vault-file', async (req, res) => {
+  try {
+    const relativePath = typeof req.body?.relativePath === 'string' ? req.body.relativePath.trim() : '';
+    if (!relativePath) {
+      return res.status(400).json({ success: false, message: 'A vault file path is required.' });
+    }
+
+    let client;
+    if (isConnected) {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, name')
+        .eq('id', req.params.id)
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+      if (error) throw error;
+      client = data;
+    } else {
+      client = fallbackClients.find(item => item.id === req.params.id);
+    }
+    if (!client) return res.status(404).json({ success: false, message: 'Client not found.' });
+
+    const deleted = deleteClientVaultFile(getClientVaultRoot(client.name), relativePath);
+    if (!deleted) return res.status(404).json({ success: false, message: 'This file no longer exists in the local vault.' });
+
+    return res.json({ success: true, source: isConnected ? 'supabase' : 'demo', data: { relativePath } });
+  } catch (err) {
+    console.error(`[Clients] Vault file deletion failed for ${req.params.id}:`, err);
+    return res.status(400).json({ success: false, message: err.message || 'The file could not be deleted from the local vault.' });
+  }
+});
+
+// GET /api/v1/clients/:id/vault-tree — read-only local folder browser
+router.get('/:id/vault-tree', async (req, res) => {
+  try {
+    let client;
+    if (isConnected) {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, name')
+        .eq('id', req.params.id)
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+      if (error) throw error;
+      client = data;
+    } else {
+      client = fallbackClients.find(item => item.id === req.params.id);
+    }
+    if (!client) return res.status(404).json({ success: false, message: 'Client not found.' });
+
+    const { ensureClientVaultBuckets } = require('../vault/vaultManager');
+    // Always derive the active root from the current configured vault and the
+    // sanitized client name, so browsing agrees with uploads.
+    const root = getClientVaultRoot(client.name);
+
+    // Reconcile the active period for older clients created before the
+    // two-bucket vault layout was introduced. This is idempotent and safe.
+    ensureClientVaultBuckets(root);
+    return res.json({
+      success: true,
+      source: isConnected ? 'supabase' : 'demo',
+      data: { clientId: client.id, clientName: client.name, root, entries: listClientVaultTree(root) }
+    });
+  } catch (err) {
+    console.error(`[Clients] Vault tree failed for ${req.params.id}:`, err);
+    return res.status(500).json({
+      success: false,
+      message: `The local vault could not be read: ${err.message || 'unknown vault error'}`
+    });
+  }
 });
 
 module.exports = router;

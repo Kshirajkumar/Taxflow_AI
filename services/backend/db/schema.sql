@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS documents_metadata (
   file_name           VARCHAR(255) NOT NULL,
   file_type           VARCHAR(20) NOT NULL CHECK (file_type IN ('PDF', 'PNG', 'JPG', 'JPEG', 'XLSX', 'CSV')),
   file_size_kb        NUMERIC(10,2),
-  category            VARCHAR(50) NOT NULL CHECK (category IN ('GST', 'IncomeTax', 'Form16', 'BankStatement', 'Notice', 'TDS', 'Audit', 'General')),
+  category            VARCHAR(50) NOT NULL CHECK (category IN ('GST', 'IncomeTax', 'Form16', 'BankStatement', 'Notice', 'TDS', 'Audit', 'General', 'Extracted')),
   source              VARCHAR(20) DEFAULT 'Manual' CHECK (source IN ('WhatsApp', 'Manual', 'Portal')),
   status              VARCHAR(30) DEFAULT 'Pending' CHECK (status IN ('Pending', 'Processing', 'Extracted', 'Verified', 'Rejected')),
   vault_path          TEXT NOT NULL,   -- LOCAL disk path only (e.g. C:\TaxFlowVault\clients\cli_1\GST\2026\invoice.pdf)
@@ -108,6 +108,26 @@ CREATE TABLE IF NOT EXISTS documents_metadata (
   verified_at         TIMESTAMPTZ,
   whatsapp_message_id UUID,
   created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE documents_metadata ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can read their own document metadata" ON documents_metadata;
+CREATE POLICY "Users can read their own document metadata" ON documents_metadata FOR SELECT USING (
+  EXISTS (SELECT 1 FROM clients c WHERE c.id = documents_metadata.client_id AND c.user_id = auth.uid())
+);
+DROP POLICY IF EXISTS "Users can create their own document metadata" ON documents_metadata;
+CREATE POLICY "Users can create their own document metadata" ON documents_metadata FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM clients c WHERE c.id = documents_metadata.client_id AND c.user_id = auth.uid())
+);
+DROP POLICY IF EXISTS "Users can update their own document metadata" ON documents_metadata;
+CREATE POLICY "Users can update their own document metadata" ON documents_metadata FOR UPDATE USING (
+  EXISTS (SELECT 1 FROM clients c WHERE c.id = documents_metadata.client_id AND c.user_id = auth.uid())
+) WITH CHECK (
+  EXISTS (SELECT 1 FROM clients c WHERE c.id = documents_metadata.client_id AND c.user_id = auth.uid())
+);
+DROP POLICY IF EXISTS "Users can delete their own document metadata" ON documents_metadata;
+CREATE POLICY "Users can delete their own document metadata" ON documents_metadata FOR DELETE USING (
+  EXISTS (SELECT 1 FROM clients c WHERE c.id = documents_metadata.client_id AND c.user_id = auth.uid())
 );
 
 -- ═══════════════════════════════════════════════════════════════

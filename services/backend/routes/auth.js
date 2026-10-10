@@ -249,6 +249,49 @@ router.post('/login', async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────
+// POST /api/v1/auth/refresh
+// Exchange a refresh token for a new access token when the short-lived access
+// token expires during normal desktop app use.
+router.post('/refresh', async (req, res) => {
+  if (!requireSupabase(res)) return;
+
+  const refreshToken = typeof req.body?.refreshToken === 'string'
+    ? req.body.refreshToken.trim()
+    : '';
+
+  if (!refreshToken) {
+    return res.status(400).json({ success: false, message: 'A refresh token is required.' });
+  }
+
+  try {
+    const { data: refreshed, error } = await supabase.auth.refreshSession({
+      refresh_token: refreshToken
+    });
+
+    if (error || !refreshed?.session || !refreshed.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Session is invalid or has expired. Please log in again.'
+      });
+    }
+
+    const profile = await fetchUserProfile(refreshed.user.id);
+    return res.json({
+      success: true,
+      message: 'Session refreshed.',
+      token: refreshed.session.access_token,
+      refreshToken: refreshed.session.refresh_token,
+      user: buildUserResponse(refreshed.user, profile)
+    });
+  } catch (err) {
+    console.error('[AUTH] Session refresh exception:', err.message);
+    return res.status(401).json({
+      success: false,
+      message: 'Session is invalid or has expired. Please log in again.'
+    });
+  }
+});
+
 // POST /api/v1/auth/forgot-password
 // Sends a real password reset email via Supabase
 // ──────────────────────────────────────────────────────────

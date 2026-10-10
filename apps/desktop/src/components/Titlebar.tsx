@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Icon } from './Icon';
 import { ThemeToggle } from './ThemeToggle';
+import { BrandMark } from './BrandMark';
 import { useAppState, useDispatch } from '../state/store';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
@@ -57,15 +58,6 @@ export function Titlebar() {
     }
   };
 
-  const handleTitlebarMouseDown = async (event: React.MouseEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    const target = event.target as HTMLElement;
-    if (target.closest('button, input, textarea, select, a, [role="button"], [contenteditable="true"]')) return;
-    try { await getCurrentWindow().startDragging(); } catch (e) {
-      console.warn('Window drag failed:', e);
-    }
-  };
-
   const results = q.trim()
     ? s.clients
         .filter(
@@ -77,13 +69,11 @@ export function Titlebar() {
     : [];
 
   return (
-    <header className="titlebar" data-tauri-drag-region onMouseDown={handleTitlebarMouseDown}>
+    <header className="titlebar">
       {/* Brand */}
       <div className="brand" data-tauri-drag-region>
         <span className="logo">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 19V9M10 19V5M16 19v-7M22 19H2" />
-          </svg>
+          <BrandMark />
         </span>
         <span className="brand-name">Taxflow<span className="brand-dot">.</span>AI</span>
         <small className="brand-badge">CA Suite</small>

@@ -1,7 +1,7 @@
 // TaxFlow.AI — API Client Service (Production Grade)
 // All API calls require Authorization header when user is authenticated.
 
-const API_BASE_URL = 'http://localhost:5000/api/v1';
+const API_BASE_URL = 'http://127.0.0.1:5000/api/v1';
 
 // ─── Token helpers ─────────────────────────────────────────────
 function getToken(): string | null {
@@ -17,6 +17,57 @@ function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) h['Authorization'] = `Bearer ${token}`;
   return h;
+}
+
+let refreshRequest: Promise<AuthResponse | null> | null = null;
+
+function saveSessionTokens(response: AuthResponse): void {
+  if (!response.token) return;
+  try {
+    const raw = localStorage.getItem('taxflow_session');
+    const current = raw ? JSON.parse(raw) : {};
+    localStorage.setItem('taxflow_session', JSON.stringify({
+      ...current,
+      ...(response.user ? { user: response.user } : {}),
+      token: response.token,
+      refreshToken: response.refreshToken || current.refreshToken,
+    }));
+  } catch {
+    // Continue with the in-memory response if storage is unavailable.
+  }
+}
+
+async function refreshSession(): Promise<AuthResponse | null> {
+  if (!refreshRequest) {
+    let refreshToken: string | null = null;
+    try {
+      const raw = localStorage.getItem('taxflow_session');
+      refreshToken = raw ? JSON.parse(raw).refreshToken || null : null;
+    } catch {
+      refreshToken = null;
+    }
+
+    if (!refreshToken) return null;
+
+    refreshRequest = fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    })
+      .then(async (response) => {
+        const data = await response.json() as AuthResponse;
+        if (response.ok && data.success && data.token) {
+          saveSessionTokens(data);
+          return data;
+        }
+        return null;
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshRequest = null;
+      });
+  }
+  return refreshRequest;
 }
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -223,7 +274,13 @@ export async function apiForgotPassword(email: string): Promise<{ success: boole
 }
 
 export async function apiGetMe(): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE_URL}/auth/me`, { headers: authHeaders() });
+  let res = await fetch(`${API_BASE_URL}/auth/me`, { headers: authHeaders() });
+  if (res.status === 401) {
+    const refreshed = await refreshSession();
+    if (refreshed?.token) {
+      res = await fetch(`${API_BASE_URL}/auth/me`, { headers: authHeaders() });
+    }
+  }
   return res.json();
 }
 
@@ -285,14 +342,22 @@ export async function createClient(clientData: Partial<Client>): Promise<Client 
       assigned_ca: clientData.assignedCA || null,
       filing_types: clientData.filingTypes || [],
   };
+  try {
     const res = await fetch(`${API_BASE_URL}/clients`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(payload)
     });
-    const json = await res.json();
+    let json: any;
+    try { json = await res.json(); } catch { throw new Error(`The backend returned an invalid response (HTTP ${res.status}).`); }
     if (!res.ok || !json.success) throw new Error(json.message || `Failed to save client (HTTP ${res.status}).`);
     return json.data;
+  } catch (err: any) {
+    if (err instanceof TypeError) {
+      throw new Error('The TaxFlow.AI backend is not reachable. Start the app with “npm run dev:full” and try again.');
+    }
+    throw err;
+  }
 }
 
 export async function updateClient(clientId: string, clientData: Partial<Client>): Promise<Client> {
@@ -331,6 +396,46 @@ export async function deleteClient(clientId: string): Promise<{ id: string; name
   return json.data;
 }
 
+export interface VaultTreeEntry {
+  name: string;
+  type: 'folder' | 'file';
+  size?: number;
+  modifiedAt: string;
+  children?: VaultTreeEntry[];
+}
+
+export interface VaultTreeResponse {
+  clientId: string;
+  clientName: string;
+  root: string;
+  entries: VaultTreeEntry[];
+}
+
+export async function fetchVaultTree(clientId: string): Promise<VaultTreeResponse> {
+  const res = await fetch(`${API_BASE_URL}/clients/${encodeURIComponent(clientId)}/vault-tree`, { headers: authHeaders() });
+  let json: any;
+  try { json = await res.json(); } catch { throw new Error(`The vault returned an invalid response (HTTP ${res.status}).`); }
+  if (!res.ok || !json.success) throw new Error(json.message || `Could not read the vault (HTTP ${res.status}).`);
+  return json.data;
+}
+
+export async function deleteVaultFile(clientId: string, relativePath: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/clients/${encodeURIComponent(clientId)}/vault-file`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+      body: JSON.stringify({ relativePath }),
+    });
+  } catch {
+    throw new Error('The backend is unavailable. The file was not deleted.');
+  }
+
+  let json: any;
+  try { json = await res.json(); } catch { throw new Error(`The vault returned an invalid response (HTTP ${res.status}).`); }
+  if (!res.ok || !json.success) throw new Error(json.message || `The file could not be deleted (HTTP ${res.status}).`);
+}
+
 // ─── Documents API ─────────────────────────────────────────────
 
 export async function fetchDocuments(clientId?: string): Promise<DocumentItem[]> {
@@ -345,26 +450,45 @@ export async function fetchDocuments(clientId?: string): Promise<DocumentItem[]>
   }
 }
 
+export interface VaultUploadResponse {
+  data?: DocumentItem;
+  message?: string;
+  warning?: string;
+  source?: string;
+  metadataSaved?: boolean;
+}
+
 export async function uploadToLocalVault(payload: {
   clientId: string;
+  clientName?: string;
   fileName: string;
   fileType: string;
   category: string;
+  assessmentYear?: string;
   fileBase64?: string;
   source?: string;
-}): Promise<DocumentItem | null> {
+}): Promise<VaultUploadResponse> {
+  let res: Response;
   try {
-    const res = await fetch(`${API_BASE_URL}/documents/upload-vault`, {
+    res = await fetch(`${API_BASE_URL}/documents/upload-vault`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(payload)
     });
-    const json = await res.json();
-    return json.data;
-  } catch (err) {
-    console.error('Local Vault upload failed', err);
-    return null;
+  } catch {
+    throw new Error('The TaxFlow.AI backend is unavailable. Start the backend and try again.');
   }
+
+  let json: any;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error(`The backend returned an invalid upload response (HTTP ${res.status}).`);
+  }
+  if (!res.ok || !json.success) {
+    throw new Error(json.message || `The file could not be uploaded (HTTP ${res.status}).`);
+  }
+  return json;
 }
 
 export function getVaultFileUrl(docId: string): string {
@@ -383,6 +507,24 @@ export async function verifyDocumentExtraction(documentId: string, verifiedBy = 
     console.error('Failed to verify document', err);
     return null;
   }
+}
+
+export async function processDocumentExtraction(documentId: string, category = 'General') {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/extraction/process`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ documentId, category }),
+    });
+  } catch {
+    throw new Error('The extraction service is unavailable. The uploaded file is still safe in the client vault.');
+  }
+
+  let json: any;
+  try { json = await res.json(); } catch { throw new Error(`The extraction service returned an invalid response (HTTP ${res.status}).`); }
+  if (!res.ok || !json.success) throw new Error(json.message || `AI extraction failed (HTTP ${res.status}).`);
+  return json;
 }
 
 // ─── WhatsApp API ──────────────────────────────────────────────

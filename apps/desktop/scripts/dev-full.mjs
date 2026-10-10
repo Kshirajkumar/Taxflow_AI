@@ -15,6 +15,25 @@ const backend = spawn(node, ['index.js'], {
 
 console.log('[dev] Starting TaxFlow.AI backend on http://localhost:5000');
 
+async function waitForBackend(timeoutMs = 15000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/v1/health');
+      if (response.ok) return true;
+    } catch {
+      // Express is still starting. Retry below.
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  return false;
+}
+
+const backendReady = await waitForBackend();
+if (!backendReady) {
+  console.warn('[dev] Backend did not become ready within 15 seconds; starting Vite anyway.');
+}
+
 const vite = spawn(node, [viteEntry], {
   cwd: desktopDir,
   stdio: 'inherit',

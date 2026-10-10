@@ -13,6 +13,16 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      try {
+        const savedTheme = localStorage.getItem('taxflow_theme');
+        if (savedTheme === 'light' || savedTheme === 'dark') {
+          document.documentElement.setAttribute('data-theme', savedTheme);
+        }
+      } catch (_) {
+        // Storage can be unavailable in restricted browser contexts.
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

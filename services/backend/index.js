@@ -86,7 +86,7 @@ app.use('/api/v1/generate', requireAuth, generateRouter);
 
 // ─── Health & System Status ────────────────────────────────────
 app.get('/api/v1/health', async (req, res) => {
-  const { getVaultBaseDir } = require('./vault/vaultManager');
+  const { getVaultBaseDir, getVaultUsage } = require('./vault/vaultManager');
   const fs = require('fs');
   const vaultDir = getVaultBaseDir();
 
@@ -114,7 +114,8 @@ app.get('/api/v1/health', async (req, res) => {
     },
     vault: {
       status: fs.existsSync(vaultDir) ? 'active' : 'not_configured',
-      path: vaultDir
+      path: vaultDir,
+      usage: getVaultUsage()
     },
     ai: {
       provider: 'Google Gemini',
