@@ -12,6 +12,7 @@
 import { useState, useEffect } from 'react';
 import { useAppState, useDispatch } from '../state/store';
 import { apiUpdateProfile, apiSetupVault, createClient } from '../lib/api';
+import { FilingTypePicker } from '../components/FilingTypePicker';
 import { open } from '@tauri-apps/plugin-dialog';
 
 // Try to open native folder picker via Tauri; falls back gracefully in browser/web
@@ -62,10 +63,9 @@ interface ClientDraft {
   gstin: string;
   phone: string;
   entityType: string;
+  countryId: string;
   filingTypes: string[];
 }
-
-const FILING_OPTIONS = ['ITR', 'GSTR-1', 'GSTR-1B', 'GSTR-3B', 'GSTR-9', 'TDS Returns', 'Advance Tax', 'ROC / MCA', 'Tax Audit'];
 
 function ClientRow({
   client,
@@ -102,15 +102,13 @@ function ClientRow({
         <input className="ob-input" placeholder="GSTIN (optional)" value={client.gstin} onChange={e => onChange(client.id, 'gstin', e.target.value.toUpperCase())} maxLength={15} />
         <input className="ob-input" placeholder="Phone (optional)" value={client.phone} onChange={e => onChange(client.id, 'phone', e.target.value)} />
       </div>
-      <div className="ob-filing-options">
-        <span className="ob-filing-label">Services to file</span>
-        {FILING_OPTIONS.map(type => (
-          <label key={type} className="ob-filing-option">
-            <input type="checkbox" checked={client.filingTypes.includes(type)} onChange={e => onChange(client.id, 'filingTypes', e.target.checked ? [...client.filingTypes, type] as any : client.filingTypes.filter(x => x !== type) as any)} />
-            {type}
-          </label>
-        ))}
-      </div>
+      <FilingTypePicker
+        countryId={client.countryId}
+        selectedTypes={client.filingTypes}
+        onCountryChange={value => onChange(client.id, 'countryId', value)}
+        onTypesChange={value => onChange(client.id, 'filingTypes', value)}
+        compact
+      />
       <button className="ob-remove-btn" onClick={() => onRemove(client.id)} title="Remove client">✕</button>
     </div>
   );
@@ -144,7 +142,7 @@ export function OnboardingFlow() {
   function addClient() {
     setClients(prev => [
       ...prev,
-      { id: crypto.randomUUID(), name: '', pan: '', gstin: '', phone: '', entityType: 'Individual', filingTypes: [] }
+      { id: crypto.randomUUID(), name: '', pan: '', gstin: '', phone: '', entityType: 'Individual', countryId: '', filingTypes: [] }
     ]);
   }
 
@@ -178,6 +176,7 @@ export function OnboardingFlow() {
 
       // Create each client
       const validClients = clients.filter(c => c.name.trim().length > 0);
+      if (validClients.some(c => !c.countryId)) throw new Error('Please select a country for every client before continuing.');
       for (const c of validClients) {
         const created = await createClient({
           name: c.name.trim(),
@@ -185,6 +184,7 @@ export function OnboardingFlow() {
           gstin: c.gstin.trim(),
           phone: c.phone.trim(),
           entityType: c.entityType,
+          countryId: c.countryId,
           filingTypes: c.filingTypes,
           status: 'active'
         });

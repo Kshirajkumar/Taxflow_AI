@@ -12,12 +12,8 @@
  *   VAULT_PATH/
  *   └── clients/
  *       └── {client_id}/
- *           ├── GST/2026-27/
- *           ├── IncomeTax/2026-27/
- *           ├── BankStatement/2026-27/
- *           ├── Form16/2026-27/
- *           ├── Notice/2026-27/
- *           └── General/2026-27/
+ *           └── {client_name}/
+ *               └── {calendar_year}/{month}/{category}/{assessment_year}/
  *
  * SECURITY: The vault folder should NEVER be inside a cloud-synced folder
  * (e.g. OneDrive, Dropbox, Google Drive) to protect client data privacy.
@@ -51,6 +47,39 @@ function updateVaultBaseDir(newPath) {
 const ALLOWED_CATEGORIES = ['GST', 'IncomeTax', 'Form16', 'BankStatement', 'Notice', 'TDS', 'Audit', 'General', 'Generated'];
 const CURRENT_AY = '2026-27';
 
+function getCurrentVaultPeriod(date = new Date()) {
+  return {
+    year: String(date.getFullYear()),
+    month: new Intl.DateTimeFormat('en-US', { month: 'long' }).format(date)
+  };
+}
+
+/**
+ * Return the stable, human-readable root for a client. Names are sanitized
+ * before they reach the filesystem; the caller must not pass raw input to
+ * path.join directly.
+ */
+function getClientVaultRoot(clientName) {
+  const safeName = sanitizeName(clientName);
+  return path.join(getVaultBaseDir(), 'clients', safeName);
+}
+
+/**
+ * Create the client/year/month structure immediately when a client is added.
+ * mkdir with recursive=true makes this idempotent, so retries are safe.
+ */
+function ensureClientVaultStructure(clientName, date = new Date()) {
+  if (!clientName || !String(clientName).trim()) {
+    throw new Error('A client name is required to create the local vault folder.');
+  }
+
+  const { year, month } = getCurrentVaultPeriod(date);
+  const clientRoot = getClientVaultRoot(clientName);
+  const periodDir = path.join(clientRoot, year, month);
+  fs.mkdirSync(periodDir, { recursive: true });
+  return { clientRoot, periodDir, year, month };
+}
+
 /**
  * Initialize root vault directories on startup
  */
@@ -75,16 +104,29 @@ function sanitizeName(name) {
  * Get or create the vault path for a client's category folder
  * Returns the absolute directory path
  */
-function getClientVaultDir(clientId, category = 'General', ay = CURRENT_AY) {
-  const safeId = sanitizeName(clientId);
+function getClientVaultDir(clientName, category = 'General', ay = CURRENT_AY) {
   const safeCat = ALLOWED_CATEGORIES.includes(category) ? category : 'General';
   const safeAY = sanitizeName(ay);
-  const dirPath = path.join(getVaultBaseDir(), 'clients', safeId, safeCat, safeAY);
+  const { periodDir } = ensureClientVaultStructure(clientName);
+  const dirPath = path.join(periodDir, safeCat, safeAY);
 
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
   }
   return dirPath;
+}
+
+/** Delete the complete client vault, never anything outside VAULT_PATH/clients. */
+function deleteClientVault(clientId) {
+  const clientsRoot = path.resolve(getVaultBaseDir(), 'clients');
+  const clientDir = path.resolve(clientsRoot, sanitizeName(clientId));
+  if (!clientDir.startsWith(`${clientsRoot}${path.sep}`)) {
+    throw new Error('Refused to delete a vault path outside the clients vault.');
+  }
+  if (!fs.existsSync(clientDir)) return false;
+  fs.rmSync(clientDir, { recursive: true, force: false });
+  console.log(`[Vault] Deleted client folder: ${clientDir}`);
+  return true;
 }
 
 /**
@@ -158,7 +200,10 @@ function deleteVaultFile(vaultPath) {
 
 module.exports = {
   initVault,
+  ensureClientVaultStructure,
+  getClientVaultRoot,
   getClientVaultDir,
+  deleteClientVault,
   saveFileToVault,
   saveTextFileToVault,
   vaultFileExists,
@@ -166,5 +211,6 @@ module.exports = {
   deleteVaultFile,
   getVaultBaseDir,
   updateVaultBaseDir,
-  CURRENT_AY
+  CURRENT_AY,
+  sanitizeName
 };

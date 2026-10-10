@@ -89,7 +89,7 @@ Draft the response letter in formal English, including:
     const duration = Date.now() - startTime;
 
     // Save generated draft to Local Vault Storage
-    const saved = saveTextFileToVault(clientId, `notice_response_${section || '143_1'}`, draftText, 'Generated');
+    const saved = saveTextFileToVault(client.name, `notice_response_${section || '143_1'}`, draftText, 'Generated');
 
     // Log AI usage to Supabase
     if (isConnected) {
@@ -145,7 +145,7 @@ router.post('/computation-sheet', async (req, res) => {
     }
 
     const sheet = generateComputationSheet(clientData, extractedDocs, assessmentYear || '2026-27');
-    const saved = saveTextFileToVault(clientId, `computation_sheet_${assessmentYear || '2026-27'}`, sheet, 'Generated');
+    const saved = saveTextFileToVault(clientData.name, `computation_sheet_${assessmentYear || '2026-27'}`, sheet, 'Generated');
 
     if (isConnected) {
       await supabase.from('ai_usage_log').insert([{

@@ -18,6 +18,7 @@
 const express = require('express');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
+const { ensureClientVaultStructure } = require('../vault/vaultManager');
 
 // ──────────────────────────────────────────────────────────
 // Rate Limiting (in-memory, per IP+email)
@@ -349,12 +350,38 @@ router.post('/vault-setup', async (req, res) => {
     console.warn('[AUTH] Local vault update failed (non-critical):', e.message);
   }
 
+  // Onboarding creates clients before this step. Reconcile their folders now
+  // that the user-selected vault is active, so first-run clients are not left
+  // behind in the temporary/default vault location.
+  const vaultWarnings = [];
+  try {
+    const { data: clients, error: clientsError } = await supabase
+      .from('clients')
+      .select('id, name')
+      .eq('user_id', data.user.id);
+    if (clientsError) throw clientsError;
+
+    for (const client of clients || []) {
+      try {
+        const folder = ensureClientVaultStructure(client.name);
+        await supabase.from('clients').update({ vault_folder: folder.clientRoot }).eq('id', client.id).eq('user_id', data.user.id);
+      } catch (clientVaultError) {
+        console.error(`[AUTH] Client vault reconciliation failed for ${client.id}:`, clientVaultError);
+        vaultWarnings.push(client.name);
+      }
+    }
+  } catch (clientsError) {
+    console.error('[AUTH] Client vault reconciliation query failed:', clientsError);
+    vaultWarnings.push('existing clients');
+  }
+
   console.log(`[AUTH] Vault configured for user ${data.user.id}: ${cleanPath}`);
 
   return res.json({
     success: true,
     message: 'Vault folder configured and onboarding complete.',
-    vaultPath: cleanPath
+    vaultPath: cleanPath,
+    vaultWarnings: vaultWarnings.length ? `Some client folders could not be created: ${vaultWarnings.join(', ')}` : null
   });
 });
 

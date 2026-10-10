@@ -57,6 +57,15 @@ export function Titlebar() {
     }
   };
 
+  const handleTitlebarMouseDown = async (event: React.MouseEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('button, input, textarea, select, a, [role="button"], [contenteditable="true"]')) return;
+    try { await getCurrentWindow().startDragging(); } catch (e) {
+      console.warn('Window drag failed:', e);
+    }
+  };
+
   const results = q.trim()
     ? s.clients
         .filter(
@@ -68,7 +77,7 @@ export function Titlebar() {
     : [];
 
   return (
-    <header className="titlebar" data-tauri-drag-region>
+    <header className="titlebar" data-tauri-drag-region onMouseDown={handleTitlebarMouseDown}>
       {/* Brand */}
       <div className="brand" data-tauri-drag-region>
         <span className="logo">

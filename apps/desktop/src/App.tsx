@@ -25,6 +25,10 @@ function Shell() {
 
   useEffect(() => {
     document.body.classList.toggle('chat-hidden', !s.chatOpen);
+    document.body.classList.toggle('chat-open', s.chatOpen);
+    return () => {
+      document.body.classList.remove('chat-hidden', 'chat-open');
+    };
   }, [s.chatOpen]);
 
   useEffect(() => {

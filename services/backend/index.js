@@ -52,6 +52,7 @@ const extractionRouter = require('./routes/extraction');
 const whatsappRouter = require('./routes/whatsapp');
 const deadlinesRouter = require('./routes/deadlines');
 const generateRouter = require('./routes/generate');
+const metadataRouter = require('./routes/metadata');
 const { requireAuth } = require('./middleware/requireAuth');
 
 const { supabase, isConnected } = require('./db/supabase');
@@ -75,6 +76,7 @@ initVault();
 
 // ─── Mount Routes ─────────────────────────────────────────────
 app.use('/api/v1/auth', authRouter);
+app.use('/api/v1/metadata', requireAuth, metadataRouter);
 app.use('/api/v1/clients', requireAuth, clientsRouter);
 app.use('/api/v1/documents', requireAuth, documentsRouter);
 app.use('/api/v1/extraction', requireAuth, extractionRouter);
@@ -126,6 +128,7 @@ app.get('/api/v1/health', async (req, res) => {
       'GET  /api/v1/clients',
       'POST /api/v1/clients',
       'GET  /api/v1/clients/:id',
+      'DELETE /api/v1/clients/:id',
       'GET  /api/v1/clients/:id/vault-summary',
       'GET  /api/v1/documents',
       'POST /api/v1/documents/upload-vault',

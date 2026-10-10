@@ -90,7 +90,7 @@ router.post('/upload-vault', async (req, res) => {
     let savedFileName = fileName;
 
     if (fileBase64) {
-      const saved = saveFileToVault(clientId, fileName, fileBase64, category || 'General', assessmentYear || '2026-27');
+      const saved = saveFileToVault(clientName || clientId, fileName, fileBase64, category || 'General', assessmentYear || '2026-27');
       vaultPath = saved.vaultPath;
       fileSizeKb = saved.fileSizeKb;
       savedFileName = saved.fileName;

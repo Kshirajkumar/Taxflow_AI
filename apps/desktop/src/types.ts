@@ -1,4 +1,4 @@
-export type Currency = 'INR' | 'AED' | 'GBP';
+export type Currency = 'INR' | 'AED' | 'GBP' | 'USD' | 'SGD';
 
 export interface Client {
   id: string;
@@ -7,6 +7,7 @@ export interface Client {
   short: string;
   city: string;
   country: string;
+  countryId?: string;
   cur: Currency;
   gstin: string;
   pan: string;

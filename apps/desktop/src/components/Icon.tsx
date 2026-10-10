@@ -26,6 +26,7 @@ const PATHS: Record<string, string> = {
   bolt: '<path d="M13 2 3 14h9l-1 8 10-12h-9Z"/>',
   refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/>',
   pencil: '<path d="m4 20 4.5-1 10.8-10.8a2.1 2.1 0 0 0-3-3L5.5 16Z"/><path d="m14.5 6.5 3 3"/><path d="M4 20h5"/>',
+  trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 15H6L5 6"/><path d="M10 11v6M14 11v6"/>',
 };
 
 export function Icon({ name, size = 16, className = 'ic' }: { name: string; size?: number; className?: string }) {

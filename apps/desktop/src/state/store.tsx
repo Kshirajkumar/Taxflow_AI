@@ -70,6 +70,7 @@ type Action =
   | { type: 'COMPLETE_ONBOARDING' }
   | { type: 'ADD_CLIENT'; client: Client }
   | { type: 'UPDATE_CLIENT'; client: Client }
+  | { type: 'DELETE_CLIENT'; id: string }
   | { type: 'WA_CLIENT'; id: string }
   | { type: 'WA_TAB'; tab: 'chats' | 'reminders' | 'templates' }
   | { type: 'WA_SEND'; client: string; text: string }
@@ -167,6 +168,23 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, clients: [action.client, ...state.clients] };
     case 'UPDATE_CLIENT':
       return { ...state, clients: state.clients.map((client) => client.id === action.client.id ? action.client : client) };
+    case 'DELETE_CLIENT': {
+      const checks = { ...state.checks };
+      delete checks[action.id];
+      const threads = { ...state.threads };
+      delete threads[action.id];
+      return {
+        ...state,
+        clients: state.clients.filter(client => client.id !== action.id),
+        docs: state.docs.filter(doc => doc.client !== action.id),
+        files: state.files.filter(file => file.client !== action.id),
+        tasks: state.tasks.filter(task => task.client !== action.id),
+        reminders: state.reminders.filter(reminder => reminder.client !== action.id),
+        bills: state.bills.filter(bill => bill.client !== action.id),
+        checks,
+        threads,
+      };
+    }
     case 'LOGOUT': {
       try {
         localStorage.removeItem('taxflow_session');
@@ -312,8 +330,9 @@ function reducer(state: AppState, action: Action): AppState {
         entityType: c.entity_type || '',
         short: (c.name || 'CLI').substring(0, 3).toUpperCase(),
         city: 'Local',
-        country: 'India',
-        cur: 'INR' as const,
+        country: c.country_name || 'India',
+        countryId: c.country_id || undefined,
+        cur: (c.currency_code || 'INR') as any,
         gstin: c.gstin || '',
         pan: c.pan || '',
         svc: Array.isArray(c.filing_types) && c.filing_types.length ? c.filing_types : ['GST', 'Income Tax'],

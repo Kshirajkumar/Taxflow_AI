@@ -3,9 +3,8 @@ import { Icon } from '../components/Icon';
 import { useAppState, useDispatch } from '../state/store';
 import { allTasks, missing, pendingBill } from '../lib/domain';
 import { fDate, money, sum } from '../lib/format';
-import { createClient, updateClient } from '../lib/api';
-
-const FILING_OPTIONS = ['ITR', 'GSTR-1', 'GSTR-1B', 'GSTR-3B', 'GSTR-9', 'TDS Returns', 'Advance Tax', 'ROC / MCA', 'Tax Audit'];
+import { createClient, deleteClient, updateClient } from '../lib/api';
+import { FilingTypePicker } from '../components/FilingTypePicker';
 
 export function ClientsPage() {
   const s = useAppState();
@@ -17,32 +16,57 @@ export function ClientsPage() {
   const [editingClient, setEditingClient] = React.useState(false);
   const [editSaving, setEditSaving] = React.useState(false);
   const [editError, setEditError] = React.useState('');
-  const [editForm, setEditForm] = React.useState({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', filingTypes: [] as string[] });
-  const [form, setForm] = React.useState({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', filingTypes: [] as string[] });
+  const [deleteConfirm, setDeleteConfirm] = React.useState(false);
+  const [deleteSaving, setDeleteSaving] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState('');
+  const [editForm, setEditForm] = React.useState({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', countryId: '', filingTypes: [] as string[] });
+  const [form, setForm] = React.useState({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', countryId: '', filingTypes: [] as string[] });
   const update = (key: string, value: any) => setForm(prev => ({ ...prev, [key]: value }));
   async function save() {
     if (!form.name.trim()) { setError('Client name is required.'); return; }
+    if (!form.countryId) { setError('Please select a supported country.'); return; }
     setSaving(true); setError('');
     try {
       const saved: any = await createClient(form as any);
       if (!saved) throw new Error('Could not save client.');
-      dispatch({ type: 'ADD_CLIENT', client: { id: saved.id, name: saved.name, entityType: saved.entity_type || form.entityType, short: saved.name.slice(0, 3).toUpperCase(), city: 'Local', country: 'India', cur: 'INR', gstin: saved.gstin || '', pan: saved.pan || '', svc: saved.filing_types || form.filingTypes, filingTypes: saved.filing_types || form.filingTypes, contact: saved.email || '', phone: saved.phone || '', fee: 0, tone: 'blue', alias: [] } });
-      setShowAdd(false); setForm({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', filingTypes: [] });
+      dispatch({ type: 'ADD_CLIENT', client: { id: saved.id, name: saved.name, entityType: saved.entity_type || form.entityType, short: saved.name.slice(0, 3).toUpperCase(), city: 'Local', country: saved.country_name || 'Selected country', countryId: saved.country_id || form.countryId, cur: saved.currency_code || 'INR', gstin: saved.gstin || '', pan: saved.pan || '', svc: saved.filing_types || form.filingTypes, filingTypes: saved.filing_types || form.filingTypes, contact: saved.email || '', phone: saved.phone || '', fee: 0, tone: 'blue', alias: [] } });
+      setShowAdd(false); setForm({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', countryId: '', filingTypes: [] });
     } catch (err: any) { setError(err.message || 'Could not save client.'); }
     finally { setSaving(false); }
   }
   function startEditing() {
     if (!selectedClient) return;
-    setEditForm({ name: selectedClient.name, entityType: selectedClient.entityType || 'Individual', pan: selectedClient.pan, gstin: selectedClient.gstin, phone: selectedClient.phone, email: selectedClient.contact, filingTypes: selectedClient.filingTypes?.length ? [...selectedClient.filingTypes] : [...selectedClient.svc] });
+    setEditForm({ name: selectedClient.name, entityType: selectedClient.entityType || 'Individual', pan: selectedClient.pan, gstin: selectedClient.gstin, phone: selectedClient.phone, email: selectedClient.contact, countryId: selectedClient.countryId || '', filingTypes: selectedClient.filingTypes?.length ? [...selectedClient.filingTypes] : [...selectedClient.svc] });
     setEditError('');
+    setDeleteConfirm(false);
+    setDeleteError('');
     setEditingClient(true);
+  }
+
+  async function permanentlyDeleteClient() {
+    if (!selectedClient || deleteSaving) return;
+    setDeleteSaving(true);
+    setDeleteError('');
+    try {
+      const deleted = await deleteClient(selectedClient.id);
+      dispatch({ type: 'DELETE_CLIENT', id: selectedClient.id });
+      setDeleteConfirm(false);
+      setEditingClient(false);
+      setSelectedClient(null);
+      if (deleted.vaultWarning) console.warn(deleted.vaultWarning);
+    } catch (err: any) {
+      setDeleteError(err.message || 'Could not delete this client. Nothing was removed.');
+    } finally {
+      setDeleteSaving(false);
+    }
   }
   async function saveEdit() {
     if (!selectedClient || !editForm.name.trim()) { setEditError('Client name is required.'); return; }
+    if (!editForm.countryId) { setEditError('Please select a supported country.'); return; }
     setEditSaving(true); setEditError('');
     try {
       const saved: any = await updateClient(selectedClient.id, editForm as any);
-      const updated = { ...selectedClient, name: saved.name || editForm.name.trim(), entityType: saved.entity_type || editForm.entityType, short: (saved.name || editForm.name).slice(0, 3).toUpperCase(), gstin: saved.gstin || '', pan: saved.pan || '', svc: Array.isArray(saved.filing_types) ? saved.filing_types : editForm.filingTypes, filingTypes: Array.isArray(saved.filing_types) ? saved.filing_types : editForm.filingTypes, contact: saved.email || '', phone: saved.phone || '' };
+      const updated = { ...selectedClient, name: saved.name || editForm.name.trim(), entityType: saved.entity_type || editForm.entityType, countryId: saved.country_id || editForm.countryId, country: saved.country_name || selectedClient.country, short: (saved.name || editForm.name).slice(0, 3).toUpperCase(), gstin: saved.gstin || '', pan: saved.pan || '', svc: Array.isArray(saved.filing_types) ? saved.filing_types : editForm.filingTypes, filingTypes: Array.isArray(saved.filing_types) ? saved.filing_types : editForm.filingTypes, contact: saved.email || '', phone: saved.phone || '' };
       dispatch({ type: 'UPDATE_CLIENT', client: updated });
       setSelectedClient(updated);
       setEditingClient(false);
@@ -93,10 +117,9 @@ export function ClientsPage() {
                 <label className="f">Phone<input className="modal-input" value={editForm.phone} onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))} /></label>
                 <label className="f">Email<input className="modal-input" type="email" value={editForm.email} onChange={e => setEditForm(prev => ({ ...prev, email: e.target.value }))} /></label>
               </div>
-              <div className="f client-edit-label">Filing services</div>
-              <div className="client-edit-filings">{FILING_OPTIONS.map(type => <label key={type} className={'client-edit-check' + (editForm.filingTypes.includes(type) ? ' selected' : '')}><input type="checkbox" checked={editForm.filingTypes.includes(type)} onChange={e => setEditForm(prev => ({ ...prev, filingTypes: e.target.checked ? [...prev.filingTypes, type] : prev.filingTypes.filter(x => x !== type) }))} />{type}</label>)}</div>
+              <FilingTypePicker countryId={editForm.countryId} selectedTypes={editForm.filingTypes} onCountryChange={value => setEditForm(prev => ({ ...prev, countryId: value, filingTypes: [] }))} onTypesChange={value => setEditForm(prev => ({ ...prev, filingTypes: value }))} />
               {editError && <div className="ob-error">{editError}</div>}
-              <div className="client-edit-footer"><button className="btn gh" onClick={() => setEditingClient(false)}>Cancel</button><button className="btn pri" disabled={editSaving} onClick={saveEdit}>{editSaving ? <><i className="spin" />Saving</> : <><Icon name="check" size={14} />Save changes</>}</button></div>
+              <div className="client-edit-footer"><button className="btn danger" onClick={() => { setDeleteError(''); setDeleteConfirm(true); }}>Delete client</button><span className="sp" /><button className="btn gh" onClick={() => setEditingClient(false)}>Cancel</button><button className="btn pri" disabled={editSaving || deleteSaving} onClick={saveEdit}>{editSaving ? <><i className="spin" />Saving</> : <><Icon name="check" size={14} />Save changes</>}</button></div>
             </> : <>
             <div className="client-details-identity"><span className="av lg" style={{ ['--t' as any]: selectedClient.tone }}>{selectedClient.short.slice(0, 2).toUpperCase()}</span><div><b>{selectedClient.name}</b><div className="mut">{selectedClient.city}, {selectedClient.country}</div></div></div>
             <div className="client-details-grid">
@@ -111,6 +134,16 @@ export function ClientsPage() {
           </div>
         </div>
       </div>}
+      {deleteConfirm && selectedClient && <div className="modal delete-confirm-modal" onMouseDown={e => { if (e.target === e.currentTarget && !deleteSaving) setDeleteConfirm(false); }}>
+        <div className="card delete-confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="delete-client-title">
+          <div className="delete-confirm-icon"><Icon name="trash" size={22} /></div>
+          <span className="eyebrow">Permanent deletion</span>
+          <h2 id="delete-client-title">Delete {selectedClient.name}?</h2>
+          <p>This permanently removes the client, filing selections, documents, deadlines, messages, AI records, and local vault folder. This action cannot be undone.</p>
+          {deleteError && <div className="ob-error">{deleteError}</div>}
+          <div className="delete-confirm-actions"><button className="btn gh" disabled={deleteSaving} onClick={() => setDeleteConfirm(false)}>Cancel</button><button className="btn danger" disabled={deleteSaving} onClick={permanentlyDeleteClient}>{deleteSaving ? <><i className="spin" />Deleting</> : 'Permanently delete'}</button></div>
+        </div>
+      </div>}
       {showAdd && <div className="modal" onMouseDown={e => { if (e.target === e.currentTarget) setShowAdd(false); }}>
         <div className="card" style={{ width: 'min(680px, 100%)', maxHeight: '90vh', overflow: 'auto' }}>
           <div className="card-h"><h2>Add new client</h2><button className="btn gh" onClick={() => setShowAdd(false)}>Close</button></div>
@@ -123,8 +156,7 @@ export function ClientsPage() {
               <label className="f">Phone<input className="modal-input" value={form.phone} onChange={e => update('phone', e.target.value)} /></label>
               <label className="f">Email<input className="modal-input" type="email" value={form.email} onChange={e => update('email', e.target.value)} /></label>
             </div>
-            <div className="f" style={{ marginTop: 16 }}>Filings and services for this client</div>
-            <div className="row" style={{ flexWrap: 'wrap', gap: 8, marginTop: 8 }}>{FILING_OPTIONS.map(type => <label key={type} className="chip blue" style={{ cursor: 'pointer' }}><input type="checkbox" checked={form.filingTypes.includes(type)} onChange={e => update('filingTypes', e.target.checked ? [...form.filingTypes, type] : form.filingTypes.filter(x => x !== type))} />{type}</label>)}</div>
+            <FilingTypePicker countryId={form.countryId} selectedTypes={form.filingTypes} onCountryChange={value => setForm(prev => ({ ...prev, countryId: value, filingTypes: [] }))} onTypesChange={value => update('filingTypes', value)} />
             {error && <div className="ob-error" style={{ marginTop: 14 }}>{error}</div>}
             <div className="row" style={{ justifyContent: 'flex-end', marginTop: 20, gap: 8 }}><button className="btn gh" onClick={() => setShowAdd(false)}>Cancel</button><button className="btn pri" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save client'}</button></div>
           </div>

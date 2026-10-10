@@ -85,7 +85,67 @@ export interface Client {
   assignedCA?: string;
   filingStatus?: string;
   filingTypes?: string[];
+  countryId?: string;
+  countryName?: string;
+  currencyCode?: string;
   vaultFolder?: string;
+}
+
+export interface SupportedCountry {
+  id: string;
+  country_code: string;
+  country_name: string;
+  tax_authority_name?: string;
+  portal_name?: string;
+  portal_url?: string;
+  currency_code: string;
+}
+
+export interface FilingType {
+  id: string;
+  country_id: string;
+  code: string;
+  name: string;
+  description?: string;
+  filing_category?: string;
+  filing_frequency?: string;
+  output_format: string;
+  accepted_file_types: string[];
+  government_portal_name?: string;
+  government_portal_url?: string;
+  specification_version?: string;
+  specification_url?: string;
+  format_definition?: Record<string, unknown>;
+  validation_rules?: Record<string, unknown>;
+}
+
+async function metadataRequest<T>(url: string, signal?: AbortSignal): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(url, { headers: authHeaders(), signal });
+  } catch {
+    throw new Error('The backend is unavailable. Please check that TaxFlow.AI is running and try again.');
+  }
+
+  let payload: { success?: boolean; message?: string; data?: T };
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error(`The backend returned an invalid response (HTTP ${response.status}).`);
+  }
+
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.message || `Could not load reference data (HTTP ${response.status}).`);
+  }
+  return payload.data || ([] as unknown as T);
+}
+
+export function fetchSupportedCountries(): Promise<SupportedCountry[]> {
+  return metadataRequest<SupportedCountry[]>(`${API_BASE_URL}/metadata/countries`);
+}
+
+export function fetchFilingTypes(countryId: string, signal?: AbortSignal): Promise<FilingType[]> {
+  return metadataRequest<FilingType[]>(`${API_BASE_URL}/metadata/filing-types?countryId=${encodeURIComponent(countryId)}`, signal);
 }
 
 export interface DocumentItem {
@@ -221,6 +281,7 @@ export async function createClient(clientData: Partial<Client>): Promise<Client 
       gstin: clientData.gstin || null,
       phone: clientData.phone || `not-provided-${crypto.randomUUID()}`,
       email: clientData.email || null,
+      country_id: clientData.countryId || null,
       assigned_ca: clientData.assignedCA || null,
       filing_types: clientData.filingTypes || [],
   };
@@ -245,11 +306,28 @@ export async function updateClient(clientId: string, clientData: Partial<Client>
       gstin: clientData.gstin || null,
       phone: clientData.phone || null,
       email: clientData.email || null,
+      country_id: clientData.countryId || null,
       filing_types: clientData.filingTypes || [],
     }),
   });
   const json = await res.json();
   if (!res.ok || !json.success) throw new Error(json.message || `Failed to update client (HTTP ${res.status}).`);
+  return json.data;
+}
+
+export async function deleteClient(clientId: string): Promise<{ id: string; name: string; vaultWarning?: string | null }> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/clients/${encodeURIComponent(clientId)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+  } catch {
+    throw new Error('The TaxFlow.AI backend is unavailable. Nothing was deleted.');
+  }
+  let json: any;
+  try { json = await res.json(); } catch { throw new Error(`The backend returned an invalid response (HTTP ${res.status}).`); }
+  if (!res.ok || !json.success) throw new Error(json.message || `Could not delete the client (HTTP ${res.status}).`);
   return json.data;
 }
 

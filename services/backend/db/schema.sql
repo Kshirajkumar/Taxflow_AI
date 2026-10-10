@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS documents_metadata (
 -- ═══════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS ai_usage_log (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id       UUID REFERENCES clients(id) ON DELETE SET NULL,
+  client_id       UUID REFERENCES clients(id) ON DELETE CASCADE,
   document_id     UUID REFERENCES documents_metadata(id) ON DELETE SET NULL,
   operation       VARCHAR(50) NOT NULL CHECK (operation IN ('extraction', 'notice_generation', 'chat', 'summary', 'classification')),
   model_used      VARCHAR(100) DEFAULT 'gemini-1.5-flash',
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS ai_usage_log (
 -- ═══════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS whatsapp_messages (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id           UUID REFERENCES clients(id) ON DELETE SET NULL,
+  client_id           UUID REFERENCES clients(id) ON DELETE CASCADE,
   sender_phone        VARCHAR(20) NOT NULL,
   sender_name         VARCHAR(255),
   direction           VARCHAR(10) NOT NULL CHECK (direction IN ('inbound', 'outbound')),

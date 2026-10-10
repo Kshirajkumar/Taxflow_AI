@@ -45,7 +45,7 @@ export const agoT = (d: Date) => {
 };
 
 export const money = (n: number, cur: Currency = 'INR') => {
-  const locale = { INR: 'en-IN', AED: 'en-AE', GBP: 'en-GB' }[cur];
+  const locale = { INR: 'en-IN', AED: 'en-AE', GBP: 'en-GB', USD: 'en-US', SGD: 'en-SG' }[cur];
   try {
     return new Intl.NumberFormat(locale, { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n);
   } catch {
