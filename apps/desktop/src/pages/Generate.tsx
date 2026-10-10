@@ -10,10 +10,19 @@ interface Output { type: string; state: 'run' | 'done'; content: string }
 export function GeneratePage() {
   const s = useAppState();
   const dispatch = useDispatch();
-  const c = s.clients.find((x) => x.id === s.ui.gen.client)!;
+  const c = s.clients.find((x) => x.id === s.ui.gen.client) || s.clients[0];
   const [outputs, setOutputs] = useState<Output[]>([]);
   const [running, setRunning] = useState(false);
   const [preview, setPreview] = useState<number | null>(null);
+
+  if (!c) {
+    return (
+      <>
+        <div className="ph"><div><h1>File generator</h1><p>Pick a client and the files you need.</p></div></div>
+        <div className="card"><div className="card-b empty"><b>No clients yet</b>Add a client before generating filing files.</div></div>
+      </>
+    );
+  }
 
   const ds = s.docs.filter((d) => d.client === c.id && d.status !== 'queued');
   const recommended = GEN.filter((g) => g.svc === '*' || c.svc.includes(g.svc));

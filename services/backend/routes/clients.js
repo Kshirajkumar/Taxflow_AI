@@ -48,7 +48,7 @@ router.get('/', async (req, res) => {
       const { data, error } = await supabase
         .from('clients')
         .select('*')
-        .eq('owner_id', req.user.id)
+        .eq('user_id', req.user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return res.json({ success: true, count: data.length, source: 'supabase', data });
@@ -64,7 +64,7 @@ router.get('/:id', async (req, res) => {
   try {
     if (isConnected) {
       const { data, error } = await supabase
-        .from('clients').select('*').eq('id', req.params.id).eq('owner_id', req.user.id).single();
+        .from('clients').select('*').eq('id', req.params.id).eq('user_id', req.user.id).single();
       if (error) throw error;
       return res.json({ success: true, source: 'supabase', data });
     }
@@ -79,16 +79,20 @@ router.get('/:id', async (req, res) => {
 // POST /api/v1/clients — Create new client
 router.post('/', async (req, res) => {
   try {
-    const { name, entity_type, pan, gstin, phone, email, assigned_ca } = req.body;
+    const { name, entity_type, pan, gstin, phone, email, filing_type, filing_types, gstin_registered, notes } = req.body;
 
     if (!name || !entity_type) {
       return res.status(400).json({ success: false, message: 'name and entity_type are required' });
     }
+    if (filing_types !== undefined && !Array.isArray(filing_types)) {
+      return res.status(400).json({ success: false, message: 'filing_types must be an array' });
+    }
+    const filingTypes = (filing_types || []).filter(type => typeof type === 'string' && type.trim()).map(type => type.trim());
 
     if (isConnected) {
       const { data, error } = await supabase
         .from('clients')
-        .insert([{ owner_id: req.user.id, name, entity_type, pan, gstin, phone, email, assigned_ca, status: 'Active' }])
+        .insert([{ user_id: req.user.id, name: name.trim(), entity_type: entity_type || 'Individual', pan: pan || null, gstin: gstin || null, phone: phone || null, email: email || null, filing_type: filing_type || filingTypes[0] || 'ITR-1', filing_types: filingTypes, gstin_registered: gstin_registered ?? Boolean(gstin), notes: notes || null }])
         .select()
         .single();
       if (error) throw error;
@@ -108,16 +112,26 @@ router.post('/', async (req, res) => {
     getClientVaultDir(newClient.id, 'General');
     res.status(201).json({ success: true, source: 'demo', data: newClient });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    const duplicate = err.code === '23505';
+    const message = duplicate ? 'A client with this PAN, phone number, or other unique detail already exists.' : (err.message || 'Failed to save client.');
+    res.status(duplicate ? 409 : 500).json({ success: false, message });
   }
 });
 
 // PATCH /api/v1/clients/:id — Update client info
 router.patch('/:id', async (req, res) => {
   try {
+    const allowedFields = ['name', 'entity_type', 'pan', 'gstin', 'phone', 'email', 'filing_type', 'filing_types', 'gstin_registered', 'notes'];
+    const updates = Object.fromEntries(Object.entries(req.body).filter(([key]) => allowedFields.includes(key)));
+    if (updates.filing_types !== undefined && !Array.isArray(updates.filing_types)) {
+      return res.status(400).json({ success: false, message: 'filing_types must be an array' });
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid client fields were provided.' });
+    }
     if (isConnected) {
       const { data, error } = await supabase
-        .from('clients').update(req.body).eq('id', req.params.id).eq('owner_id', req.user.id).select().single();
+        .from('clients').update(updates).eq('id', req.params.id).eq('user_id', req.user.id).select().single();
       if (error) throw error;
       return res.json({ success: true, source: 'supabase', data });
     }

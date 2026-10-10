@@ -1,14 +1,57 @@
+import React from 'react';
 import { Icon } from '../components/Icon';
 import { useAppState, useDispatch } from '../state/store';
 import { allTasks, missing, pendingBill } from '../lib/domain';
 import { fDate, money, sum } from '../lib/format';
+import { createClient, updateClient } from '../lib/api';
+
+const FILING_OPTIONS = ['ITR', 'GSTR-1', 'GSTR-1B', 'GSTR-3B', 'GSTR-9', 'TDS Returns', 'Advance Tax', 'ROC / MCA', 'Tax Audit'];
 
 export function ClientsPage() {
   const s = useAppState();
   const dispatch = useDispatch();
+  const [showAdd, setShowAdd] = React.useState(false);
+  const [selectedClient, setSelectedClient] = React.useState<(typeof s.clients)[number] | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [editingClient, setEditingClient] = React.useState(false);
+  const [editSaving, setEditSaving] = React.useState(false);
+  const [editError, setEditError] = React.useState('');
+  const [editForm, setEditForm] = React.useState({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', filingTypes: [] as string[] });
+  const [form, setForm] = React.useState({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', filingTypes: [] as string[] });
+  const update = (key: string, value: any) => setForm(prev => ({ ...prev, [key]: value }));
+  async function save() {
+    if (!form.name.trim()) { setError('Client name is required.'); return; }
+    setSaving(true); setError('');
+    try {
+      const saved: any = await createClient(form as any);
+      if (!saved) throw new Error('Could not save client.');
+      dispatch({ type: 'ADD_CLIENT', client: { id: saved.id, name: saved.name, entityType: saved.entity_type || form.entityType, short: saved.name.slice(0, 3).toUpperCase(), city: 'Local', country: 'India', cur: 'INR', gstin: saved.gstin || '', pan: saved.pan || '', svc: saved.filing_types || form.filingTypes, filingTypes: saved.filing_types || form.filingTypes, contact: saved.email || '', phone: saved.phone || '', fee: 0, tone: 'blue', alias: [] } });
+      setShowAdd(false); setForm({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', filingTypes: [] });
+    } catch (err: any) { setError(err.message || 'Could not save client.'); }
+    finally { setSaving(false); }
+  }
+  function startEditing() {
+    if (!selectedClient) return;
+    setEditForm({ name: selectedClient.name, entityType: selectedClient.entityType || 'Individual', pan: selectedClient.pan, gstin: selectedClient.gstin, phone: selectedClient.phone, email: selectedClient.contact, filingTypes: selectedClient.filingTypes?.length ? [...selectedClient.filingTypes] : [...selectedClient.svc] });
+    setEditError('');
+    setEditingClient(true);
+  }
+  async function saveEdit() {
+    if (!selectedClient || !editForm.name.trim()) { setEditError('Client name is required.'); return; }
+    setEditSaving(true); setEditError('');
+    try {
+      const saved: any = await updateClient(selectedClient.id, editForm as any);
+      const updated = { ...selectedClient, name: saved.name || editForm.name.trim(), entityType: saved.entity_type || editForm.entityType, short: (saved.name || editForm.name).slice(0, 3).toUpperCase(), gstin: saved.gstin || '', pan: saved.pan || '', svc: Array.isArray(saved.filing_types) ? saved.filing_types : editForm.filingTypes, filingTypes: Array.isArray(saved.filing_types) ? saved.filing_types : editForm.filingTypes, contact: saved.email || '', phone: saved.phone || '' };
+      dispatch({ type: 'UPDATE_CLIENT', client: updated });
+      setSelectedClient(updated);
+      setEditingClient(false);
+    } catch (err: any) { setEditError(err.message || 'Could not update client.'); }
+    finally { setEditSaving(false); }
+  }
   return (
     <>
-      <div className="ph"><div><h1>Clients</h1><p>Everyone you file for, with their services and current workload.</p></div></div>
+      <div className="ph"><div><h1>Clients</h1><p>Everyone you file for, with their services and current workload.</p></div><button className="btn pri" onClick={() => setShowAdd(true)}>+ Add client</button></div>
       <div className="grid g3">
         {s.clients.map((c) => {
           const mine = allTasks(s.tasks).filter((x) => x.t.client === c.id);
@@ -31,11 +74,62 @@ export function ClientsPage() {
               <div className="row" style={{ margin: '12px 0', flexWrap: 'wrap', gap: 6 }}>
                 {m ? <span className="chip amber">{m} documents missing</span> : <span className="chip green">All documents received</span>}
               </div>
-              <div className="row"><button className="btn sm" onClick={() => { dispatch({ type: 'WA_CLIENT', id: c.id }); dispatch({ type: 'GO', page: 'whatsapp' }); }}><Icon name="chat" size={13} />Chat</button></div>
+              <div className="row"><button className="btn sm" onClick={() => setSelectedClient(c)}>View details</button><button className="btn sm" onClick={() => { dispatch({ type: 'WA_CLIENT', id: c.id }); dispatch({ type: 'GO', page: 'whatsapp' }); }}><Icon name="chat" size={13} />Chat</button></div>
             </div>
           );
         })}
       </div>
+      {selectedClient && <div className="modal client-details-modal" onMouseDown={e => { if (e.target === e.currentTarget) setSelectedClient(null); }}>
+        <div className="card client-details-card">
+          <div className="card-h client-details-header"><div><span className="eyebrow">{editingClient ? 'Edit client' : 'Client profile'}</span><h2>{editingClient ? 'Update client details' : selectedClient.name}</h2></div><div className="client-details-actions">{!editingClient && <button className="icon-btn edit-client-btn" onClick={startEditing} title="Edit client" aria-label="Edit client"><Icon name="pencil" size={16} /></button>}<button className="btn" onClick={() => { setEditingClient(false); setSelectedClient(null); }}>Close</button></div></div>
+          <div className={'card-b' + (editingClient ? ' client-edit-body' : '')}>
+            {editingClient ? <>
+              <div className="client-edit-intro"><span className="av lg" style={{ ['--t' as any]: selectedClient.tone }}>{selectedClient.short.slice(0, 2).toUpperCase()}</span><div><b>Edit {selectedClient.name}</b><div className="mut">Keep the client profile accurate for filings and communication.</div></div></div>
+              <div className="client-edit-grid">
+                <label className="f">Client / firm name *<input className="modal-input" value={editForm.name} onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))} /></label>
+                <label className="f">Entity type<select className="modal-input" value={editForm.entityType} onChange={e => setEditForm(prev => ({ ...prev, entityType: e.target.value }))}><option>Individual</option><option>Partnership</option><option>Pvt Ltd</option><option>LLP</option><option>Trust</option><option>HUF</option><option>OPC</option></select></label>
+                <label className="f">PAN<input className="modal-input" maxLength={10} value={editForm.pan} onChange={e => setEditForm(prev => ({ ...prev, pan: e.target.value.toUpperCase() }))} /></label>
+                <label className="f">GSTIN<input className="modal-input" maxLength={15} value={editForm.gstin} onChange={e => setEditForm(prev => ({ ...prev, gstin: e.target.value.toUpperCase() }))} /></label>
+                <label className="f">Phone<input className="modal-input" value={editForm.phone} onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))} /></label>
+                <label className="f">Email<input className="modal-input" type="email" value={editForm.email} onChange={e => setEditForm(prev => ({ ...prev, email: e.target.value }))} /></label>
+              </div>
+              <div className="f client-edit-label">Filing services</div>
+              <div className="client-edit-filings">{FILING_OPTIONS.map(type => <label key={type} className={'client-edit-check' + (editForm.filingTypes.includes(type) ? ' selected' : '')}><input type="checkbox" checked={editForm.filingTypes.includes(type)} onChange={e => setEditForm(prev => ({ ...prev, filingTypes: e.target.checked ? [...prev.filingTypes, type] : prev.filingTypes.filter(x => x !== type) }))} />{type}</label>)}</div>
+              {editError && <div className="ob-error">{editError}</div>}
+              <div className="client-edit-footer"><button className="btn gh" onClick={() => setEditingClient(false)}>Cancel</button><button className="btn pri" disabled={editSaving} onClick={saveEdit}>{editSaving ? <><i className="spin" />Saving</> : <><Icon name="check" size={14} />Save changes</>}</button></div>
+            </> : <>
+            <div className="client-details-identity"><span className="av lg" style={{ ['--t' as any]: selectedClient.tone }}>{selectedClient.short.slice(0, 2).toUpperCase()}</span><div><b>{selectedClient.name}</b><div className="mut">{selectedClient.city}, {selectedClient.country}</div></div></div>
+            <div className="client-details-grid">
+              <div><span>Entity type</span><b>{selectedClient.entityType || 'Not specified'}</b></div>
+              <div><span>PAN</span><b className="mono">{selectedClient.pan || 'Not provided'}</b></div>
+              <div><span>GSTIN</span><b className="mono">{selectedClient.gstin || 'Not provided'}</b></div>
+              <div><span>Phone</span><b>{selectedClient.phone || 'Not provided'}</b></div>
+              <div className="full"><span>Email</span><b>{selectedClient.contact || 'Not provided'}</b></div>
+            </div>
+            <div className="client-details-section"><span className="eyebrow">Selected filings</span><div className="client-details-filings">{(selectedClient.filingTypes?.length ? selectedClient.filingTypes : selectedClient.svc).map(type => <span key={type} className="chip blue">{type}</span>)}</div></div>
+            </>}
+          </div>
+        </div>
+      </div>}
+      {showAdd && <div className="modal" onMouseDown={e => { if (e.target === e.currentTarget) setShowAdd(false); }}>
+        <div className="card" style={{ width: 'min(680px, 100%)', maxHeight: '90vh', overflow: 'auto' }}>
+          <div className="card-h"><h2>Add new client</h2><button className="btn gh" onClick={() => setShowAdd(false)}>Close</button></div>
+          <div className="card-b">
+            <div className="fields-grid-2">
+              <label className="f">Client / firm name *<input className="modal-input" value={form.name} onChange={e => update('name', e.target.value)} /></label>
+              <label className="f">Entity type<select className="modal-input" value={form.entityType} onChange={e => update('entityType', e.target.value)}><option>Individual</option><option>Partnership</option><option>Pvt Ltd</option><option>LLP</option><option>Trust</option><option>HUF</option><option>OPC</option></select></label>
+              <label className="f">PAN<input className="modal-input" maxLength={10} value={form.pan} onChange={e => update('pan', e.target.value.toUpperCase())} /></label>
+              <label className="f">GSTIN<input className="modal-input" maxLength={15} value={form.gstin} onChange={e => update('gstin', e.target.value.toUpperCase())} /></label>
+              <label className="f">Phone<input className="modal-input" value={form.phone} onChange={e => update('phone', e.target.value)} /></label>
+              <label className="f">Email<input className="modal-input" type="email" value={form.email} onChange={e => update('email', e.target.value)} /></label>
+            </div>
+            <div className="f" style={{ marginTop: 16 }}>Filings and services for this client</div>
+            <div className="row" style={{ flexWrap: 'wrap', gap: 8, marginTop: 8 }}>{FILING_OPTIONS.map(type => <label key={type} className="chip blue" style={{ cursor: 'pointer' }}><input type="checkbox" checked={form.filingTypes.includes(type)} onChange={e => update('filingTypes', e.target.checked ? [...form.filingTypes, type] : form.filingTypes.filter(x => x !== type))} />{type}</label>)}</div>
+            {error && <div className="ob-error" style={{ marginTop: 14 }}>{error}</div>}
+            <div className="row" style={{ justifyContent: 'flex-end', marginTop: 20, gap: 8 }}><button className="btn gh" onClick={() => setShowAdd(false)}>Cancel</button><button className="btn pri" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save client'}</button></div>
+          </div>
+        </div>
+      </div>}
     </>
   );
 }
@@ -44,7 +138,10 @@ export function BillingPage() {
   const s = useAppState();
   const dispatch = useDispatch();
   const FX: Record<string, number> = { INR: 1, AED: 22.8, GBP: 108 };
-  const inr = (b: (typeof s.bills)[0]) => b.amt * FX[s.clients.find((c) => c.id === b.client)!.cur];
+  const inr = (b: (typeof s.bills)[0]) => {
+    const client = s.clients.find((c) => c.id === b.client);
+    return b.amt * (client ? FX[client.cur] : 1);
+  };
   const paid = sum(s.bills.filter((b) => b.status === 'paid'), inr);
   const pend = sum(s.bills.filter((b) => b.status === 'pending'), inr);
   const ov = sum(s.bills.filter((b) => b.status === 'overdue'), inr);
@@ -65,7 +162,8 @@ export function BillingPage() {
             <thead><tr><th>Invoice</th><th>Client</th><th>For</th><th>Amount</th><th>Due</th><th>Status</th><th /></tr></thead>
             <tbody>
               {s.bills.slice().sort((a, b) => a.due.getTime() - b.due.getTime()).map((b) => {
-                const c = s.clients.find((x) => x.id === b.client)!;
+                const c = s.clients.find((x) => x.id === b.client);
+                if (!c) return null;
                 return (
                   <tr key={b.no}>
                     <td className="mono">{b.no}</td>

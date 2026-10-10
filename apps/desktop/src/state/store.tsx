@@ -68,6 +68,8 @@ type Action =
   | { type: 'LOGIN'; user: AuthUser; token: string; refreshToken?: string }
   | { type: 'LOGOUT' }
   | { type: 'COMPLETE_ONBOARDING' }
+  | { type: 'ADD_CLIENT'; client: Client }
+  | { type: 'UPDATE_CLIENT'; client: Client }
   | { type: 'WA_CLIENT'; id: string }
   | { type: 'WA_TAB'; tab: 'chats' | 'reminders' | 'templates' }
   | { type: 'WA_SEND'; client: string; text: string }
@@ -161,6 +163,10 @@ function reducer(state: AppState, action: Action): AppState {
       } catch (e) {}
       return { ...state, currentUser: updatedUser };
     }
+    case 'ADD_CLIENT':
+      return { ...state, clients: [action.client, ...state.clients] };
+    case 'UPDATE_CLIENT':
+      return { ...state, clients: state.clients.map((client) => client.id === action.client.id ? action.client : client) };
     case 'LOGOUT': {
       try {
         localStorage.removeItem('taxflow_session');
@@ -303,13 +309,15 @@ function reducer(state: AppState, action: Action): AppState {
       const mappedClients = Array.isArray(apiClients) ? apiClients.map((c: any) => ({
         id: c.id,
         name: c.name || '',
+        entityType: c.entity_type || '',
         short: (c.name || 'CLI').substring(0, 3).toUpperCase(),
         city: 'Local',
         country: 'India',
         cur: 'INR' as const,
         gstin: c.gstin || '',
         pan: c.pan || '',
-        svc: ['GST', 'Income Tax'],
+        svc: Array.isArray(c.filing_types) && c.filing_types.length ? c.filing_types : ['GST', 'Income Tax'],
+        filingTypes: Array.isArray(c.filing_types) ? c.filing_types : [],
         contact: c.email || '',
         phone: c.phone || '',
         fee: 5000,
@@ -396,9 +404,12 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         clients: mappedClients,
         docs: [],
-        tasks: mappedTasks,
-        threads: mappedThreads,
-        files: mappedFiles,
+        tasks: [],
+        reminders: [],
+        bills: [],
+        checks: {},
+        threads: {},
+        files: [],
         ui: newUi
       };
     }
@@ -455,10 +466,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
 export const useAppState = () => useContext(StateCtx);
 export const useDispatch = () => useContext(DispatchCtx);
-
-export function nextMsgId() {
-  return MID++;
-}
 
 // Convenience selectors
 export function useClient(id: string) {

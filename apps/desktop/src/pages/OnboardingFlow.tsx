@@ -62,7 +62,10 @@ interface ClientDraft {
   gstin: string;
   phone: string;
   entityType: string;
+  filingTypes: string[];
 }
+
+const FILING_OPTIONS = ['ITR', 'GSTR-1', 'GSTR-1B', 'GSTR-3B', 'GSTR-9', 'TDS Returns', 'Advance Tax', 'ROC / MCA', 'Tax Audit'];
 
 function ClientRow({
   client,
@@ -70,7 +73,7 @@ function ClientRow({
   onRemove,
 }: {
   client: ClientDraft;
-  onChange: (id: string, field: keyof ClientDraft, value: string) => void;
+  onChange: (id: string, field: keyof ClientDraft, value: any) => void;
   onRemove: (id: string) => void;
 }) {
   return (
@@ -98,6 +101,15 @@ function ClientRow({
         <input className="ob-input" placeholder="PAN (e.g. ABCDE1234F)" value={client.pan} onChange={e => onChange(client.id, 'pan', e.target.value.toUpperCase())} maxLength={10} />
         <input className="ob-input" placeholder="GSTIN (optional)" value={client.gstin} onChange={e => onChange(client.id, 'gstin', e.target.value.toUpperCase())} maxLength={15} />
         <input className="ob-input" placeholder="Phone (optional)" value={client.phone} onChange={e => onChange(client.id, 'phone', e.target.value)} />
+      </div>
+      <div className="ob-filing-options">
+        <span className="ob-filing-label">Services to file</span>
+        {FILING_OPTIONS.map(type => (
+          <label key={type} className="ob-filing-option">
+            <input type="checkbox" checked={client.filingTypes.includes(type)} onChange={e => onChange(client.id, 'filingTypes', e.target.checked ? [...client.filingTypes, type] as any : client.filingTypes.filter(x => x !== type) as any)} />
+            {type}
+          </label>
+        ))}
       </div>
       <button className="ob-remove-btn" onClick={() => onRemove(client.id)} title="Remove client">✕</button>
     </div>
@@ -132,11 +144,11 @@ export function OnboardingFlow() {
   function addClient() {
     setClients(prev => [
       ...prev,
-      { id: crypto.randomUUID(), name: '', pan: '', gstin: '', phone: '', entityType: 'Individual' }
+      { id: crypto.randomUUID(), name: '', pan: '', gstin: '', phone: '', entityType: 'Individual', filingTypes: [] }
     ]);
   }
 
-  function updateClient(id: string, field: keyof ClientDraft, value: string) {
+  function updateClient(id: string, field: keyof ClientDraft, value: any) {
     setClients(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
   }
 
@@ -173,6 +185,7 @@ export function OnboardingFlow() {
           gstin: c.gstin.trim(),
           phone: c.phone.trim(),
           entityType: c.entityType,
+          filingTypes: c.filingTypes,
           status: 'active'
         });
         if (!created) throw new Error(`Could not save client "${c.name.trim()}". Please try again.`);

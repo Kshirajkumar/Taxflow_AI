@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
-import { useAppState, useDispatch, nextMsgId } from '../state/store';
+import { useAppState, useDispatch } from '../state/store';
+import { nextMsgId } from '../lib/messageIds';
 import { TPL } from '../data/seed';
 import { missing } from '../lib/domain';
 import { fDate, fTime, fDT, until, agoT, dayDiff, vnow, toInput } from '../lib/format';
@@ -21,12 +22,21 @@ export function WhatsAppPage() {
   const [input, setInput] = useState('');
   const [showSchedule, setShowSchedule] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
-  const c = s.clients.find((x) => x.id === s.ui.wa.client)!;
-  const thread = (s.threads[c.id] || []).slice().sort((a, b) => a.at.getTime() - b.at.getTime());
+  const c = s.clients.find((x) => x.id === s.ui.wa.client) || s.clients[0];
+  const thread = c ? (s.threads[c.id] || []).slice().sort((a, b) => a.at.getTime() - b.at.getTime()) : [];
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
   }, [thread.length, s.ui.wa.tab]);
+
+  if (!c) {
+    return (
+      <>
+        <div className="ph"><div><h1>WhatsApp</h1><p>Every client conversation in one place, with the reminders that will go out next.</p></div></div>
+        <div className="card"><div className="card-b empty"><b>No clients yet</b>Add a client before starting a WhatsApp conversation.</div></div>
+      </>
+    );
+  }
 
   function send() {
     const text = input.trim();

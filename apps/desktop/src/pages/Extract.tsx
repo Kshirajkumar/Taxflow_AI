@@ -19,8 +19,26 @@ export function ExtractPage() {
   const docStatus = (d: InvoiceDoc) => (d.running ? 'running' : d.status);
   const docs = s.docs.filter((d) => s.ui.ex.filter === 'all' || docStatus(d) === s.ui.ex.filter);
   const sel = s.docs.find((d) => d.id === s.ui.ex.sel) || s.docs[0];
-  const c = s.clients.find((x) => x.id === sel.client)!;
   const cnt = (k: string) => s.docs.filter((d) => d.status === k).length;
+
+  if (!sel) {
+    return (
+      <>
+        <div className="ph"><div><h1>Invoice extraction</h1><p>Bills and invoices arrive from WhatsApp, email and uploads. Fields are read automatically, then checked by you.</p></div></div>
+        <div className="card"><div className="card-b empty"><b>No invoices yet</b>Upload a document or receive one through WhatsApp to start extracting.</div></div>
+      </>
+    );
+  }
+
+  const c = s.clients.find((x) => x.id === sel.client);
+  if (!c) {
+    return (
+      <>
+        <div className="ph"><div><h1>Invoice extraction</h1><p>Bills and invoices arrive from WhatsApp, email and uploads.</p></div></div>
+        <div className="card"><div className="card-b empty"><b>Client unavailable</b>This invoice is not linked to an available client.</div></div>
+      </>
+    );
+  }
 
   function runExtract(id: string) {
     const d = s.docs.find((x) => x.id === id);

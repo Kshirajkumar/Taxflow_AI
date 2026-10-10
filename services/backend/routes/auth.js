@@ -141,6 +141,7 @@ router.post('/signup', async (req, res) => {
       email: cleanEmail,
       password,
       options: {
+        emailRedirectTo: 'taxflow://auth/callback',
         data: {
           full_name: name.trim(),
           firm_name: (firmName && firmName.trim()) || `${name.trim()} & Associates`,

@@ -1,9 +1,12 @@
 import { useEffect } from 'react';
+import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { AppProvider, useAppState } from './state/store';
 import { Titlebar } from './components/Titlebar';
 import { Sidebar } from './components/Sidebar';
 import { Chat } from './components/Chat';
 import { AuthPage } from './pages/AuthPage';
+import { apiGetMeWithToken } from './lib/api';
+import { useDispatch } from './state/store';
 import { OnboardingFlow } from './pages/OnboardingFlow';
 import { Dashboard } from './pages/Dashboard';
 import { ExtractPage } from './pages/Extract';
@@ -48,7 +51,7 @@ function Shell() {
     clients: ClientsPage,
     billing: BillingPage,
     settings: SettingsPage,
-  }[s.page];
+  }[s.page] || Dashboard;
 
   return (
     <div className="app">
@@ -67,9 +70,70 @@ function Shell() {
   );
 }
 
+function AuthDeepLinkHandler() {
+  const dispatch = useDispatch();
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const handledUrls = new Set<string>();
+
+    const handleUrls = async (urls: string[]) => {
+      const callbackUrl = urls.find((url) => url.startsWith('taxflow://auth/callback'));
+      if (!callbackUrl || disposed || handledUrls.has(callbackUrl)) return;
+      handledUrls.add(callbackUrl);
+
+      try {
+        const parsed = new URL(callbackUrl);
+        const params = new URLSearchParams(parsed.hash.replace(/^#/, ''));
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token') || undefined;
+
+        if (!accessToken) {
+          console.error('[AUTH] Confirmation link did not contain an access token.');
+          return;
+        }
+
+        const response = await apiGetMeWithToken(accessToken);
+        if (!disposed && response.success && response.user) {
+          dispatch({
+            type: 'LOGIN',
+            user: response.user,
+            token: accessToken,
+            refreshToken,
+          });
+        } else {
+          console.error('[AUTH] Confirmation session could not be validated:', response.message);
+        }
+      } catch (error) {
+        console.error('[AUTH] Failed to process confirmation link:', error);
+      }
+    };
+
+    const start = async () => {
+      try {
+        unlisten = await onOpenUrl(handleUrls);
+        const startUrls = await getCurrent();
+        if (startUrls) await handleUrls(startUrls);
+      } catch {
+        // The browser build does not provide Tauri's deep-link API.
+      }
+    };
+
+    void start();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [dispatch]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <AppProvider>
+      <AuthDeepLinkHandler />
       <Shell />
     </AppProvider>
   );

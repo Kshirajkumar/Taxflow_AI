@@ -68,6 +68,7 @@ export function Chat() {
     if (/folder|files|vault|storage/.test(t)) {
       const cc = c || s.clients[0];
       const opened = go('files', 'Client Folders');
+      if (!cc) return `There are no clients yet.${opened}`;
       const fl = s.files.filter((f) => f.client === cc.id);
       return `<b>${cc.name}</b> has ${fl.length} files on record.${opened}`;
     }

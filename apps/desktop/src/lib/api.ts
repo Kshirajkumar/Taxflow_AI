@@ -45,6 +45,34 @@ export interface AuthResponse {
   remainingAttempts?: number;
 }
 
+async function authRequest<T extends { success: boolean; message?: string }>(
+  url: string,
+  options: RequestInit,
+): Promise<T> {
+  let res: Response;
+
+  try {
+    res = await fetch(url, options);
+  } catch {
+    throw new Error(
+      'The TaxFlow.AI backend is not available yet. Please wait a moment for Tauri Dev to finish starting, then try again.',
+    );
+  }
+
+  let data: T;
+  try {
+    data = await res.json() as T;
+  } catch {
+    throw new Error(`The backend returned an invalid response (HTTP ${res.status}).`);
+  }
+
+  if (!res.ok && !data.message) {
+    throw new Error(`The backend request failed (HTTP ${res.status}).`);
+  }
+
+  return data;
+}
+
 export interface Client {
   id: string;
   name: string;
@@ -56,6 +84,7 @@ export interface Client {
   status: string;
   assignedCA?: string;
   filingStatus?: string;
+  filingTypes?: string[];
   vaultFolder?: string;
 }
 
@@ -109,21 +138,19 @@ export async function apiSignup(data: {
   practiceType?: string;
   membershipNo?: string;
 }): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE_URL}/auth/signup`, {
+  return authRequest<AuthResponse>(`${API_BASE_URL}/auth/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  return res.json();
 }
 
 export async function apiLogin(email: string, password: string): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+  return authRequest<AuthResponse>(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
   });
-  return res.json();
 }
 
 export async function apiForgotPassword(email: string): Promise<{ success: boolean; message: string }> {
@@ -137,6 +164,16 @@ export async function apiForgotPassword(email: string): Promise<{ success: boole
 
 export async function apiGetMe(): Promise<AuthResponse> {
   const res = await fetch(`${API_BASE_URL}/auth/me`, { headers: authHeaders() });
+  return res.json();
+}
+
+export async function apiGetMeWithToken(token: string): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/me`, {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
   return res.json();
 }
 
@@ -177,8 +214,7 @@ export async function fetchClients(): Promise<Client[]> {
 }
 
 export async function createClient(clientData: Partial<Client>): Promise<Client | null> {
-  try {
-    const payload = {
+  const payload = {
       name: clientData.name,
       entity_type: clientData.entityType === 'Private Limited' ? 'Pvt Ltd' : (clientData.entityType === 'Other' ? 'Individual' : clientData.entityType),
       pan: clientData.pan || null,
@@ -186,18 +222,35 @@ export async function createClient(clientData: Partial<Client>): Promise<Client 
       phone: clientData.phone || `not-provided-${crypto.randomUUID()}`,
       email: clientData.email || null,
       assigned_ca: clientData.assignedCA || null,
-    };
+      filing_types: clientData.filingTypes || [],
+  };
     const res = await fetch(`${API_BASE_URL}/clients`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(payload)
     });
     const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.message || `Failed to save client (HTTP ${res.status}).`);
     return json.data;
-  } catch (err) {
-    console.error('Failed to create client', err);
-    return null;
-  }
+}
+
+export async function updateClient(clientId: string, clientData: Partial<Client>): Promise<Client> {
+  const res = await fetch(`${API_BASE_URL}/clients/${clientId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      name: clientData.name,
+      entity_type: clientData.entityType,
+      pan: clientData.pan || null,
+      gstin: clientData.gstin || null,
+      phone: clientData.phone || null,
+      email: clientData.email || null,
+      filing_types: clientData.filingTypes || [],
+    }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success) throw new Error(json.message || `Failed to update client (HTTP ${res.status}).`);
+  return json.data;
 }
 
 // ─── Documents API ─────────────────────────────────────────────

@@ -3,6 +3,7 @@ export type Currency = 'INR' | 'AED' | 'GBP';
 export interface Client {
   id: string;
   name: string;
+  entityType?: string;
   short: string;
   city: string;
   country: string;
@@ -10,6 +11,7 @@ export interface Client {
   gstin: string;
   pan: string;
   svc: string[];
+  filingTypes?: string[];
   contact: string;
   phone: string;
   fee: number;

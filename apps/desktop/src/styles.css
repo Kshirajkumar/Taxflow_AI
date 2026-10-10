@@ -146,12 +146,42 @@ tr:last-child td{border-bottom:0}
 #toasts{position:fixed;left:50%;bottom:44px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:200;align-items:center;pointer-events:none}
 .toast{background:var(--card2);border:1px solid var(--line2);box-shadow:var(--shadow);padding:9px 14px;border-radius:10px;font-weight:500;display:flex;gap:8px;align-items:center}
 .toast .ic{color:var(--green)}
-.modal{position:fixed;inset:0;background:rgba(3,8,20,.62);display:grid;place-items:center;z-index:120;padding:20px}
+.modal{position:fixed;inset:0;background:rgba(3,8,20,.62);backdrop-filter:blur(5px);display:grid;place-items:center;z-index:120;padding:20px}
 .modal[hidden]{display:none}
 .mbox{width:min(520px,100%);background:var(--card);border:1px solid var(--line2);border-radius:16px;box-shadow:var(--shadow);padding:20px;max-height:92vh;overflow:auto}
 .mbox h2{font-size:17px;margin-bottom:14px}
 .mrow{margin-bottom:12px}
 .mgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.client-details-card{width:min(620px,100%);max-height:min(700px,92vh);overflow:auto;box-shadow:0 24px 70px rgba(3,8,20,.25)}
+.client-details-header{align-items:flex-start;padding-bottom:14px}
+.client-details-header h2{margin-top:3px;font-size:18px}
+.client-details-actions{display:flex;align-items:center;gap:8px}
+.icon-btn{display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--line2);border-radius:10px;background:var(--panel);color:var(--blue);cursor:pointer;transition:transform .18s ease,background .18s ease,box-shadow .18s ease}
+.icon-btn:hover{background:color-mix(in srgb,var(--blue) 12%,var(--panel));box-shadow:0 7px 18px color-mix(in srgb,var(--blue) 18%,transparent);transform:translateY(-2px) rotate(-4deg)}
+.icon-btn:active{transform:translateY(0) scale(.94)}
+.eyebrow{display:block;color:var(--tx3);font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.client-details-identity{display:flex;align-items:center;gap:13px;padding:4px 0 20px;border-bottom:1px solid var(--line)}
+.client-details-identity b{font-size:15px}
+.client-details-identity .mut{margin-top:3px;font-size:12px}
+.client-details-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:18px}
+.client-details-grid>div{min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.client-details-grid>div.full{grid-column:1/-1}
+.client-details-grid span{display:block;margin-bottom:5px;color:var(--tx3);font-size:11px}
+.client-details-grid b{display:block;min-width:0;overflow-wrap:anywhere;font-size:12.5px}
+.client-details-section{margin-top:20px}
+.client-details-filings{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.client-edit-body{padding-top:2px}
+.client-edit-intro{display:flex;align-items:center;gap:12px;padding:4px 0 17px;border-bottom:1px solid var(--line)}
+.client-edit-intro b{font-size:14px}.client-edit-intro .mut{margin-top:3px;font-size:12px}
+.client-edit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:18px}
+.client-edit-label{margin-top:19px}
+.client-edit-filings{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.client-edit-check{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--tx2);font-size:11.5px;cursor:pointer;transition:.16s ease}
+.client-edit-check:hover,.client-edit-check.selected{border-color:color-mix(in srgb,var(--blue) 60%,var(--line));background:color-mix(in srgb,var(--blue) 12%,var(--panel));color:var(--blue)}
+.client-edit-check input{accent-color:var(--blue);margin:0}
+.client-edit-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:22px;padding-top:15px;border-top:1px solid var(--line)}
+@media (max-width:560px){.client-details-modal{padding:12px}.client-details-grid{grid-template-columns:1fr}.client-details-grid>div.full{grid-column:auto}}
+@media (max-width:560px){.client-edit-grid{grid-template-columns:1fr}.client-details-actions .btn{padding-inline:10px}}
 
 /* ---------- dashboard ---------- */
 .list-i{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}

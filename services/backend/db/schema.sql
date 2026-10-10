@@ -60,7 +60,7 @@ CREATE TRIGGER on_auth_user_created
 -- ═══════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS clients (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id        UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name            VARCHAR(255) NOT NULL,
   entity_type     VARCHAR(50) NOT NULL CHECK (entity_type IN ('Individual', 'Pvt Ltd', 'LLP', 'Partnership', 'Trust', 'HUF', 'OPC')),
   pan             VARCHAR(10) UNIQUE,
@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS clients (
   status          VARCHAR(20) DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive', 'Suspended')),
   assigned_ca     VARCHAR(255),
   filing_status   VARCHAR(100),
+  filing_types    JSONB NOT NULL DEFAULT '[]'::jsonb,
   vault_folder    TEXT,            -- Local disk path to this client's vault folder
   total_docs      INT DEFAULT 0,   -- Counter: how many docs uploaded for this client
   total_ai_calls  INT DEFAULT 0,   -- Counter: total AI extraction calls made for this client
@@ -77,13 +78,14 @@ CREATE TABLE IF NOT EXISTS clients (
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE clients ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS filing_types JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can manage their own clients" ON clients;
 CREATE POLICY "Users can manage their own clients" ON clients
-  FOR ALL USING (auth.uid() = owner_id) WITH CHECK (auth.uid() = owner_id);
-CREATE INDEX IF NOT EXISTS idx_clients_owner_id ON clients(owner_id);
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE INDEX IF NOT EXISTS idx_clients_user_id ON clients(user_id);
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- TABLE 2: documents_metadata — Pointer Table for Local Vault Documents

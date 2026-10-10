@@ -42,7 +42,8 @@ export function Dashboard() {
           </div>
           <div className="card-b">
             {att.map((x) => {
-              const c = s.clients.find((c) => c.id === x.t.client)!;
+              const c = s.clients.find((c) => c.id === x.t.client);
+              if (!c) return null;
               return (
                 <div key={x.t.id} className="list-i" onClick={() => { dispatch({ type: 'DL_TOGGLE', client: c.id }); dispatch({ type: 'GO', page: 'deadlines' }); }}>
                   <span className="av" style={{ ['--t' as any]: c.tone }}>{c.short.slice(0, 2).toUpperCase()}</span>
@@ -73,7 +74,8 @@ export function Dashboard() {
             </div>
             <div className="card-b">
               {nxt.map((r) => {
-                const c = s.clients.find((c) => c.id === r.client)!;
+                const c = s.clients.find((c) => c.id === r.client);
+                if (!c) return null;
                 const t = s.threads[r.client];
                 return (
                   <div key={r.id} className="list-i" onClick={() => { dispatch({ type: 'WA_CLIENT', id: c.id }); dispatch({ type: 'GO', page: 'whatsapp' }); }}>
