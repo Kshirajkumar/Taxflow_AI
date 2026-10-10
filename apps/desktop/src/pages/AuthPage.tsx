@@ -385,15 +385,6 @@ export function AuthPage() {
 
   // (Demo login removed — use your real Supabase account)
 
-  // Fast Fill Signup Demo
-  const handleFillDemoSignup = () => {
-    setSignupName('CA Vikram Malhotra');
-    setSignupFirm('Malhotra & Partners LLP');
-    setSignupEmail('vikram@malhotratax.in');
-    setSignupPassword('TaxFlow@2026');
-    setSignupConfirm('TaxFlow@2026');
-  };
-
   // Window Controls for Tauri
   const handleMinimize = async () => {
     try {
@@ -634,14 +625,6 @@ export function AuthPage() {
                         Register your CA firm to activate AI document extraction and WhatsApp client sync.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      className="demo-pill-btn"
-                      onClick={handleFillDemoSignup}
-                      title="Quick-fill sample firm credentials"
-                    >
-                      ⚡ Auto-fill Form
-                    </button>
                   </div>
 
                   <form onSubmit={handleSignupSubmit} className="auth-fields-form">

@@ -1045,24 +1045,6 @@ pre.code{margin:0;background:var(--panel);border:1px solid var(--line);border-ra
   line-height: 1.45;
 }
 
-.demo-pill-btn {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 99px;
-  background: color-mix(in srgb, var(--blue) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--blue) 25%, transparent);
-  color: var(--blue);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.16s ease;
-}
-
-.demo-pill-btn:hover {
-  background: var(--blue);
-  color: #FFFFFF;
-}
-
 /* Form Controls */
 .auth-fields-form {
   display: flex;
@@ -1838,17 +1820,6 @@ pre.code{margin:0;background:var(--panel);border:1px solid var(--line);border-ra
 
 :root[data-theme="light"] .card-desc {
   color: #64748B;
-}
-
-:root[data-theme="light"] .demo-pill-btn {
-  background: rgba(37, 99, 235, 0.08);
-  border-color: rgba(37, 99, 235, 0.22);
-  color: #1D4ED8;
-}
-
-:root[data-theme="light"] .demo-pill-btn:hover {
-  background: #2563EB;
-  color: #FFFFFF;
 }
 
 :root[data-theme="light"] .field-group label {
