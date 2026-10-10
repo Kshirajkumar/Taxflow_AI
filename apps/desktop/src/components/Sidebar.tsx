@@ -12,6 +12,7 @@ const NAV: Array<{ g: string; items: Array<[Page, string, string]> }> = [
     g: 'Automation',
     items: [
       ['extract', 'Invoice Extraction', 'scan'],
+      ['extraction-review', 'Data Extraction Review', 'table'],
       ['whatsapp', 'WhatsApp', 'chat'],
       ['files', 'Client Folders', 'folder'],
       ['deadlines', 'Deadlines', 'cal'],
@@ -112,13 +113,13 @@ export function Sidebar() {
       {NAV.map((g) => (
         <div key={g.g} className="nav-group">
           {!collapsed && <div className="gtitle">{g.g}</div>}
-          {g.items.map(([id, label, icon]) => {
+          {g.items.filter(([id]) => id !== 'extraction-review' || Boolean(s.ui.review?.documentId)).map(([id, label, icon]) => {
             const b = badge(id);
             const isActive = s.page === id;
             return (
               <button
                 key={id}
-                className={'nav' + (isActive ? ' on' : '')}
+                className={'nav' + (isActive ? ' on' : '') + (id === 'extraction-review' ? ' nav-review' : '')}
                 onClick={() => dispatch({ type: 'GO', page: id })}
                 title={collapsed ? `${label}${b ? ` (${b.n})` : ''}` : undefined}
                 aria-label={label}
@@ -128,6 +129,7 @@ export function Sidebar() {
                 </span>
                 {!collapsed && <span className="lb">{label}</span>}
                 {b && <span className={'bd' + (b.hot ? ' hot' : '')}>{b.n}</span>}
+                {id === 'extraction-review' && <span className="review-nav-dot" aria-label="Review required" />}
                 {isActive && <span className="nav-active-bar" />}
               </button>
             );

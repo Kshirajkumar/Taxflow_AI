@@ -9,10 +9,10 @@ CREATE TABLE IF NOT EXISTS public.documents_metadata (
   client_id           UUID REFERENCES public.clients(id) ON DELETE CASCADE,
   client_name         VARCHAR(255),
   file_name           VARCHAR(255) NOT NULL,
-  file_type           VARCHAR(20) NOT NULL CHECK (file_type IN ('PDF', 'PNG', 'JPG', 'JPEG', 'XLSX', 'CSV')),
+  file_type           VARCHAR(30) NOT NULL CHECK (file_type IN ('PDF', 'PNG', 'JPG', 'JPEG', 'WEBP', 'XLS', 'XLSX', 'CSV', 'DOC', 'DOCX')),
   file_size_kb        NUMERIC(10,2),
   category            VARCHAR(50) NOT NULL CHECK (category IN ('GST', 'IncomeTax', 'Form16', 'BankStatement', 'Notice', 'TDS', 'Audit', 'General', 'Extracted')),
-  source              VARCHAR(20) NOT NULL DEFAULT 'Manual' CHECK (source IN ('WhatsApp', 'Manual', 'Portal')),
+  source              VARCHAR(20) NOT NULL DEFAULT 'Manual' CHECK (source IN ('WhatsApp', 'Manual', 'Portal', 'Upload')),
   status              VARCHAR(30) NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Processing', 'Extracted', 'Verified', 'Rejected')),
   vault_path          TEXT NOT NULL,
   assessment_year     VARCHAR(10) DEFAULT '2026-27',
@@ -23,6 +23,12 @@ CREATE TABLE IF NOT EXISTS public.documents_metadata (
   whatsapp_message_id UUID,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migration-safe constraint repair for databases created with the older
+-- WhatsApp/Manual/Portal-only source constraint.
+ALTER TABLE public.documents_metadata DROP CONSTRAINT IF EXISTS documents_metadata_source_check;
+ALTER TABLE public.documents_metadata ADD CONSTRAINT documents_metadata_source_check
+  CHECK (source IN ('WhatsApp', 'Manual', 'Portal', 'Upload'));
 
 CREATE INDEX IF NOT EXISTS idx_documents_metadata_client_id ON public.documents_metadata(client_id);
 CREATE INDEX IF NOT EXISTS idx_documents_metadata_status ON public.documents_metadata(status);

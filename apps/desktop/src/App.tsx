@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { AppProvider, useAppState } from './state/store';
 import { Titlebar } from './components/Titlebar';
@@ -10,6 +10,7 @@ import { useDispatch } from './state/store';
 import { OnboardingFlow } from './pages/OnboardingFlow';
 import { Dashboard } from './pages/Dashboard';
 import { ExtractPage } from './pages/Extract';
+import { ExtractionReviewPage } from './pages/ExtractionReview';
 import { WhatsAppPage } from './pages/WhatsApp';
 import { FilesPage } from './pages/Files';
 import { DeadlinesPage } from './pages/Deadlines';
@@ -18,37 +19,14 @@ import { ClientsPage, BillingPage, SettingsPage } from './pages/Other';
 
 function Shell() {
   const s = useAppState();
-  const hasMountedTheme = useRef(false);
-  const themeTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dispatch = useDispatch();
 
-  useEffect(() => {
+  // Apply the theme before the browser paints the next frame. Using a normal
+  // effect here briefly rendered the new page background with the previous
+  // text/card variables, which produced the washed-out mixed-theme state.
+  useLayoutEffect(() => {
     const root = document.documentElement;
-    const previousTheme = root.getAttribute('data-theme');
     root.setAttribute('data-theme', s.theme);
-
-    // Do not animate the initial paint. For later changes, keep the transition
-    // lifecycle here so rapid toggles cannot cancel one another incorrectly.
-    if (!hasMountedTheme.current || previousTheme === s.theme) {
-      hasMountedTheme.current = true;
-      return;
-    }
-
-    if (themeTransitionTimer.current) {
-      clearTimeout(themeTransitionTimer.current);
-    }
-    root.classList.add('theme-transitioning');
-    themeTransitionTimer.current = setTimeout(() => {
-      root.classList.remove('theme-transitioning');
-      themeTransitionTimer.current = null;
-    }, 420);
-
-    return () => {
-      if (themeTransitionTimer.current) {
-        clearTimeout(themeTransitionTimer.current);
-        themeTransitionTimer.current = null;
-      }
-      root.classList.remove('theme-transitioning');
-    };
   }, [s.theme]);
 
   useEffect(() => {
@@ -58,6 +36,10 @@ function Shell() {
       document.body.classList.remove('chat-hidden', 'chat-open');
     };
   }, [s.chatOpen]);
+
+  useEffect(() => {
+    if (s.page === 'extraction-review' && s.chatOpen) dispatch({ type: 'TOGGLE_CHAT' });
+  }, [s.page, s.chatOpen, dispatch]);
 
   useEffect(() => {
     document.body.classList.toggle('sidebar-collapsed', !!s.sidebarCollapsed);
@@ -76,6 +58,7 @@ function Shell() {
   const Page = {
     dashboard: Dashboard,
     extract: ExtractPage,
+    'extraction-review': ExtractionReviewPage,
     whatsapp: WhatsAppPage,
     files: FilesPage,
     deadlines: DeadlinesPage,

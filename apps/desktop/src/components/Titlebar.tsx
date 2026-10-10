@@ -4,6 +4,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { BrandMark } from './BrandMark';
 import { useAppState, useDispatch } from '../state/store';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { fetchNotifications, markNotificationsRead, type NotificationItem } from '../lib/api';
 
 export function Titlebar() {
   const s = useAppState();
@@ -11,6 +12,9 @@ export function Titlebar() {
   const [q, setQ] = useState('');
   const [focused, setFocused] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -28,6 +32,27 @@ export function Titlebar() {
     initWindow();
     return () => { if (unlisten) unlisten(); };
   }, []);
+
+  // Notifications are created by the database trigger and refreshed here so
+  // the titlebar remains current without coupling client mutations to UI state.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadNotifications() {
+      if (!s.currentUser) return;
+      try {
+        const result = await fetchNotifications();
+        if (!cancelled) {
+          setNotifications(result.data);
+          setUnreadNotifications(result.unreadCount);
+        }
+      } catch (error) {
+        if (!cancelled) console.warn('[NOTIFICATIONS] Could not load notifications:', error);
+      }
+    }
+    void loadNotifications();
+    const timer = window.setInterval(() => void loadNotifications(), 15000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [s.currentUser?.id]);
 
   // Close search dropdown on outside click
   useEffect(() => {
@@ -67,6 +92,7 @@ export function Titlebar() {
         )
         .slice(0, 6)
     : [];
+  const sessionExpired = s.sessionStatus === 'expired';
 
   return (
     <header className="titlebar">
@@ -135,28 +161,61 @@ export function Titlebar() {
         )}
       </div>
 
+      {/* Session status */}
+      <div className={`session-status ${sessionExpired ? 'is-expired' : 'is-active'}`}>
+        <span className="session-status-icon" aria-hidden="true">
+          <Icon name={sessionExpired ? 'bell' : 'check'} size={13} />
+        </span>
+        {sessionExpired ? (
+          <>
+            <span className="session-status-copy">Session is invalid or has expired.</span>
+            <span className="session-status-actions">
+              <button className="session-status-btn secondary" onClick={() => dispatch({ type: 'LOGOUT' })}>Re Login</button>
+              <button className="session-status-btn primary" onClick={() => dispatch({ type: 'LOGOUT' })}>Update Session</button>
+            </span>
+          </>
+        ) : (
+          <span className="session-status-copy">Session active</span>
+        )}
+      </div>
+
       {/* Drag space */}
       <div data-tauri-drag-region className="titlebar-drag-space" />
 
       {/* Right Controls */}
       <div className="wc">
         {/* Notifications */}
-        <button className="wc-action-btn wc-notif" title="Notifications" aria-label="Notifications">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-          </svg>
-          <span className="notif-dot" />
-        </button>
+        <div className="wc-notification-wrap">
+          <button className={`wc-action-btn wc-notif${notificationsOpen ? ' active' : ''}`} onClick={() => {
+            const nextOpen = !notificationsOpen;
+            setNotificationsOpen(nextOpen);
+            if (nextOpen && unreadNotifications > 0) {
+              void markNotificationsRead().then(() => setUnreadNotifications(0)).catch((error) => console.warn('[NOTIFICATIONS] Could not mark read:', error));
+            }
+          }} title="Notifications" aria-label="Notifications" aria-expanded={notificationsOpen}>
+            <Icon name="bell" size={15} />
+            {unreadNotifications > 0 && <span className="notif-count">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>}
+          </button>
+          {notificationsOpen && <div className="notifications-panel" role="dialog" aria-label="Notifications">
+            <div className="notifications-panel-head"><div><b>Notifications</b><small>Database activity for your practice</small></div><button className="notifications-close" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications"><Icon name="x" size={14} /></button></div>
+            <div className="notifications-list">
+              {notifications.length === 0 ? <div className="notifications-empty"><Icon name="bell" size={18} /><span>No recent activity</span><small>New client activity will appear here.</small></div> : notifications.map((notification) => <div className={`notification-item${notification.read_at ? '' : ' unread'}`} key={notification.id}>
+                <span className={`notification-item-icon ${notification.event_type === 'client.deleted' ? 'deleted' : 'created'}`}><Icon name={notification.event_type === 'client.deleted' ? 'x' : 'users'} size={13} /></span>
+                <span className="notification-item-copy"><b>{notification.title}</b><span>{notification.message}</span><small>{new Date(notification.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</small></span>
+              </div>)}
+            </div>
+          </div>}
+        </div>
 
         {/* Theme Toggle */}
         <ThemeToggle />
 
         {/* AI Chat Toggle */}
         <button
-          className={`wc-action-btn wc-chat-btn${s.chatOpen ? ' active' : ''}`}
-          onClick={() => dispatch({ type: 'TOGGLE_CHAT' })}
-          title={s.chatOpen ? 'Hide AI assistant' : 'Show AI assistant'}
+          className={`wc-action-btn wc-chat-btn${s.chatOpen ? ' active' : ''}${s.page === 'extraction-review' ? ' locked' : ''}`}
+          onClick={() => s.page !== 'extraction-review' && dispatch({ type: 'TOGGLE_CHAT' })}
+          disabled={s.page === 'extraction-review'}
+          title={s.page === 'extraction-review' ? 'AI assistant is unavailable during extraction review' : s.chatOpen ? 'Hide AI assistant' : 'Show AI assistant'}
           aria-label="Toggle AI assistant"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

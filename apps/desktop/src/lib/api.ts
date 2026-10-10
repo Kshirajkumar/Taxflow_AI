@@ -96,6 +96,18 @@ export interface AuthResponse {
   remainingAttempts?: number;
 }
 
+export interface NotificationItem {
+  id: string;
+  event_type: string;
+  title: string;
+  message: string;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  metadata?: Record<string, unknown>;
+  read_at?: string | null;
+  created_at: string;
+}
+
 async function authRequest<T extends { success: boolean; message?: string }>(
   url: string,
   options: RequestInit,
@@ -294,6 +306,19 @@ export async function apiGetMeWithToken(token: string): Promise<AuthResponse> {
   return res.json();
 }
 
+export async function fetchNotifications(): Promise<{ data: NotificationItem[]; unreadCount: number }> {
+  const response = await fetch(`${API_BASE_URL}/notifications?limit=20`, { headers: authHeaders() });
+  let payload: { success?: boolean; data?: NotificationItem[]; unreadCount?: number; message?: string };
+  try { payload = await response.json(); } catch { throw new Error(`The notification service returned an invalid response (HTTP ${response.status}).`); }
+  if (!response.ok || !payload.success) throw new Error(payload.message || `Could not load notifications (HTTP ${response.status}).`);
+  return { data: payload.data || [], unreadCount: payload.unreadCount || 0 };
+}
+
+export async function markNotificationsRead(): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/notifications/read`, { method: 'POST', headers: authHeaders() });
+  if (!response.ok) throw new Error(`Could not mark notifications as read (HTTP ${response.status}).`);
+}
+
 export async function apiUpdateProfile(data: {
   name?: string;
   firmName?: string;
@@ -450,6 +475,14 @@ export async function fetchDocuments(clientId?: string): Promise<DocumentItem[]>
   }
 }
 
+export async function fetchClientDocuments(clientId: string, signal?: AbortSignal): Promise<DocumentItem[]> {
+  const res = await fetch(`${API_BASE_URL}/documents?clientId=${encodeURIComponent(clientId)}`, { headers: authHeaders(), signal });
+  let json: any;
+  try { json = await res.json(); } catch { throw new Error(`The client document list returned an invalid response (HTTP ${res.status}).`); }
+  if (!res.ok || !json.success) throw new Error(json.message || `Could not load this client's files (HTTP ${res.status}).`);
+  return Array.isArray(json.data) ? json.data : [];
+}
+
 export interface VaultUploadResponse {
   data?: DocumentItem;
   message?: string;
@@ -492,17 +525,34 @@ export async function uploadToLocalVault(payload: {
 }
 
 export function getVaultFileUrl(docId: string): string {
-  return `${API_BASE_URL}/vault/files/${docId}`;
+  return `${API_BASE_URL}/documents/${encodeURIComponent(docId)}/serve`;
 }
 
-export async function verifyDocumentExtraction(documentId: string, verifiedBy = 'CA Admin') {
+export async function fetchDocumentPreview(documentId: string, signal?: AbortSignal): Promise<Blob> {
+  let res: Response;
   try {
-    const res = await fetch(`${API_BASE_URL}/extraction/verify`, {
+    res = await fetch(getVaultFileUrl(documentId), { headers: authHeaders(), signal });
+  } catch {
+    throw new Error('The original file could not be reached. Check that the backend and Local Vault are available.');
+  }
+  if (!res.ok) {
+    let message = '';
+    try { message = (await res.json()).message || ''; } catch {}
+    throw new Error(message || `The original file could not be opened (HTTP ${res.status}).`);
+  }
+  return res.blob();
+}
+
+export async function verifyDocumentExtraction(documentId: string, verifiedBy = 'CA Admin', correctedData?: Record<string, unknown>) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/documents/${encodeURIComponent(documentId)}/verify`, {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ documentId, verifiedBy })
+      body: JSON.stringify({ verifiedBy, correctedData })
     });
-    return await res.json();
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.message || `Could not save the reviewed extraction (HTTP ${res.status}).`);
+    return json;
   } catch (err) {
     console.error('Failed to verify document', err);
     return null;

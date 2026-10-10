@@ -12,6 +12,22 @@ const router = express.Router();
 const path = require('path');
 const { supabase, isConnected } = require('../db/supabase');
 const { saveFileToVault, vaultFileExists, getVaultBaseDir } = require('../vault/vaultManager');
+
+function normalizeFileType(fileType, fileName) {
+  const extension = String(fileName || '').split('.').pop().toLowerCase();
+  const value = String(fileType || '').toLowerCase();
+  const types = {
+    pdf: 'PDF', png: 'PNG', jpg: 'JPG', jpeg: 'JPEG', webp: 'WEBP',
+    csv: 'CSV', xlsx: 'XLSX', xls: 'XLS', doc: 'DOC', docx: 'DOCX'
+  };
+  if (types[extension]) return types[extension];
+  if (value.includes('pdf')) return 'PDF';
+  if (value.includes('png')) return 'PNG';
+  if (value.includes('jpeg') || value.includes('jpg')) return value.includes('jpeg') ? 'JPEG' : 'JPG';
+  if (value.includes('spreadsheet') || value.includes('excel')) return 'XLSX';
+  if (value.includes('word')) return 'DOCX';
+  return 'PDF';
+}
 const VAULT_BASE_DIR = getVaultBaseDir();
 
 // --- In-Memory Fallback ---
@@ -100,14 +116,16 @@ router.post('/upload-vault', async (req, res) => {
     }
 
     // Step 2: Save metadata record to Supabase (no binary data)
+    const allowedSources = new Set(['WhatsApp', 'Manual', 'Portal', 'Upload']);
+    const normalizedSource = allowedSources.has(source) ? source : 'Manual';
     const docMeta = {
       client_id: clientId,
       client_name: clientName || 'Unknown',
       file_name: savedFileName,
-      file_type: fileType || 'PDF',
+      file_type: normalizeFileType(fileType, fileName),
       file_size_kb: fileSizeKb,
       category: category || 'General',
-      source: source || 'Manual',
+      source: normalizedSource,
       status: 'Pending',
       vault_path: vaultPath,
       assessment_year: assessmentYear || '2026-27'

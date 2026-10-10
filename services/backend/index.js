@@ -78,6 +78,7 @@ initVault();
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/metadata', requireAuth, metadataRouter);
 app.use('/api/v1/clients', requireAuth, clientsRouter);
+app.use('/api/v1/notifications', requireAuth, require('./routes/notifications'));
 app.use('/api/v1/documents', requireAuth, documentsRouter);
 app.use('/api/v1/extraction', requireAuth, extractionRouter);
 app.use('/api/v1/whatsapp', whatsappRouter);

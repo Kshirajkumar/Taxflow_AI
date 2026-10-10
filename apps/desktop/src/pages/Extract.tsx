@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
-import { useAppState } from '../state/store';
-import { processDocumentExtraction, uploadToLocalVault, verifyDocumentExtraction } from '../lib/api';
+import { useAppState, useDispatch } from '../state/store';
+import { fetchClientDocuments, processDocumentExtraction, uploadToLocalVault, type DocumentItem } from '../lib/api';
 
 type RunStep = 'idle' | 'uploading' | 'extracting' | 'saving' | 'done' | 'error';
 const CATEGORIES = [['GST', 'GST invoice'], ['Form16', 'Form 16'], ['IncomeTax', 'Income tax'], ['BankStatement', 'Bank statement'], ['Notice', 'Tax notice'], ['General', 'Other document']];
@@ -17,8 +17,15 @@ function fileToBase64(file: File): Promise<string> {
 
 function prettyKey(key: string) { return key.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 
+function normalizedFileType(file: File): string {
+  const extension = file.name.split('.').pop()?.toLowerCase() || '';
+  const types: Record<string, string> = { pdf: 'PDF', png: 'PNG', jpg: 'JPG', jpeg: 'JPEG', webp: 'WEBP', csv: 'CSV', xlsx: 'XLSX', doc: 'DOC', docx: 'DOCX' };
+  return types[extension] || 'PDF';
+}
+
 export function ExtractPage() {
   const s = useAppState();
+  const dispatch = useDispatch();
   const inputRef = useRef<HTMLInputElement>(null);
   const [clientId, setClientId] = useState(s.clients[0]?.id || '');
   const [category, setCategory] = useState('GST');
@@ -28,11 +35,29 @@ export function ExtractPage() {
   const [documentId, setDocumentId] = useState('');
   const [extracted, setExtracted] = useState<Record<string, unknown> | null>(null);
   const [approved, setApproved] = useState(false);
+  const [clientMenuOpen, setClientMenuOpen] = useState(false);
+  const [clientFiles, setClientFiles] = useState<DocumentItem[]>([]);
+  const [clientFilesLoading, setClientFilesLoading] = useState(false);
+  const [clientFilesError, setClientFilesError] = useState('');
   const client = useMemo(() => s.clients.find((item) => item.id === clientId), [clientId, s.clients]);
   const isBusy = step === 'uploading' || step === 'extracting' || step === 'saving';
   const resultEntries = extracted ? Object.entries(extracted).filter(([, value]) => value !== null && value !== '') : [];
 
   useEffect(() => { if (!clientId && s.clients[0]) setClientId(s.clients[0].id); }, [clientId, s.clients]);
+
+  useEffect(() => {
+    if (!clientId) { setClientFiles([]); return; }
+    const controller = new AbortController();
+    setClientFilesLoading(true); setClientFilesError('');
+    fetchClientDocuments(clientId, controller.signal)
+      .then(setClientFiles)
+      .catch((error) => { if (error?.name !== 'AbortError') { setClientFiles([]); setClientFilesError(error?.message || 'Could not load this client’s files.'); } })
+      .finally(() => { if (!controller.signal.aborted) setClientFilesLoading(false); });
+    return () => controller.abort();
+  }, [clientId]);
+
+  const clientCategories = useMemo(() => Array.from(new Set(clientFiles.map((item) => item.category).filter(Boolean))), [clientFiles]);
+  const suggestedCategories = clientCategories.length ? CATEGORIES.filter(([value]) => clientCategories.includes(value)).slice(0, 3) : CATEGORIES.slice(0, 3);
 
   function chooseFile(nextFile?: File) {
     const selected = nextFile || inputRef.current?.files?.[0];
@@ -46,7 +71,7 @@ export function ExtractPage() {
     setMessage(''); setExtracted(null); setApproved(false);
     try {
       setStep('uploading');
-      const upload = await uploadToLocalVault({ clientId: client.id, clientName: client.name, fileName: file.name, fileType: file.type.split('/')[1]?.toUpperCase() || file.name.split('.').pop()?.toUpperCase() || 'PDF', category, fileBase64: await fileToBase64(file), source: 'Upload' });
+      const upload = await uploadToLocalVault({ clientId: client.id, clientName: client.name, fileName: file.name, fileType: normalizedFileType(file), category, fileBase64: await fileToBase64(file), source: 'Upload' });
       const id = upload.data?.id;
       if (!id) throw new Error('The file was saved, but no document ID was returned for extraction.');
       setDocumentId(id); setStep('extracting');
@@ -60,18 +85,17 @@ export function ExtractPage() {
   }
 
   async function approveExtraction() {
-    if (!documentId || approved) return;
-    const response = await verifyDocumentExtraction(documentId, s.currentUser?.name || 'CA Admin');
-    if (!response?.success) { setMessage('Approval could not be saved. Please retry while keeping this review open.'); return; }
-    setApproved(true);
-    setMessage('Approved extraction saved to the client record.');
+    if (!documentId || approved || !client) return;
+    const data = extracted || {};
+    dispatch({ type: 'OPEN_EXTRACTION_REVIEW', payload: { documentId, clientId: client.id, fileName: file?.name || 'Document', category, extractedData: data } });
   }
 
   return <div className="extract-workspace">
     <div className="ph extract-header"><div><div className="eyebrow"><span className="eyebrow-dot" />AI DOCUMENT WORKSPACE</div><h1>Extract with confidence</h1><p>Upload a document, choose its client, and let the secure server-side AI pipeline structure the data for you.</p></div><div className="extract-header-status"><span className="status-pulse" />Vault &amp; AI ready</div></div>
     <div className="extract-layout">
       <section className="card extract-setup"><div className="card-h"><div><span className="section-kicker">01 / SOURCE</span><h2>Set up extraction</h2></div><span className="chip cyan"><Icon name="spark" size={12} />AI assisted</span></div><div className="card-b">
-        <label className="extract-label">Client</label><div className="extract-select-wrap"><Icon name="users" size={15} /><select className="sel" value={clientId} onChange={(event) => setClientId(event.target.value)} disabled={isBusy}><option value="">Select a client</option>{s.clients.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+        <label className="extract-label">Client</label><div className={`vault-client-select extract-client-select ${clientMenuOpen ? 'menu-open' : ''}`} title="Select client" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setClientMenuOpen(false); }}><button className="vault-client-name" onClick={() => !isBusy && s.clients.length && setClientMenuOpen(value => !value)} disabled={isBusy || !s.clients.length} aria-haspopup="listbox" aria-expanded={clientMenuOpen}><Icon name="users" size={15} />{client?.name || 'Select a client'}</button><span className="vault-client-arrow" aria-hidden="true" />{clientMenuOpen && s.clients.length > 0 && <div className="vault-client-menu" role="listbox">{s.clients.map(item => <button key={item.id} className={`vault-client-option ${item.id === client?.id ? 'active' : ''}`} role="option" aria-selected={item.id === client?.id} onClick={() => { setClientId(item.id); setClientMenuOpen(false); }}>{item.name}{item.id === client?.id && <Icon name="check" size={13} />}</button>)}</div>}</div>
+        <div className="client-file-context"><div className="client-context-head"><span><Icon name="folder" size={13} />{client?.name || 'Client'} workspace</span>{!clientFilesLoading && <small>{clientFiles.length} file{clientFiles.length === 1 ? '' : 's'}</small>}</div>{clientFilesLoading ? <div className="client-context-skeleton"><i /><i /><i /></div> : clientFilesError ? <div className="client-context-error"><Icon name="bell" size={13} /><span>{clientFilesError}</span></div> : <><small className="client-context-caption">Suggested document types for this client</small><div className="suggestion-pills">{suggestedCategories.map(([value, label]) => <button key={value} className={category === value ? 'active' : ''} onClick={() => setCategory(value)} disabled={isBusy}><Icon name={value === 'GST' ? 'file' : 'scan'} size={12} />{label}<span>Suggested</span></button>)}</div></>}</div>
         <label className="extract-label">Document type</label><div className="category-grid">{CATEGORIES.map(([value, label]) => <button key={value} className={'category-choice' + (category === value ? ' selected' : '')} onClick={() => setCategory(value)} disabled={isBusy}><span>{label}</span><small>{value === 'GST' ? 'Invoice fields' : 'Structured fields'}</small>{category === value && <Icon name="check" size={13} />}</button>)}</div>
         <div className="upload-dropzone" onClick={() => !isBusy && inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); chooseFile(event.dataTransfer.files[0]); }}><input ref={inputRef} className="vault-file-input" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.xlsx,.doc,.docx" onChange={() => chooseFile()} /><div className="upload-icon"><Icon name="upload" size={20} /></div>{file ? <><b>{file.name}</b><small>{(file.size / 1024 / 1024).toFixed(2)} MB · Ready to upload</small></> : <><b>Drop a file here</b><small>or click to open file explorer · PDF, image, or document</small></>}</div>
         <div className="extract-security"><Icon name="check" size={14} /><span>Files stay in the selected client’s private <b>Raw</b> vault until processing is complete.</span></div><button className="btn pri extract-cta" disabled={!client || !file || isBusy} onClick={() => void startExtraction()}><Icon name={isBusy ? 'refresh' : 'spark'} size={15} className={isBusy ? 'ic spin' : 'ic'} />{isBusy ? 'Processing securely…' : 'Upload &amp; extract'}</button>{message && <div className={'extract-message ' + (step === 'error' ? 'error' : step === 'done' ? 'success' : 'warning')}><Icon name={step === 'error' ? 'x' : step === 'done' ? 'check' : 'clock'} size={14} /><span>{message}</span></div>}

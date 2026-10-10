@@ -19,6 +19,7 @@ export interface Settings {
 export interface AppState {
   page: Page;
   theme: 'dark' | 'light';
+  sessionStatus: 'active' | 'expired';
   chatOpen: boolean;
   sidebarCollapsed: boolean;
   currentUser: AuthUser | null;
@@ -35,6 +36,7 @@ export interface AppState {
   ui: {
     wa: { client: string; tab: 'chats' | 'reminders' | 'templates' };
     ex: { sel: string; filter: string };
+    review: { documentId: string; clientId: string; fileName: string; category: string; extractedData: Record<string, unknown> };
     fs: { open: Set<string>; sel: string | null; q: string };
     dl: { open: Set<string> };
     gen: { client: string; period: string; types: Set<string> };
@@ -66,6 +68,8 @@ type Action =
   | { type: 'TOGGLE_CHAT' }
   | { type: 'TOGGLE_SIDEBAR' }
   | { type: 'LOGIN'; user: AuthUser; token: string; refreshToken?: string }
+  | { type: 'SESSION_ACTIVE' }
+  | { type: 'SESSION_INVALID' }
   | { type: 'LOGOUT' }
   | { type: 'COMPLETE_ONBOARDING' }
   | { type: 'ADD_CLIENT'; client: Client }
@@ -85,6 +89,8 @@ type Action =
   | { type: 'EX_RUN_DONE'; id: string }
   | { type: 'EX_APPROVE'; id: string }
   | { type: 'EX_EDIT_FIELD'; id: string; field: string; value: string | number }
+  | { type: 'OPEN_EXTRACTION_REVIEW'; payload: { documentId: string; clientId: string; fileName: string; category: string; extractedData: Record<string, unknown> } }
+  | { type: 'CLEAR_EXTRACTION_REVIEW' }
   | { type: 'FS_TOGGLE'; key: string }
   | { type: 'FS_SELECT'; id: string | null }
   | { type: 'FS_QUERY'; q: string }
@@ -111,6 +117,7 @@ function getSavedTheme(): 'dark' | 'light' {
 const initialState: AppState = {
   page: 'dashboard',
   theme: getSavedTheme(),
+  sessionStatus: getSavedUser() ? 'active' : 'expired',
   chatOpen: true,
   sidebarCollapsed: getSavedSidebarCollapsed(),
   currentUser: getSavedUser(),
@@ -127,6 +134,7 @@ const initialState: AppState = {
   ui: {
     wa: { client: '', tab: 'chats' },
     ex: { sel: '', filter: 'all' },
+    review: { documentId: '', clientId: '', fileName: '', category: '', extractedData: {} },
     fs: { open: new Set(), sel: null, q: '' },
     dl: { open: new Set() },
     gen: { client: '', period: '2026-08', types: new Set(['gstr3b', 'recon', 'reg']) },
@@ -151,9 +159,14 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         currentUser: action.user,
+        sessionStatus: 'active',
         log: [{ at: vnow(), ic: 'user', t: `Signed in as ${action.user.name} (${action.user.firmName})` }, ...state.log]
       };
     }
+    case 'SESSION_ACTIVE':
+      return { ...state, sessionStatus: 'active' };
+    case 'SESSION_INVALID':
+      return { ...state, sessionStatus: 'expired' };
     case 'COMPLETE_ONBOARDING': {
       if (!state.currentUser) return state;
       const updatedUser = { ...state.currentUser, onboardingComplete: true, vaultConfigured: true };
@@ -192,6 +205,7 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         currentUser: null,
+        sessionStatus: 'expired',
         clients: [],
         docs: [],
         files: [],
@@ -200,11 +214,15 @@ function reducer(state: AppState, action: Action): AppState {
         tasks: [],
         bills: [],
         checks: {},
+        ui: {
+          ...state.ui,
+          review: { documentId: '', clientId: '', fileName: '', category: '', extractedData: {} },
+        },
         log: [{ at: vnow(), ic: 'power', t: 'Signed out of practice workspace' }, ...state.log]
       };
     }
     case 'GO':
-      return { ...state, page: action.page };
+      return { ...state, page: action.page, chatOpen: action.page === 'extraction-review' ? false : state.chatOpen };
     case 'TOGGLE_THEME': {
       const nextTheme = state.theme === 'dark' ? 'light' : 'dark';
       try {
@@ -213,7 +231,7 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, theme: nextTheme };
     }
     case 'TOGGLE_CHAT':
-      return { ...state, chatOpen: !state.chatOpen };
+      return state.page === 'extraction-review' ? state : { ...state, chatOpen: !state.chatOpen };
     case 'WA_CLIENT':
       return { ...state, ui: { ...state.ui, wa: { ...state.ui.wa, client: action.id } } };
     case 'WA_TAB':
@@ -277,6 +295,18 @@ function reducer(state: AppState, action: Action): AppState {
           if (next.status === 'approved') next.status = 'extracted';
           return next;
         }),
+      };
+    case 'OPEN_EXTRACTION_REVIEW':
+      return {
+        ...state,
+        page: 'extraction-review',
+        chatOpen: false,
+        ui: { ...state.ui, review: action.payload },
+      };
+    case 'CLEAR_EXTRACTION_REVIEW':
+      return {
+        ...state,
+        ui: { ...state.ui, review: { documentId: '', clientId: '', fileName: '', category: '', extractedData: {} } },
       };
     case 'FS_TOGGLE': {
       const open = new Set(state.ui.fs.open);
@@ -446,7 +476,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (savedSession?.token) {
           const sessionCheck = await apiGetMe();
           if (!sessionCheck.success || !sessionCheck.user) {
-            dispatch({ type: 'LOGOUT' });
+            dispatch({ type: 'SESSION_INVALID' });
             return;
           }
           dispatch({ type: 'LOGIN', user: sessionCheck.user, token: savedSession.token, refreshToken: savedSession.refreshToken });

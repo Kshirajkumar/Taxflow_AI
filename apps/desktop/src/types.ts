@@ -125,6 +125,7 @@ export interface LogEntry {
 export type Page =
   | 'dashboard'
   | 'extract'
+  | 'extraction-review'
   | 'whatsapp'
   | 'files'
   | 'deadlines'
