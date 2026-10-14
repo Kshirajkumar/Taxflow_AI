@@ -13,7 +13,7 @@ const NAV: Array<{ g: string; items: Array<[Page, string, string]> }> = [
     items: [
       ['extract', 'Invoice Extraction', 'scan'],
       ['extraction-review', 'Data Extraction Review', 'table'],
-      ['whatsapp', 'WhatsApp', 'chat'],
+      ['whatsapp', 'Client Inbox', 'chat'],
       ['files', 'Client Folders', 'folder'],
       ['deadlines', 'Deadlines', 'cal'],
       ['generate', 'File Generator', 'spark'],

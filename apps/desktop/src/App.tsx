@@ -77,7 +77,7 @@ function Shell() {
         <Chat />
       </div>
       <footer className="statusbar">
-        <span><i className="sdot" /><b>WhatsApp API connected</b></span>
+        <span><i className="sdot" /><b>Client Inbox integrations</b></span>
         <span>Vault <b>D:\Taxflow\Clients</b></span>
         <span className="sp" />
       </footer>

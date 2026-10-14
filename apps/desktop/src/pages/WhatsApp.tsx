@@ -19,6 +19,7 @@ function fillTpl(body: string, name: string) {
 export function WhatsAppPage() {
   const s = useAppState();
   const dispatch = useDispatch();
+  const [channel, setChannel] = useState<'whatsapp' | 'telegram'>('whatsapp');
   const [input, setInput] = useState('');
   const [showSchedule, setShowSchedule] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -32,7 +33,7 @@ export function WhatsAppPage() {
   if (!c) {
     return (
       <>
-        <div className="ph"><div><h1>WhatsApp</h1><p>Every client conversation in one place, with the reminders that will go out next.</p></div></div>
+        <div className="ph"><div><h1>Client Inbox</h1><p>WhatsApp and Telegram client conversations in one place, with the reminders that will go out next.</p></div><div className="ph-a"><label className="f" htmlFor="inbox-channel-empty">Channel</label><select id="inbox-channel-empty" className="sel" style={{ width: 150 }} value={channel} onChange={(e) => setChannel(e.target.value as 'whatsapp' | 'telegram')}><option value="whatsapp">WhatsApp</option><option value="telegram">Telegram</option></select></div></div>
         <div className="card"><div className="card-b empty"><b>No clients yet</b>Add a client before starting a WhatsApp conversation.</div></div>
       </>
     );
@@ -59,11 +60,16 @@ export function WhatsAppPage() {
   return (
     <>
       <div className="ph">
-        <div><h1>WhatsApp</h1><p>Every client conversation in one place, with the reminders that will go out next.</p></div>
+        <div><h1>Client Inbox</h1><p>WhatsApp and Telegram client conversations in one place, with the reminders that will go out next.</p></div>
         <div className="ph-a"><button className="btn pri" onClick={() => setShowSchedule(true)}><Icon name="plus" size={14} />Schedule reminder</button></div>
       </div>
 
       <div className="card wa-top">
+        <label className="f" htmlFor="inbox-channel">Channel</label>
+        <select id="inbox-channel" className="sel" style={{ width: 150 }} value={channel} onChange={(e) => setChannel(e.target.value as 'whatsapp' | 'telegram')}>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="telegram">Telegram</option>
+        </select>
         <span className="chip green"><i className="sdot" style={{ margin: '0 2px 0 0' }} />Business API connected</span>
         <span className="mut2">+91 99000 00000 · {TPL.length} templates approved</span>
       </div>
