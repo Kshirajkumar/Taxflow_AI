@@ -1,0 +1,17 @@
+/* Keep long client identifiers and contact values inside the card grid. */
+.ccard .kvs {
+  grid-template-columns: 70px minmax(0, 1fr);
+  min-width: 0;
+}
+
+.ccard .kvs span,
+.ccard .kvs b {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ccard .kvs b {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+}

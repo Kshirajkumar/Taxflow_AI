@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './styles.css';
+import './client-card-overflow.css';
 
 // Keep the desktop shell free of the browser's native context menu. This also
 // prevents the Inspect/DevTools entry from appearing over any screen or form.
