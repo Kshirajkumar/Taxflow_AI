@@ -68,6 +68,7 @@ type Action =
   | { type: 'TOGGLE_CHAT' }
   | { type: 'TOGGLE_SIDEBAR' }
   | { type: 'LOGIN'; user: AuthUser; token: string; refreshToken?: string }
+  | { type: 'UPDATE_USER'; user: AuthUser }
   | { type: 'SESSION_ACTIVE' }
   | { type: 'SESSION_INVALID' }
   | { type: 'LOGOUT' }
@@ -162,6 +163,14 @@ function reducer(state: AppState, action: Action): AppState {
         sessionStatus: 'active',
         log: [{ at: vnow(), ic: 'user', t: `Signed in as ${action.user.name}` }, ...state.log]
       };
+    }
+    case 'UPDATE_USER': {
+      try {
+        const raw = localStorage.getItem('taxflow_session');
+        const session = raw ? JSON.parse(raw) : {};
+        localStorage.setItem('taxflow_session', JSON.stringify({ ...session, user: action.user }));
+      } catch (e) {}
+      return { ...state, currentUser: action.user };
     }
     case 'SESSION_ACTIVE':
       return { ...state, sessionStatus: 'active' };

@@ -16,6 +16,7 @@ import { FilesPage } from './pages/Files';
 import { DeadlinesPage } from './pages/Deadlines';
 import { GeneratePage } from './pages/Generate';
 import { ClientsPage, BillingPage, SettingsPage } from './pages/Other';
+import { ProfilePage } from './pages/Profile';
 
 function Shell() {
   const s = useAppState();
@@ -65,6 +66,7 @@ function Shell() {
     generate: GeneratePage,
     clients: ClientsPage,
     billing: BillingPage,
+    profile: ProfilePage,
     settings: SettingsPage,
   }[s.page] || Dashboard;
 

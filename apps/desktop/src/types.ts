@@ -132,4 +132,5 @@ export type Page =
   | 'generate'
   | 'clients'
   | 'billing'
+  | 'profile'
   | 'settings';

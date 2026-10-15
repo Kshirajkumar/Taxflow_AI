@@ -169,7 +169,7 @@ export function Sidebar() {
       </div>
 
       {/* User Profile */}
-      <div className="me" title={collapsed ? (s.currentUser?.name || 'Personal workspace') : undefined}>
+      <div className="me" title={collapsed ? (s.currentUser?.name || 'Personal workspace') : undefined} onClick={() => dispatch({ type: 'GO', page: 'profile' })} role="button" tabIndex={0} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') dispatch({ type: 'GO', page: 'profile' }); }}>
         <div className="me-avatar-wrap">
           <span className="av" style={{ ['--t' as any]: '#4C8DFF' }}>
             {initials}
@@ -189,7 +189,7 @@ export function Sidebar() {
         <button
           type="button"
           className="logout-btn"
-          onClick={() => dispatch({ type: 'LOGOUT' })}
+          onClick={event => { event.stopPropagation(); dispatch({ type: 'LOGOUT' }); }}
           title="Sign out"
           aria-label="Sign out"
         >
