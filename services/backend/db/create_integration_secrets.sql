@@ -37,6 +37,10 @@ ALTER TABLE public.integration_secrets ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON TABLE public.integration_secrets FROM anon, authenticated;
 
+-- The backend uses the service_role key; grant only metadata access. Browser roles remain blocked.
+GRANT USAGE ON SCHEMA public TO service_role;
+GRANT SELECT, UPDATE ON TABLE public.integration_secrets TO service_role;
+
 DROP POLICY IF EXISTS "No browser access to integration secrets"
   ON public.integration_secrets;
 

@@ -53,6 +53,7 @@ const whatsappRouter = require('./routes/whatsapp');
 const deadlinesRouter = require('./routes/deadlines');
 const generateRouter = require('./routes/generate');
 const metadataRouter = require('./routes/metadata');
+const chatRouter = require('./routes/chat');
 const { requireAuth } = require('./middleware/requireAuth');
 
 const { supabase, isConnected } = require('./db/supabase');
@@ -84,6 +85,7 @@ app.use('/api/v1/extraction', requireAuth, extractionRouter);
 app.use('/api/v1/whatsapp', whatsappRouter);
 app.use('/api/v1/deadlines', requireAuth, deadlinesRouter);
 app.use('/api/v1/generate', requireAuth, generateRouter);
+app.use('/api/v1/chat', requireAuth, chatRouter);
 
 // ─── Health & System Status ────────────────────────────────────
 app.get('/api/v1/health', async (req, res) => {
@@ -121,7 +123,7 @@ app.get('/api/v1/health', async (req, res) => {
     ai: {
       provider: 'Google Gemini',
       model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
-      apiKeyConfigured: !!(process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('your_'))
+      apiKeyConfigured: 'database_vault'
     },
     whatsapp: {
       apiKeyConfigured: !!(process.env.WHATSAPP_ACCESS_TOKEN && !process.env.WHATSAPP_ACCESS_TOKEN.includes('your_'))
@@ -149,6 +151,7 @@ app.get('/api/v1/health', async (req, res) => {
       'POST /api/v1/deadlines',
       'POST /api/v1/generate/notice-response',
       'POST /api/v1/generate/computation-sheet'
+      , 'POST /api/v1/chat'
     ]
   });
 });

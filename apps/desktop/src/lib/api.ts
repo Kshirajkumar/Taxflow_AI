@@ -633,3 +633,54 @@ export async function getHealthStatus() {
     return { status: 'offline' };
   }
 }
+
+export async function sendChatMessage(messages: Array<{ role: 'user' | 'assistant'; content: string }>) {
+  let response: Response;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 35000);
+  try {
+    response = await fetch(`${API_BASE_URL}/chat`, {
+      method: 'POST',
+      headers: authHeaders(),
+      signal: controller.signal,
+      body: JSON.stringify({ messages }),
+    });
+    // Chat may remain open beyond the short access-token lifetime. Refresh
+    // once on 401, then retry with the rotated token before showing an AI
+    // failure to the user.
+    if (response.status === 401) {
+      const refreshed = await refreshSession();
+      if (refreshed?.token) {
+        response = await fetch(`${API_BASE_URL}/chat`, {
+          method: 'POST',
+          headers: authHeaders(),
+          signal: controller.signal,
+          body: JSON.stringify({ messages }),
+        });
+      }
+    }
+  } catch {
+    window.clearTimeout(timeout);
+    throw new Error('The AI service timed out or is unavailable. Please try again.');
+  } finally {
+    window.clearTimeout(timeout);
+  }
+
+  let json: any;
+  try { json = await response.json(); } catch { throw new Error(`The AI service returned an invalid response (HTTP ${response.status}).`); }
+  if (response.status === 401) {
+    throw new Error('Your session has expired. Please sign in again, then retry your message.');
+  }
+  if (response.status === 429) {
+    const retryAfter = Number(response.headers.get('Retry-After'));
+    const waitMessage = Number.isFinite(retryAfter) && retryAfter > 0
+      ? ` Please try again in about ${Math.ceil(retryAfter / 60)} minute${retryAfter >= 120 ? 's' : ''}.`
+      : ' Please try again later.';
+    throw new Error(`${json.message || 'The AI chat limit has been reached.'}${waitMessage}`);
+  }
+  if (!response.ok || !json.success) throw new Error(json.message || `The AI request failed (HTTP ${response.status}).`);
+  if (json.source !== 'gemini' || typeof json.data?.text !== 'string' || !json.data.text.trim()) {
+    throw new Error('The AI service returned an invalid response. Please try again.');
+  }
+  return json.data as { text: string; model: string };
+}

@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
+const { getOwnedClientIds, assertOwnedClient } = require('../lib/ownership');
 
 // --- In-Memory Fallback ---
 let fallbackTasks = [
@@ -45,7 +46,8 @@ let fallbackTasks = [
 router.get('/', async (req, res) => {
   try {
     if (isConnected) {
-      let query = supabase.from('compliance_tasks').select('*').order('due_date', { ascending: true });
+      const ownedClientIds = await getOwnedClientIds(req.user.id);
+      let query = supabase.from('compliance_tasks').in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000']).select('*').order('due_date', { ascending: true });
       if (req.query.clientId) query = query.eq('client_id', req.query.clientId);
       if (req.query.status) query = query.eq('status', req.query.status);
       if (req.query.assignedTo) query = query.eq('assigned_to', req.query.assignedTo);
@@ -71,9 +73,11 @@ router.get('/upcoming', async (req, res) => {
     const cutoffStr = cutoffDate.toISOString().split('T')[0];
 
     if (isConnected) {
+      const ownedClientIds = await getOwnedClientIds(req.user.id);
       const { data, error } = await supabase
         .from('compliance_tasks')
         .select('*')
+        .in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000'])
         .lte('due_date', cutoffStr)
         .neq('status', 'Filed')
         .order('due_date', { ascending: true });
@@ -96,6 +100,9 @@ router.post('/', async (req, res) => {
     }
 
     if (isConnected) {
+      if (!(await assertOwnedClient(req.user.id, client_id))) {
+        return res.status(404).json({ success: false, message: 'Client not found.' });
+      }
       const { data, error } = await supabase
         .from('compliance_tasks')
         .insert([{ client_id, client_name, form_type, due_date, assigned_to, notes, status: 'Pending', progress: 0 }])
@@ -119,8 +126,9 @@ router.post('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     if (isConnected) {
+      const ownedClientIds = await getOwnedClientIds(req.user.id);
       const { data, error } = await supabase
-        .from('compliance_tasks').update(req.body).eq('id', req.params.id).select().single();
+        .from('compliance_tasks').update(req.body).eq('id', req.params.id).in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000']).select().single();
       if (error) throw error;
       return res.json({ success: true, source: 'supabase', data });
     }
@@ -139,7 +147,8 @@ router.get('/summary', async (req, res) => {
     const getCount = (arr, status) => arr.filter(t => t.status === status).length;
 
     if (isConnected) {
-      const { data, error } = await supabase.from('compliance_tasks').select('status');
+      const ownedClientIds = await getOwnedClientIds(req.user.id);
+      const { data, error } = await supabase.from('compliance_tasks').select('status').in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000']);
       if (error) throw error;
       return res.json({
         success: true, source: 'supabase',

@@ -12,6 +12,7 @@ const router = express.Router();
 const path = require('path');
 const { supabase, isConnected } = require('../db/supabase');
 const { saveFileToVault, vaultFileExists, getVaultBaseDir } = require('../vault/vaultManager');
+const { getOwnedClientIds, assertOwnedClient } = require('../lib/ownership');
 
 function normalizeFileType(fileType, fileName) {
   const extension = String(fileName || '').split('.').pop().toLowerCase();
@@ -54,7 +55,8 @@ let fallbackDocuments = [
 router.get('/', async (req, res) => {
   try {
     if (isConnected) {
-      let query = supabase.from('documents_metadata').select('*').order('created_at', { ascending: false });
+      const ownedClientIds = await getOwnedClientIds(req.user.id);
+      let query = supabase.from('documents_metadata').select('*').in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000']).order('created_at', { ascending: false });
       if (req.query.clientId) query = query.eq('client_id', req.query.clientId);
       if (req.query.status) query = query.eq('status', req.query.status);
       if (req.query.category) query = query.eq('category', req.query.category);
@@ -75,7 +77,7 @@ router.get('/:id', async (req, res) => {
   try {
     if (isConnected) {
       const { data, error } = await supabase
-        .from('documents_metadata').select('*').eq('id', req.params.id).single();
+        .from('documents_metadata').select('*').eq('id', req.params.id).in('client_id', (await getOwnedClientIds(req.user.id)).length ? await getOwnedClientIds(req.user.id) : ['00000000-0000-0000-0000-000000000000']).single();
       if (error) throw error;
       return res.json({ success: true, source: 'supabase', data });
     }
@@ -98,6 +100,10 @@ router.post('/upload-vault', async (req, res) => {
 
     if (!clientId || !fileName) {
       return res.status(400).json({ success: false, message: 'clientId and fileName are required' });
+    }
+
+    if (isConnected && !(await assertOwnedClient(req.user.id, clientId))) {
+      return res.status(404).json({ success: false, message: 'Client not found.' });
     }
 
     // Step 1: Save physical file to Local Vault Storage
@@ -195,7 +201,7 @@ router.get('/:id/serve', async (req, res) => {
 
     if (isConnected) {
       const { data, error } = await supabase
-        .from('documents_metadata').select('vault_path, file_name').eq('id', req.params.id).single();
+        .from('documents_metadata').select('vault_path, file_name').eq('id', req.params.id).in('client_id', (await getOwnedClientIds(req.user.id)).length ? await getOwnedClientIds(req.user.id) : ['00000000-0000-0000-0000-000000000000']).single();
       if (error) throw error;
       vaultPath = data.vault_path;
     } else {
@@ -230,7 +236,7 @@ router.post('/:id/verify', async (req, res) => {
       if (correctedData) updatePayload.extracted_data = correctedData;
 
       const { data, error } = await supabase
-        .from('documents_metadata').update(updatePayload).eq('id', req.params.id).select().single();
+        .from('documents_metadata').update(updatePayload).eq('id', req.params.id).in('client_id', (await getOwnedClientIds(req.user.id)).length ? await getOwnedClientIds(req.user.id) : ['00000000-0000-0000-0000-000000000000']).select().single();
       if (error) throw error;
       return res.json({ success: true, source: 'supabase', data });
     }

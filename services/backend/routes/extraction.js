@@ -18,9 +18,8 @@ const fs = require('fs');
 const path = require('path');
 const { supabase, isConnected } = require('../db/supabase');
 const { vaultFileExists, saveTextFileToVault } = require('../vault/vaultManager');
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const { getGeminiConfig } = require('../lib/aiProvider');
+const { getOwnedClientIds } = require('../lib/ownership');
 
 // Prompt templates for different document types
 const EXTRACTION_PROMPTS = {
@@ -71,8 +70,9 @@ router.post('/process', async (req, res) => {
     // Step 1: Fetch document metadata from Supabase (or fallback)
     let doc = null;
     if (isConnected) {
+      const ownedClientIds = await getOwnedClientIds(req.user.id);
       const { data, error } = await supabase
-        .from('documents_metadata').select('*').eq('id', documentId).single();
+        .from('documents_metadata').select('*').eq('id', documentId).in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000']).single();
       if (error) throw new Error(`Document not found in database: ${error.message}`);
       doc = data;
     } else {
@@ -102,8 +102,14 @@ router.post('/process', async (req, res) => {
     let extractedData = null;
     let inputTokens = 0, outputTokens = 0;
     let aiSuccess = false;
+    let geminiConfig = null;
+    try {
+      geminiConfig = await getGeminiConfig(req.user.id);
+    } catch (configError) {
+      console.warn('[Extraction] Gemini integration unavailable:', configError.message);
+    }
 
-    if (GEMINI_API_KEY && !GEMINI_API_KEY.includes('your_gemini')) {
+    if (geminiConfig) {
       try {
         const docCategory = doc.category || category || 'GST';
         const prompt = EXTRACTION_PROMPTS[docCategory] || EXTRACTION_PROMPTS.General;
@@ -122,8 +128,8 @@ router.post('/process', async (req, res) => {
         };
 
         const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(geminiPayload) }
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiConfig.model)}:generateContent`,
+          { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiConfig.apiKey }, body: JSON.stringify(geminiPayload) }
         );
 
         const geminiJson = await geminiRes.json();
@@ -177,7 +183,7 @@ router.post('/process', async (req, res) => {
     // Step 5: Log AI usage to Supabase ai_usage_log
     await supabase.from('ai_usage_log').insert([{
       client_id: doc.client_id, document_id: documentId,
-      operation: 'extraction', model_used: GEMINI_MODEL,
+      operation: 'extraction', model_used: geminiConfig?.model || 'database-configured',
       input_tokens: inputTokens, output_tokens: outputTokens,
       cost_usd: ((inputTokens * 0.000075 + outputTokens * 0.0003) / 1000),
       duration_ms: duration, success: aiSuccess
@@ -212,6 +218,7 @@ router.get('/pending', async (req, res) => {
       const { data, error } = await supabase
         .from('documents_metadata')
         .select('*')
+        .in('client_id', (await getOwnedClientIds(req.user.id)).length ? await getOwnedClientIds(req.user.id) : ['00000000-0000-0000-0000-000000000000'])
         .in('status', ['Extracted'])
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -235,6 +242,7 @@ router.get('/ai-usage', async (req, res) => {
       const { data, error } = await supabase
         .from('ai_usage_log')
         .select('operation, model_used, input_tokens, output_tokens, cost_usd, success, created_at')
+        .in('client_id', (await getOwnedClientIds(req.user.id)).length ? await getOwnedClientIds(req.user.id) : ['00000000-0000-0000-0000-000000000000'])
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) throw error;
@@ -246,7 +254,7 @@ router.get('/ai-usage', async (req, res) => {
     res.json({
       success: true, source: 'demo',
       totalCalls: 22, totalCostUSD: '0.0034',
-      data: [{ operation: 'extraction', model_used: 'gemini-1.5-flash', success: true, created_at: new Date().toISOString() }]
+      data: [{ operation: 'extraction', model_used: 'database-configured', success: true, created_at: new Date().toISOString() }]
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

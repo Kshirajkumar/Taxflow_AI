@@ -15,6 +15,7 @@ const express = require('express');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
 const { requireAuth } = require('../middleware/requireAuth');
+const { getOwnedClientIds, assertOwnedClient } = require('../lib/ownership');
 
 const WA_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 const WA_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -61,7 +62,8 @@ let fallbackMessages = [
 router.get('/messages', requireAuth, async (req, res) => {
   try {
     if (isConnected) {
-      let query = supabase.from('whatsapp_messages').select('*').order('created_at', { ascending: false });
+      const ownedClientIds = await getOwnedClientIds(req.user.id);
+      let query = supabase.from('whatsapp_messages').select('*').in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000']).order('created_at', { ascending: false });
       if (req.query.clientId) query = query.eq('client_id', req.query.clientId);
       const { data, error } = await query;
       if (error) throw error;
@@ -165,6 +167,10 @@ router.post('/send', requireAuth, async (req, res) => {
     const { toPhone, message, clientId } = req.body;
     if (!toPhone || !message) {
       return res.status(400).json({ success: false, message: 'toPhone and message are required' });
+    }
+
+    if (isConnected && clientId && !(await assertOwnedClient(req.user.id, clientId))) {
+      return res.status(404).json({ success: false, message: 'Client not found.' });
     }
 
     await sendWhatsAppMessage(toPhone, message);

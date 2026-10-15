@@ -15,9 +15,8 @@ const express = require('express');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
 const { saveTextFileToVault } = require('../vault/vaultManager');
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const { getGeminiConfig } = require('../lib/aiProvider');
+const { assertOwnedClient } = require('../lib/ownership');
 
 /**
  * POST /api/v1/generate/notice-response
@@ -33,6 +32,10 @@ router.post('/notice-response', async (req, res) => {
   }
 
   try {
+    if (isConnected && !(await assertOwnedClient(req.user.id, clientId))) {
+      return res.status(404).json({ success: false, message: 'Client not found.' });
+    }
+
     // Fetch client profile from Supabase
     let client = { name: 'Valued Client', pan: 'N/A', id: clientId };
     if (isConnected) {
@@ -42,8 +45,14 @@ router.post('/notice-response', async (req, res) => {
 
     let draftText = '';
     let inputTokens = 0, outputTokens = 0;
+    let geminiConfig = null;
+    try {
+      geminiConfig = await getGeminiConfig(req.user.id);
+    } catch (configError) {
+      console.warn('[Generator] Gemini integration unavailable:', configError.message);
+    }
 
-    if (GEMINI_API_KEY && !GEMINI_API_KEY.includes('your_')) {
+    if (geminiConfig) {
       // Call Gemini AI
       const prompt = `You are an expert Indian tax lawyer and Chartered Accountant. 
 Draft a professional, formal response letter to the following Income Tax / GST Notice on behalf of the client.
@@ -68,10 +77,10 @@ Draft the response letter in formal English, including:
 6. Signature block`;
 
       const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiConfig.model)}:generateContent`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiConfig.apiKey },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: { temperature: 0.4, maxOutputTokens: 3000 }
@@ -94,7 +103,7 @@ Draft the response letter in formal English, including:
     // Log AI usage to Supabase
     if (isConnected) {
       await supabase.from('ai_usage_log').insert([{
-        client_id: clientId, operation: 'notice_generation', model_used: GEMINI_MODEL,
+        client_id: clientId, operation: 'notice_generation', model_used: geminiConfig?.model || 'database-configured',
         input_tokens: inputTokens, output_tokens: outputTokens,
         cost_usd: ((inputTokens * 0.000075 + outputTokens * 0.0003) / 1000),
         duration_ms: duration, success: true
@@ -133,6 +142,10 @@ router.post('/computation-sheet', async (req, res) => {
   if (!clientId) return res.status(400).json({ success: false, message: 'clientId is required' });
 
   try {
+    if (isConnected && !(await assertOwnedClient(req.user.id, clientId))) {
+      return res.status(404).json({ success: false, message: 'Client not found.' });
+    }
+
     let clientData = { name: 'Client', pan: 'N/A' };
     let extractedDocs = [];
 

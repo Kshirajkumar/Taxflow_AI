@@ -2543,6 +2543,111 @@ body.sidebar-collapsed.chat-hidden .shell {
   cursor: not-allowed;
 }
 
+/* Refined assistant surface */
+.chat {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, var(--blue)), var(--panel));
+  box-shadow: inset 1px 0 color-mix(in srgb, var(--cyan) 12%, var(--line));
+}
+
+.ch-h {
+  min-height: 68px;
+  padding: 13px 15px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--cyan) 8%, var(--bg2)), var(--bg2));
+  border-bottom-color: color-mix(in srgb, var(--cyan) 18%, var(--line));
+}
+
+.ch-h-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--cyan), var(--blue2) 68%, var(--violet));
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--cyan) 18%, transparent);
+}
+
+.ch-h-text b { letter-spacing: -.15px; }
+.ch-h-text small { margin-top: 3px; }
+.online-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 13%, transparent); }
+
+.ch-close-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.ch-msgs {
+  padding: 18px 15px;
+  gap: 16px;
+  background: radial-gradient(circle at 85% 3%, color-mix(in srgb, var(--cyan) 7%, transparent), transparent 30%), transparent;
+}
+
+.chat-empty-state {
+  display: flex;
+  flex: 1;
+  min-height: 260px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  padding: 28px 24px;
+  color: var(--tx3);
+  text-align: center;
+}
+
+.chat-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 4px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 30%, var(--line));
+  border-radius: 15px;
+  color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 10%, var(--card));
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--cyan) 10%, transparent);
+}
+
+.chat-empty-state b { color: var(--tx); font-size: 13px; }
+.chat-empty-state span { max-width: 230px; font-size: 11px; line-height: 1.45; }
+.chat-empty-state small { max-width: 220px; margin-top: 5px; color: var(--tx3); font-size: 9.5px; line-height: 1.4; }
+
+.cm-wrap { max-width: 94%; }
+.cm-avatar { width: 26px; height: 26px; border-radius: 9px; background: linear-gradient(135deg, var(--cyan), var(--blue2)); box-shadow: 0 4px 12px color-mix(in srgb, var(--cyan) 18%, transparent); }
+.cm { padding: 11px 13px; border-radius: 15px; font-size: 12px; line-height: 1.58; }
+.cm.ai { border-color: color-mix(in srgb, var(--cyan) 14%, var(--line)); background: linear-gradient(145deg, color-mix(in srgb, var(--cyan) 5%, var(--card)), var(--card)); }
+.cm.me { box-shadow: 0 6px 16px color-mix(in srgb, var(--blue) 22%, transparent); }
+
+.sugg {
+  padding: 11px 14px 12px;
+  background: color-mix(in srgb, var(--bg2) 88%, var(--cyan));
+  border-top-color: color-mix(in srgb, var(--cyan) 12%, var(--line));
+}
+
+.sugg-label { margin-bottom: 9px; color: var(--cyan); font-size: 9.5px; letter-spacing: .85px; }
+.sugg-list { gap: 7px; }
+.sugg-btn { padding: 6px 10px; border-radius: 9px; background: color-mix(in srgb, var(--card) 92%, var(--cyan)); font-size: 10.5px; }
+
+.ch-f {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 14px 14px;
+  background: var(--panel);
+}
+
+.ch-f-label { display: flex; align-items: center; gap: 6px; color: var(--tx3); font-size: 9.5px; }
+.ch-f-status { width: 5px; height: 5px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cyan) 12%, transparent); }
+.ch-f-row { display: flex; align-items: center; gap: 8px; }
+.ch-f input { height: 40px; border-radius: 12px; background: var(--card); }
+.ch-send { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--cyan), var(--blue)); box-shadow: 0 5px 14px color-mix(in srgb, var(--cyan) 18%, transparent); }
+
+@media (max-width:600px) {
+  .ch-msgs { padding-inline: 12px; }
+  .cm-wrap { max-width: 96%; }
+  .sugg-list { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+  .sugg-btn { flex: 0 0 auto; }
+}
+
 /* Light Theme Overrides for New UI Components */
 :root[data-theme="light"] .sidebar-toggle {
   background: #FFFFFF;
@@ -2627,6 +2732,22 @@ body.sidebar-collapsed.chat-hidden .shell {
 @keyframes extractIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 @media (max-width:700px){.extract-layout{grid-template-columns:1fr}.extract-result-card{grid-column:auto}.extracted-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.extract-header-status{display:none}}
 .nav-review{color:var(--amber)}.nav-review .nav-icon{color:var(--amber)}.nav-review .review-nav-dot{width:7px;height:7px;margin-left:auto;border-radius:50%;background:var(--amber);box-shadow:0 0 0 4px color-mix(in srgb,var(--amber) 14%,transparent);animation:reviewDotPulse 1.8s ease-in-out infinite}.nav-review.on{background:linear-gradient(90deg,color-mix(in srgb,var(--amber) 19%,transparent),color-mix(in srgb,var(--amber) 5%,transparent))}.nav-review.on::before{background:var(--amber)}.nav-review .nav-active-bar{background:var(--amber)}.wc-chat-btn.locked{opacity:.38;cursor:not-allowed;filter:grayscale(.35)}
+
+/* ---------- production chat states ---------- */
+.cm-wrap{animation:chatMessageIn .24s cubic-bezier(.2,.8,.2,1) both}
+.cm-wrap.me{animation-name:chatMessageInRight}
+.cm{white-space:pre-wrap;overflow-wrap:anywhere;box-shadow:0 5px 18px color-mix(in srgb,#000 10%,transparent)}
+.cm.ai{background:linear-gradient(145deg,color-mix(in srgb,var(--card) 92%,var(--blue)),var(--card))}
+.chat-retry{display:inline-flex;align-items:center;gap:5px;margin:2px 0 0 2px;padding:5px 9px;border:1px solid color-mix(in srgb,var(--amber) 40%,var(--line2));border-radius:8px;background:color-mix(in srgb,var(--amber) 9%,var(--card));color:var(--amber);font-size:10px;font-weight:700;cursor:pointer;transition:transform .16s ease,background .16s ease,border-color .16s ease}
+.chat-retry:hover:not(:disabled){transform:translateY(-1px);background:color-mix(in srgb,var(--amber) 16%,var(--card));border-color:var(--amber)}
+.chat-retry:disabled{opacity:.5;cursor:not-allowed}
+.chat-retry span{font-size:14px;line-height:10px}
+.chat-error-copy{color:var(--tx2);font-size:11px}
+.sugg-btn:disabled{opacity:.45;cursor:not-allowed;transform:none!important}
+.ch-f input:disabled{opacity:.65;cursor:wait}
+@keyframes chatMessageIn{from{opacity:0;transform:translateY(7px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes chatMessageInRight{from{opacity:0;transform:translateX(8px) scale(.985)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.cm-wrap,.ch-h-pulse{animation:none!important}.sugg-btn,.chat-retry,.ch-send{transition:none!important}}
 .review-page{animation:extractIn .28s ease both}.review-header{align-items:flex-end}.review-eyebrow{color:var(--amber)}.review-orange-dot{width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 0 4px color-mix(in srgb,var(--amber) 15%,transparent);animation:reviewDotPulse 1.8s ease-in-out infinite}.review-header-actions{display:flex;align-items:center;gap:9px}.review-back-icon{transform:rotate(180deg)}.review-meta{display:flex;align-items:center;gap:11px;padding:12px 15px;margin-bottom:12px;background:linear-gradient(110deg,color-mix(in srgb,var(--amber) 7%,var(--card)),var(--card))}.review-file-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;color:var(--amber);background:color-mix(in srgb,var(--amber) 13%,transparent)}.review-meta b,.review-meta small{display:block}.review-meta b{font-size:12px}.review-meta small{margin-top:3px;color:var(--tx3);font-size:10px}.review-meta-id{margin-left:auto;color:var(--tx3);font-size:9px}.review-tabs{display:flex;gap:5px;margin-bottom:10px;border-bottom:1px solid var(--line)}.review-tab{display:flex;align-items:center;gap:7px;padding:10px 13px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--tx3);font-size:11px;font-weight:700;cursor:default}.review-tab.active{border-bottom-color:var(--amber);color:var(--tx)}.review-tab.active .ic{color:var(--amber)}.review-tab span{padding:2px 6px;border-radius:99px;background:var(--card2);font-size:9px;color:var(--tx3)}.review-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);gap:14px;min-height:540px}.review-data-panel,.review-source-panel{min-width:0;overflow:hidden}.review-confidence{display:flex;align-items:center;gap:6px;color:var(--tx3);font-size:9.5px}.review-confidence i{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 0 3px color-mix(in srgb,var(--cyan) 13%,transparent)}.review-fields{display:grid;grid-template-columns:1fr 1fr;gap:11px}.review-field{display:flex;flex-direction:column;gap:6px}.review-field span{color:var(--tx2);font-size:10px;font-weight:700}.review-field textarea{width:100%;min-height:36px;padding:9px 10px;resize:vertical;border:1px solid var(--line2);border-radius:8px;background:var(--panel);color:var(--tx);font-size:11px;line-height:1.4}.review-field textarea:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px color-mix(in srgb,var(--amber) 10%,transparent)}.review-footer{display:flex;align-items:center;gap:12px;margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}.review-note{display:flex;align-items:flex-start;gap:6px;flex:1;color:var(--tx3);font-size:9.5px;line-height:1.4}.review-note .ic{flex:none;color:var(--amber)}.review-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:320px;text-align:center;color:var(--tx3);font-size:10px}.review-empty .ic{color:var(--amber);margin-bottom:4px}.review-empty b{color:var(--tx2);font-size:12px}.review-empty span{max-width:270px;line-height:1.45}.review-empty.error .ic{color:var(--red)}.review-source-body{height:calc(100% - 58px);min-height:450px;background:var(--panel);display:flex;align-items:center;justify-content:center}.review-source-body iframe,.review-source-body img{width:100%;height:100%;min-height:500px;border:0;object-fit:contain;background:#fff}.review-source-body img{padding:18px}.review-file-loading{display:flex;flex-direction:column;align-items:center;gap:9px;width:75%;color:var(--tx3);font-size:10px}.review-file-loading i{display:block;width:100%;height:14px;border-radius:6px;background:linear-gradient(105deg,var(--panel) 25%,color-mix(in srgb,var(--amber) 15%,var(--panel)) 50%,var(--panel) 75%);background-size:220% 100%;animation:filingShimmer 1.25s ease-in-out infinite}.review-file-loading i:nth-child(2){width:88%;animation-delay:.12s}.review-file-loading i:nth-child(3){width:94%;animation-delay:.24s}.review-file-loading span{margin-top:5px}.review-data-panel .extract-message{margin:14px 0 0}.review-source-panel .card-h{padding-bottom:14px}@keyframes reviewDotPulse{0%,100%{opacity:.55;transform:scale(.9)}50%{opacity:1;transform:scale(1.15);box-shadow:0 0 0 6px color-mix(in srgb,var(--amber) 10%,transparent)}}
 @media (max-width:900px){.review-grid{grid-template-columns:1fr}.review-source-panel{min-height:500px}.review-meta-id{display:none}}@media (max-width:600px){.review-fields{grid-template-columns:1fr}.review-header-actions{width:100%;justify-content:space-between}.review-footer{align-items:stretch;flex-direction:column}.review-footer .btn{width:100%;justify-content:center}}
 .extract-client-select{width:100%;max-width:none;margin-bottom:18px;height:42px;padding-left:12px}.extract-client-select .vault-client-name{display:flex;align-items:center;gap:9px;font-size:12px}.extract-client-select .vault-client-name .ic{color:var(--blue);flex:none}.extract-client-select .vault-client-menu{min-width:100%}
