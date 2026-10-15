@@ -16,26 +16,38 @@ class RateLimiterUnavailableError extends Error {
 async function consume(bucketKey, limit, windowSeconds) {
   if (!isConnected || !supabase) throw new RateLimiterUnavailableError();
 
-  const { data, error } = await supabase.rpc('consume_api_rate_limit', {
-    p_bucket_key: bucketKey,
-    p_limit: limit,
-    p_window_seconds: windowSeconds,
-  });
+  let result;
+  let lastError;
+  // Supabase/PostgREST can briefly reject an RPC while the database connection
+  // or schema cache is recovering. Retry once, but never bypass protection.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await supabase.rpc('consume_api_rate_limit', {
+      p_bucket_key: bucketKey,
+      p_limit: limit,
+      p_window_seconds: windowSeconds,
+    });
+    if (!response.error) {
+      result = response.data;
+      break;
+    }
+    lastError = response.error;
+    if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 150));
+  }
 
-  if (error) {
-    console.error('[RateLimit] Counter unavailable:', error.message);
+  if (lastError) {
+    console.error('[RateLimit] Counter unavailable after retry:', lastError.message);
     throw new RateLimiterUnavailableError();
   }
 
-  const result = Array.isArray(data) ? data[0] : data;
-  if (!result || typeof result.allowed !== 'boolean') {
+  const counter = Array.isArray(result) ? result[0] : result;
+  if (!counter || typeof counter.allowed !== 'boolean') {
     console.error('[RateLimit] Counter returned an invalid result.');
     throw new RateLimiterUnavailableError();
   }
 
   return {
-    allowed: result.allowed,
-    retryAfterSeconds: Math.max(1, Number(result.retry_after_seconds) || windowSeconds),
+    allowed: counter.allowed,
+    retryAfterSeconds: Math.max(1, Number(counter.retry_after_seconds) || windowSeconds),
   };
 }
 
