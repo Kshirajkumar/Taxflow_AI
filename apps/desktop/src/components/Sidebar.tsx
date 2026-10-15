@@ -24,6 +24,7 @@ const NAV: Array<{ g: string; items: Array<[Page, string, string]> }> = [
     items: [
       ['clients', 'Clients', 'users'],
       ['billing', 'Billing & Fees', 'rupee'],
+      ['profile', 'Profile', 'users'],
       ['settings', 'Settings', 'sliders'],
     ],
   },
