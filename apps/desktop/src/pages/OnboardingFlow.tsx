@@ -258,11 +258,7 @@ export function OnboardingFlow() {
               <input className="ob-input" placeholder="Your Full Name *" value={name} onChange={e => setName(e.target.value)} />
               <select className="ob-input ob-select" value={practiceType} onChange={e => setPracticeType(e.target.value)}>
                 <option>Chartered Accountant (CA)</option>
-                <option>Tax Consultant / GST Practitioner</option>
-                <option>Company Secretary (CS)</option>
-                <option>Cost & Management Accountant (CMA)</option>
-                <option>Advocate / Legal Practitioner</option>
-                <option>Financial Advisor</option>
+                <option>Individual</option>
               </select>
               <input className="ob-input" placeholder="ICAI / Membership No. (optional)" value={membershipNo} onChange={e => setMembershipNo(e.target.value)} />
             </div>

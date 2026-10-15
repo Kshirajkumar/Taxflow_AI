@@ -646,7 +646,7 @@ export function AuthPage() {
                     <div className="field-group">
                       <label>Practice Category</label>
                       <div className="practice-pills">
-                        {['Chartered Accountant (CA)', 'Tax Consultant', 'Corporate Tax Team'].map((type) => (
+                        {['Chartered Accountant (CA)', 'Individual'].map((type) => (
                           <button
                             type="button"
                             key={type}

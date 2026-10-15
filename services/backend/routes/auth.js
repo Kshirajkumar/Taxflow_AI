@@ -19,6 +19,7 @@ const express = require('express');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
 const { ensureClientVaultStructure } = require('../vault/vaultManager');
+const ALLOWED_PRACTICE_TYPES = new Set(['Chartered Accountant (CA)', 'Individual']);
 
 // ──────────────────────────────────────────────────────────
 // Rate Limiting (in-memory, per IP+email)
@@ -136,6 +137,10 @@ router.post('/signup', async (req, res) => {
     if (password.length < 8) {
       return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
     }
+    const cleanPracticeType = practiceType ? String(practiceType).trim() : 'Chartered Accountant (CA)';
+    if (!ALLOWED_PRACTICE_TYPES.has(cleanPracticeType)) {
+      return res.status(400).json({ success: false, message: 'Practice category must be Chartered Accountant (CA) or Individual.' });
+    }
 
     const { data: supaAuth, error: supaErr } = await supabase.auth.signUp({
       email: cleanEmail,
@@ -144,7 +149,7 @@ router.post('/signup', async (req, res) => {
         emailRedirectTo: 'taxflow://auth/callback',
         data: {
           full_name: name.trim(),
-          practice_type: practiceType || 'Chartered Accountant (CA)',
+          practice_type: cleanPracticeType,
           membership_no: membershipNo ? membershipNo.trim() : null
         }
       }
@@ -448,7 +453,13 @@ router.patch('/profile', async (req, res) => {
 
   const updates = {};
   if (name) updates.full_name = name.trim();
-  if (practiceType) updates.practice_type = practiceType.trim();
+  if (practiceType) {
+    const cleanPracticeType = practiceType.trim();
+    if (!ALLOWED_PRACTICE_TYPES.has(cleanPracticeType)) {
+      return res.status(400).json({ success: false, message: 'Practice category must be Chartered Accountant (CA) or Individual.' });
+    }
+    updates.practice_type = cleanPracticeType;
+  }
   if (membershipNo !== undefined) updates.membership_no = membershipNo ? membershipNo.trim() : null;
   updates.updated_at = new Date().toISOString();
 
