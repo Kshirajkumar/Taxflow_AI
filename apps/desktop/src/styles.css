@@ -104,7 +104,7 @@ h1,h2,h3,p{margin:0}
 @media (prefers-reduced-motion:reduce){.session-alert,.session-alert::before,.session-alert-icon{animation:none}.session-alert-btn{transition:none}}
 .shell{display:grid;grid-template-columns:232px minmax(0,1fr) 380px;min-height:0}
 .side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px 10px;overflow:auto}
-.main{min-width:0;overflow:auto;padding:24px 28px 40px;background:var(--bg)}
+.main{min-width:0;overflow:auto;padding:24px 28px 40px;background:var(--bg);container-type:inline-size;container-name:main}
 .chat{border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
 .statusbar{display:flex;align-items:center;gap:18px;padding:0 14px;background:var(--bg2);border-top:1px solid var(--line);font-size:11.5px;color:var(--tx3)}
 .statusbar b{color:var(--tx2);font-weight:500}
@@ -229,6 +229,35 @@ tr:last-child td{border-bottom:0}
 }
 @media (max-width:600px){
   .workspace-empty-steps,.dashboard-empty-metrics{grid-template-columns:1fr}
+}
+/* Container queries handle restored windows correctly: the usable page width
+   can be narrow even when the overall app viewport is still wide because the
+   sidebar and assistant remain visible. */
+@container main (max-width:900px){
+  .client-empty-state{grid-template-columns:150px minmax(0,1fr);gap:20px;padding:28px 26px}
+  .client-empty-steps{grid-column:1/-1;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .extract-no-client-state{grid-template-columns:130px minmax(0,1fr);gap:20px;padding:28px 26px}
+  .extract-no-client-note{grid-column:1/-1}
+  .workspace-empty,.workspace-empty-inbox,.dashboard-empty-state{grid-template-columns:minmax(0,1fr);gap:20px;padding:28px 26px}
+  .workspace-empty-steps,.workspace-empty-note,.dashboard-empty-metrics{grid-column:auto}
+  .workspace-empty-visual{min-height:170px}
+  .workspace-empty-copy p,.dashboard-empty-copy p{margin-inline:auto}
+  .workspace-empty-copy .btn,.dashboard-empty-copy .btn{justify-content:center}
+  .workspace-empty-steps,.dashboard-empty-metrics{grid-template-columns:repeat(3,minmax(0,1fr));text-align:left}
+  .workspace-empty-note{text-align:left}
+  .dashboard-empty-state{min-height:0}
+}
+@container main (max-width:600px){
+  .client-empty-state,.extract-no-client-state{grid-template-columns:1fr;padding:26px 20px;text-align:center}
+  .client-empty-visual,.extract-no-client-visual{min-height:145px}
+  .client-empty-copy p,.extract-no-client-copy p{margin-inline:auto}
+  .client-empty-copy .btn,.extract-no-client-copy .btn{justify-content:center}
+  .client-empty-steps{grid-template-columns:1fr;text-align:left}
+  .extract-no-client-note{text-align:left}
+  .workspace-empty,.workspace-empty-inbox,.dashboard-empty-state{padding:26px 20px;text-align:center}
+  .workspace-empty-visual{min-height:145px}
+  .workspace-empty-steps,.dashboard-empty-metrics{grid-template-columns:1fr;text-align:left}
+  .workspace-empty-note{text-align:left}
 }
 .note{display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:12px;background:color-mix(in srgb,var(--amber) 10%,transparent);border:1px solid color-mix(in srgb,var(--amber) 30%,transparent);color:var(--tx2);font-size:12.5px}
 .note .ic{color:var(--amber);margin-top:2px}
