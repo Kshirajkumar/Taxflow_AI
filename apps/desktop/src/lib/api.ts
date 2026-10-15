@@ -75,7 +75,6 @@ async function refreshSession(): Promise<AuthResponse | null> {
 export interface AuthUser {
   id: string;
   name: string;
-  firmName: string;
   email: string;
   practiceType: string;
   membershipNo?: string | null;
@@ -255,7 +254,6 @@ export interface ComplianceTask {
 
 export async function apiSignup(data: {
   name: string;
-  firmName?: string;
   email: string;
   password: string;
   practiceType?: string;
@@ -321,7 +319,6 @@ export async function markNotificationsRead(): Promise<void> {
 
 export async function apiUpdateProfile(data: {
   name?: string;
-  firmName?: string;
   practiceType?: string;
   membershipNo?: string;
 }): Promise<AuthResponse> {

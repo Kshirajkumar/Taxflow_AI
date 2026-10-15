@@ -160,7 +160,7 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         currentUser: action.user,
         sessionStatus: 'active',
-        log: [{ at: vnow(), ic: 'user', t: `Signed in as ${action.user.name} (${action.user.firmName})` }, ...state.log]
+        log: [{ at: vnow(), ic: 'user', t: `Signed in as ${action.user.name}` }, ...state.log]
       };
     }
     case 'SESSION_ACTIVE':

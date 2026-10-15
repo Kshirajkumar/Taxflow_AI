@@ -116,7 +116,6 @@ export function AuthPage() {
 
   // Form states - Sign Up
   const [signupName, setSignupName] = useState('');
-  const [signupFirm, setSignupFirm] = useState('');
   const [signupType, setSignupType] = useState('Chartered Accountant (CA)');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
@@ -301,7 +300,6 @@ export function AuthPage() {
     try {
       const res = await apiSignup({
         name: signupName.trim(),
-        firmName: signupFirm.trim() || `${signupName.trim()} & Associates`,
         email: signupEmail.trim(),
         password: signupPassword,
         practiceType: signupType,
@@ -622,7 +620,7 @@ export function AuthPage() {
                     <div>
                       <h1 className="card-title">Setup Practice Workspace</h1>
                       <p className="card-desc">
-                        Register your CA firm to activate AI document extraction and WhatsApp client sync.
+                        Create your personal CA workspace to activate AI document extraction and WhatsApp client sync.
                       </p>
                     </div>
                   </div>
@@ -643,18 +641,6 @@ export function AuthPage() {
                         </div>
                       </div>
 
-                      <div className="field-group">
-                        <label>CA Firm / Office Name</label>
-                        <div className="input-with-icon">
-                          <Icon name="folder" size={15} />
-                          <input
-                            type="text"
-                            placeholder="Sharma & Associates"
-                            value={signupFirm}
-                            onChange={(e) => setSignupFirm(e.target.value)}
-                          />
-                        </div>
-                      </div>
                     </div>
 
                     <div className="field-group">
@@ -753,7 +739,7 @@ export function AuthPage() {
                           onChange={(e) => setSignupAgree(e.target.checked)}
                         />
                         <span>
-                          I confirm local vault storage on this PC &amp; agree to firm confidentiality terms.
+                          I confirm local vault storage on this PC &amp; agree to confidentiality terms.
                         </span>
                       </label>
                     </div>
@@ -874,7 +860,7 @@ export function AuthPage() {
 
 
                   <div className="card-footer-switch">
-                    <span>Need to register a new firm or practitioner?</span>
+                    <span>Need to register a new CA account?</span>
                     <button
                       type="button"
                       className="inline-link-btn"

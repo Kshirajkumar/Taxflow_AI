@@ -169,7 +169,7 @@ export function Sidebar() {
       </div>
 
       {/* User Profile */}
-      <div className="me" title={collapsed ? (s.currentUser?.firmName || s.currentUser?.name || 'Demo Practice') : undefined}>
+      <div className="me" title={collapsed ? (s.currentUser?.name || 'Personal workspace') : undefined}>
         <div className="me-avatar-wrap">
           <span className="av" style={{ ['--t' as any]: '#4C8DFF' }}>
             {initials}
@@ -179,7 +179,7 @@ export function Sidebar() {
         {!collapsed && (
           <div className="me-info">
             <b className="me-name">
-              {s.currentUser?.firmName || s.currentUser?.name || 'Demo Practice'}
+              {s.currentUser?.name || 'Personal workspace'}
             </b>
             <small className="me-role">
               {s.currentUser?.role || 'Managing Partner'}

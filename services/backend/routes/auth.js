@@ -91,7 +91,6 @@ function buildUserResponse(supaUser, profile) {
     id: supaUser.id,
     email: supaUser.email,
     name: profile?.full_name || supaUser.user_metadata?.full_name || 'Practice User',
-    firmName: profile?.firm_name || supaUser.user_metadata?.firm_name || 'Practice Office',
     practiceType: profile?.practice_type || supaUser.user_metadata?.practice_type || 'Chartered Accountant (CA)',
     membershipNo: profile?.membership_no || supaUser.user_metadata?.membership_no || null,
     role: profile?.role || 'Managing Partner',
@@ -124,7 +123,7 @@ router.post('/signup', async (req, res) => {
   if (!requireSupabase(res)) return;
 
   try {
-    const { name, firmName, email, password, practiceType, membershipNo } = req.body;
+    const { name, email, password, practiceType, membershipNo } = req.body;
 
     // Validation
     if (!name || !email || !password) {
@@ -145,7 +144,6 @@ router.post('/signup', async (req, res) => {
         emailRedirectTo: 'taxflow://auth/callback',
         data: {
           full_name: name.trim(),
-          firm_name: (firmName && firmName.trim()) || `${name.trim()} & Associates`,
           practice_type: practiceType || 'Chartered Accountant (CA)',
           membership_no: membershipNo ? membershipNo.trim() : null
         }
@@ -430,7 +428,7 @@ router.post('/vault-setup', async (req, res) => {
 
 // ──────────────────────────────────────────────────────────
 // PATCH /api/v1/auth/profile
-// Update user profile fields (name, firmName, practiceType, membershipNo)
+// Update personal profile fields (name, practiceType, membershipNo)
 // ──────────────────────────────────────────────────────────
 router.patch('/profile', async (req, res) => {
   if (!requireSupabase(res)) return;
@@ -441,7 +439,7 @@ router.patch('/profile', async (req, res) => {
   }
 
   const token = authHeader.split(' ')[1];
-  const { name, firmName, practiceType, membershipNo } = req.body;
+  const { name, practiceType, membershipNo } = req.body;
 
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data?.user) {
@@ -450,7 +448,6 @@ router.patch('/profile', async (req, res) => {
 
   const updates = {};
   if (name) updates.full_name = name.trim();
-  if (firmName) updates.firm_name = firmName.trim();
   if (practiceType) updates.practice_type = practiceType.trim();
   if (membershipNo !== undefined) updates.membership_no = membershipNo ? membershipNo.trim() : null;
   updates.updated_at = new Date().toISOString();

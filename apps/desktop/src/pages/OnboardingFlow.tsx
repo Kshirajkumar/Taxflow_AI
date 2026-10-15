@@ -4,7 +4,7 @@
  * A premium, animated 3-step onboarding shown to every new user
  * after their first login, until onboardingComplete = true.
  *
- * Step 1 — Profile & Practice Setup (name, firm, clients to work on)
+ * Step 1 — Personal Profile Setup (name, practice type, clients to work on)
  * Step 2 — Local Vault Setup (select folder via Tauri dialog or manual input)
  * Step 3 — App Tour (animated walkthrough of all 7 major features)
  */
@@ -125,7 +125,6 @@ export function OnboardingFlow() {
 
   // Step 1 state
   const [name, setName] = useState(user.name || '');
-  const [firmName, setFirmName] = useState(user.firmName || '');
   const [practiceType, setPracticeType] = useState(user.practiceType || 'Chartered Accountant (CA)');
   const [membershipNo, setMembershipNo] = useState(user.membershipNo || '');
   const [clients, setClients] = useState<ClientDraft[]>([]);
@@ -165,13 +164,12 @@ export function OnboardingFlow() {
   // ── Step 1: Save Profile + Clients ─────────────────────────
   async function handleStep1Submit() {
     if (!name.trim()) { setStep1Error('Please enter your full name.'); return; }
-    if (!firmName.trim()) { setStep1Error('Please enter your firm or practice name.'); return; }
     setStep1Loading(true);
     setStep1Error('');
 
     try {
       // Update profile in Supabase
-      const profileRes = await apiUpdateProfile({ name: name.trim(), firmName: firmName.trim(), practiceType, membershipNo: membershipNo.trim() || undefined });
+      const profileRes = await apiUpdateProfile({ name: name.trim(), practiceType, membershipNo: membershipNo.trim() || undefined });
       if (!profileRes.success) throw new Error(profileRes.message || 'Failed to update profile');
 
       // Create each client
@@ -253,12 +251,11 @@ export function OnboardingFlow() {
           <div className="ob-body">
             <div className="ob-step-badge">Step 1 of 3</div>
             <h1 className="ob-title">Set Up Your Practice</h1>
-            <p className="ob-subtitle">Let's configure your CA firm profile and add your first clients so TaxFlow.AI is ready to go from day one.</p>
+            <p className="ob-subtitle">Let's configure your personal CA workspace and add your first clients so TaxFlow.AI is ready to go from day one.</p>
 
             <div className="ob-section-label">Your Practice Details</div>
             <div className="ob-form-grid">
               <input className="ob-input" placeholder="Your Full Name *" value={name} onChange={e => setName(e.target.value)} />
-              <input className="ob-input" placeholder="Firm / Practice Name *" value={firmName} onChange={e => setFirmName(e.target.value)} />
               <select className="ob-input ob-select" value={practiceType} onChange={e => setPracticeType(e.target.value)}>
                 <option>Chartered Accountant (CA)</option>
                 <option>Tax Consultant / GST Practitioner</option>

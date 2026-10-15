@@ -15,7 +15,6 @@
 CREATE TABLE IF NOT EXISTS user_profiles (
   id                  UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name           VARCHAR(255),
-  firm_name           VARCHAR(255),
   practice_type       VARCHAR(100),
   membership_no       VARCHAR(100),
   role                VARCHAR(100) NOT NULL DEFAULT 'Managing Partner',
@@ -37,11 +36,10 @@ LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = public
 AS $$
 BEGIN
-  INSERT INTO public.user_profiles (id, full_name, firm_name, practice_type, membership_no)
+  INSERT INTO public.user_profiles (id, full_name, practice_type, membership_no)
   VALUES (
     NEW.id,
     NEW.raw_user_meta_data ->> 'full_name',
-    NEW.raw_user_meta_data ->> 'firm_name',
     COALESCE(NEW.raw_user_meta_data ->> 'practice_type', 'Chartered Accountant (CA)'),
     NEW.raw_user_meta_data ->> 'membership_no'
   )
@@ -56,7 +54,7 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- ═══════════════════════════════════════════════════
--- TABLE 1: clients — CA Firm's Client Master Registry
+-- TABLE 1: clients — Personal CA Client Master Registry
 -- ═══════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS clients (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
