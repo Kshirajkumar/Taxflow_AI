@@ -34,7 +34,11 @@ export function WhatsAppPage() {
     return (
       <>
         <div className="ph"><div><h1>Client Inbox</h1><p>WhatsApp and Telegram client conversations in one place, with the reminders that will go out next.</p></div><div className="ph-a"><label className="f" htmlFor="inbox-channel-empty">Channel</label><select id="inbox-channel-empty" className="sel" style={{ width: 150 }} value={channel} onChange={(e) => setChannel(e.target.value as 'whatsapp' | 'telegram')}><option value="whatsapp">WhatsApp</option><option value="telegram">Telegram</option></select></div></div>
-        <div className="card"><div className="card-b empty"><b>No clients yet</b>Add a client before starting a WhatsApp conversation.</div></div>
+        <div className="card workspace-empty workspace-empty-inbox">
+          <div className="workspace-empty-visual"><span className="workspace-empty-ring ring-one" /><span className="workspace-empty-ring ring-two" /><span className="workspace-empty-orb"><Icon name="chat" size={30} /></span><span className="workspace-empty-float float-one"><Icon name="send" size={14} /></span><span className="workspace-empty-float float-two"><Icon name="bell" size={14} /></span></div>
+          <div className="workspace-empty-copy"><span className="eyebrow">A QUIET INBOX IS A CLEAN START</span><h2>Your client conversations will appear here</h2><p>Once a client is added, chats, reminders, and approved message templates will stay together in one focused workspace.</p><button className="btn pri" onClick={() => dispatch({ type: 'GO', page: 'clients' })}><Icon name="users" size={14} />Add your first client</button></div>
+          <div className="workspace-empty-note"><Icon name="check" size={16} /><div><b>Ready for WhatsApp and Telegram</b><span>Choose a channel when your first client is ready.</span></div></div>
+        </div>
       </>
     );
   }

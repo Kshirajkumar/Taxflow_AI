@@ -15,6 +15,11 @@ export function DeadlinesPage() {
   return (
     <>
       <div className="ph"><div><h1>Deadlines</h1><p>Track every filing for every client. Tick steps as work gets done.</p></div></div>
+      {!s.clients.length ? <div className="card workspace-empty workspace-empty-calendar">
+        <div className="workspace-empty-visual"><span className="workspace-empty-ring ring-one" /><span className="workspace-empty-ring ring-two" /><span className="workspace-empty-orb"><Icon name="cal" size={30} /></span><span className="workspace-empty-float float-one"><Icon name="check" size={14} /></span><span className="workspace-empty-float float-two"><Icon name="clock" size={14} /></span></div>
+        <div className="workspace-empty-copy"><span className="eyebrow">A CALENDAR THAT FOLLOWS THE WORK</span><h2>Your compliance timeline starts here</h2><p>Add a client and their filing schedule will become a clear, trackable timeline with progress and due-date signals.</p><button className="btn pri" onClick={() => dispatch({ type: 'GO', page: 'clients' })}><Icon name="plus" size={14} />Add your first client</button></div>
+        <div className="workspace-empty-steps"><div><span>01</span><b>Set up</b><small>Add client details once</small></div><div><span>02</span><b>Plan</b><small>See filing dates together</small></div><div><span>03</span><b>Move forward</b><small>Tick off work as it lands</small></div></div>
+      </div> : <>
       <div className="grid g4">
         <div className="card kpi"><span>Overdue</span><b style={{ color: 'var(--red)' }}>{over}</b><em>Needs action now</em></div>
         <div className="card kpi"><span>Due in 7 days</span><b style={{ color: 'var(--amber)' }}>{soon}</b><em>Filings coming up</em></div>
@@ -80,6 +85,7 @@ export function DeadlinesPage() {
           </div>
         );
       })}
+      </>}
     </>
   );
 }

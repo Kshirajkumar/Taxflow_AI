@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Icon } from '../components/Icon';
-import { useAppState } from '../state/store';
+import { useAppState, useDispatch } from '../state/store';
 import { deleteVaultFile, fetchVaultTree, uploadToLocalVault, type VaultTreeEntry } from '../lib/api';
 import { fDT } from '../lib/format';
 
@@ -89,6 +89,7 @@ function TreeNode({ entry, depth, path, expanded, selectedPath, toggle, select }
 
 export function FilesPage() {
   const s = useAppState();
+  const dispatch = useDispatch();
   const [clientId, setClientId] = useState(s.clients[0]?.id || '');
   const [entries, setEntries] = useState<VaultTreeEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -278,6 +279,17 @@ export function FilesPage() {
     } finally {
       setDeletingFile(false);
     }
+  }
+
+  if (!client) {
+    return <div className="vault-page">
+      <div className="ph vault-page-head"><div><div className="eyebrow">LOCAL VAULT</div><h1>Client folders</h1><p>Your private document workspace is ready when you add your first client.</p></div><div className="vault-health"><span className="health-dot ok" /><span>Vault ready</span></div></div>
+      <div className="card workspace-empty vault-empty-files">
+        <div className="workspace-empty-visual"><span className="workspace-empty-ring ring-one" /><span className="workspace-empty-ring ring-two" /><span className="workspace-empty-orb"><Icon name="folder" size={30} /></span><span className="workspace-empty-float float-one"><Icon name="check" size={14} /></span><span className="workspace-empty-float float-two"><Icon name="file" size={14} /></span></div>
+        <div className="workspace-empty-copy"><span className="eyebrow">A PRIVATE HOME FOR EVERY FILE</span><h2>Start with your first client folder</h2><p>Each client gets a structured Local Vault for Raw documents, Extracted data, and files ready for review.</p><button className="btn pri" onClick={() => dispatch({ type: 'GO', page: 'clients' })}><Icon name="users" size={14} />Add your first client</button></div>
+        <div className="workspace-empty-steps"><div><span>01</span><b>Raw</b><small>Keep original uploads untouched</small></div><div><span>02</span><b>Extracted</b><small>Organise reviewed information</small></div><div><span>03</span><b>Review</b><small>Open the right file when needed</small></div></div>
+      </div>
+    </div>;
   }
 
   return <div className="vault-page">
