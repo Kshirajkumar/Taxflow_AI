@@ -28,6 +28,12 @@ export function WhatsAppPage() {
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [telegramBot, setTelegramBot] = useState('');
   const [telegramError, setTelegramError] = useState('');
+  const [telegramInfo, setTelegramInfo] = useState('');
+  const [telegramLoading, setTelegramLoading] = useState(false);
+  const [telegramConnecting, setTelegramConnecting] = useState(false);
+  const [telegramSending, setTelegramSending] = useState(false);
+  const [telegramDraft, setTelegramDraft] = useState('');
+  const [telegramRetry, setTelegramRetry] = useState(0);
   const threadRef = useRef<HTMLDivElement>(null);
   const c = s.clients.find((x) => x.id === s.ui.wa.client) || s.clients[0];
   const thread = c ? (s.threads[c.id] || []).slice().sort((a, b) => a.at.getTime() - b.at.getTime()) : [];
@@ -39,12 +45,60 @@ export function WhatsAppPage() {
   useEffect(() => {
     if (channel !== 'telegram' || !c) { setTelegramMessages([]); setTelegramLinked(false); return undefined; }
     let active = true;
-    const load = async () => {
+    const load = async (showLoading = false) => {
+      if (active && showLoading) setTelegramLoading(true);
       try { const [status, conversation] = await Promise.all([fetchTelegramStatus(), fetchTelegramMessages(c.id)]); if (active) { setTelegramReady(status.connected); setTelegramLinked(conversation.linked); setTelegramBot(status.bot?.username || ''); setTelegramMessages(conversation.messages); setTelegramError(''); } }
       catch (error) { if (active) { setTelegramReady(false); setTelegramLinked(false); setTelegramError(error instanceof Error ? error.message : 'Telegram is unavailable.'); } }
+      finally { if (active) setTelegramLoading(false); }
     };
-    void load(); const timer = window.setInterval(() => void load(), 4000); return () => { active = false; window.clearInterval(timer); };
-  }, [channel, c?.id]);
+    void load(true); const timer = window.setInterval(() => void load(), 4000); return () => { active = false; window.clearInterval(timer); };
+  }, [channel, c?.id, telegramRetry]);
+
+  async function connectTelegram() {
+    if (telegramConnecting) return;
+    setTelegramConnecting(true);
+    setTelegramError('');
+    setTelegramInfo('');
+    try {
+      const result = await createTelegramLink(c.id);
+      try { await navigator.clipboard?.writeText(result.link); } catch { /* Clipboard access is optional. */ }
+      const opened = window.open(result.link, '_blank', 'noopener,noreferrer');
+      setTelegramInfo(opened ? `Connection link opened. It expires at ${new Date(result.expiresAt).toLocaleTimeString()}.` : `Connection link copied. Open it in Telegram before ${new Date(result.expiresAt).toLocaleTimeString()}.`);
+    } catch (error) {
+      setTelegramError(error instanceof Error ? error.message : 'Unable to create Telegram connection link.');
+    } finally {
+      setTelegramConnecting(false);
+    }
+  }
+
+  function requestTelegramSend() {
+    const text = input.trim();
+    if (!text || telegramSending || !telegramReady || !telegramLinked) return;
+    setTelegramError('');
+    setTelegramInfo('');
+    setTelegramDraft(text);
+  }
+
+  async function confirmTelegramSend() {
+    if (!telegramDraft || telegramSending) return;
+    setTelegramSending(true);
+    setTelegramError('');
+    setTelegramInfo('Sending securely through Telegram…');
+    try {
+      await sendTelegramMessage(c.id, telegramDraft);
+      setInput('');
+      const conversation = await fetchTelegramMessages(c.id);
+      setTelegramLinked(conversation.linked);
+      setTelegramMessages(conversation.messages);
+      setTelegramDraft('');
+      setTelegramInfo('Message sent through Telegram.');
+    } catch (error) {
+      setTelegramInfo('');
+      setTelegramError(error instanceof Error ? error.message : 'Unable to send Telegram message. Please try again.');
+    } finally {
+      setTelegramSending(false);
+    }
+  }
 
   if (!c) {
     return (
@@ -95,7 +149,7 @@ export function WhatsAppPage() {
           <option value="whatsapp">WhatsApp</option>
           <option value="telegram">Telegram</option>
         </select>
-        {channel === 'telegram' && <><span className={'chip ' + (telegramReady ? 'green' : 'amber')}><i className="sdot" style={{ margin: '0 2px 0 0' }} />{telegramReady ? `Telegram @${telegramBot}` : 'Telegram unavailable'}</span><span className={'chip ' + (telegramLinked ? 'green' : 'amber')}>{telegramLinked ? 'Client linked' : 'Client not linked'}</span><button className="btn sm" onClick={async () => { try { const result = await createTelegramLink(c.id); await navigator.clipboard?.writeText(result.link); window.open(result.link, '_blank', 'noopener,noreferrer'); window.alert(`Telegram connection link opened and copied. It expires at ${new Date(result.expiresAt).toLocaleTimeString()}.`); } catch (error) { setTelegramError(error instanceof Error ? error.message : 'Unable to create Telegram link.'); } }}>{telegramLinked ? 'Reconnect client' : 'Connect client'}</button></>}
+        {channel === 'telegram' && <><span className={'chip ' + (telegramLoading ? 'amber' : telegramReady ? 'green' : 'amber')}><i className="sdot" style={{ margin: '0 2px 0 0' }} />{telegramLoading ? 'Checking Telegram…' : telegramReady ? `Telegram @${telegramBot}` : 'Telegram unavailable'}</span><span className={'chip ' + (telegramLinked ? 'green' : 'amber')}>{telegramLinked ? 'Client linked' : 'Client not linked'}</span><button className="btn sm" onClick={() => void connectTelegram()} disabled={telegramLoading || telegramConnecting || !telegramReady}>{telegramConnecting && <span className="spin" />}{telegramConnecting ? 'Connecting…' : telegramLinked ? 'Reconnect client' : 'Connect client'}</button></>}
         {channel === 'whatsapp' && <><span className="chip green"><i className="sdot" style={{ margin: '0 2px 0 0' }} />Business API connected</span><span className="mut2">+91 99000 00000 · {TPL.length} templates approved</span></>}
       </div>
 
@@ -139,8 +193,10 @@ export function WhatsAppPage() {
               </div>
             </div>
             <div id="wa-thread" ref={threadRef}>
-              {channel === 'telegram' && telegramError && <div className="empty"><b>Telegram unavailable</b>{telegramError}</div>}
-              {channel === 'telegram' && !telegramError && telegramMessages.length === 0 && <div className="empty"><b>No Telegram messages yet</b>Connect this client’s Telegram account, then ask them to message the bot.</div>}
+              {channel === 'telegram' && telegramLoading && telegramMessages.length === 0 && <div className="empty telegram-state"><span className="spin" /><b>Connecting to Telegram…</b><span>Checking the deployed Telegram service and loading this client’s conversation.</span></div>}
+              {channel === 'telegram' && telegramError && <div className="empty telegram-state error"><b>Telegram action needs attention</b><span>{telegramError}</span><button className="btn sm" onClick={() => { setTelegramError(''); setTelegramRetry((value) => value + 1); }}>Retry connection</button></div>}
+              {channel === 'telegram' && !telegramLoading && !telegramError && telegramMessages.length === 0 && <div className="empty"><b>No Telegram messages yet</b>Connect this client’s Telegram account, then ask them to message the bot.</div>}
+              {channel === 'telegram' && telegramInfo && <div className="telegram-notice">{telegramInfo}</div>}
               {channel === 'telegram' && telegramMessages.map((m) => <div key={m.id} className={'msg ' + (m.direction === 'outbound' ? 'me' : 'cl')}><div>{m.body}</div><span className="mt">{fTime(new Date(m.created_at))} · {m.delivery_status}</span></div>)}
               {channel === 'whatsapp' && (() => {
                 let last = '';
@@ -190,8 +246,8 @@ export function WhatsAppPage() {
                 <option value="">Insert template</option>
                 {TPL.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
-              <input className="inp" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder={`Message ${c.contact.split(' ')[0]}`} />
-              <button className="btn pri" onClick={() => void send()} disabled={channel === 'telegram' && (!telegramReady || !telegramLinked)} aria-label="Send message"><Icon name="send" size={15} /></button>
+              <input className="inp" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (channel === 'telegram' ? requestTelegramSend() : void send())} placeholder={`Message ${c.contact.split(' ')[0]}`} disabled={channel === 'telegram' && telegramSending} />
+              <button className="btn pri" onClick={() => channel === 'telegram' ? requestTelegramSend() : void send()} disabled={channel === 'telegram' && (!telegramReady || !telegramLinked || telegramSending || telegramLoading)} aria-label="Send message">{telegramSending ? <span className="spin spin-light" /> : <Icon name="send" size={15} />}</button>
             </div>
           </div>
         </div>
@@ -231,6 +287,18 @@ export function WhatsAppPage() {
       )}
 
       {showSchedule && <ScheduleModal onClose={() => setShowSchedule(false)} defaultClient={c.id} />}
+      {telegramDraft && <div className="modal telegram-approval" role="dialog" aria-modal="true" aria-labelledby="telegram-approval-title">
+        <div className="mbox telegram-approval-box">
+          <span className="eyebrow">TELEGRAM MESSAGE REVIEW</span>
+          <h2 id="telegram-approval-title">Send this message to {c.name}?</h2>
+          <p className="telegram-approval-copy">Review the exact text before it is delivered through the connected Telegram chat.</p>
+          <div className="telegram-approval-message">{telegramDraft}</div>
+          <div className="telegram-approval-actions">
+            <button className="btn gh" onClick={() => setTelegramDraft('')} disabled={telegramSending}>Cancel</button>
+            <button className="btn pri" onClick={() => void confirmTelegramSend()} disabled={telegramSending}>{telegramSending && <span className="spin spin-light" />}{telegramSending ? 'Sending…' : 'Approve and send'}</button>
+          </div>
+        </div>
+      </div>}
     </>
   );
 }
