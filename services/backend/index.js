@@ -150,6 +150,7 @@ app.get('/api/v1/health', async (req, res) => {
       'POST /api/v1/whatsapp/webhook (Incoming messages)',
       'POST /api/v1/whatsapp/send',
       'GET  /api/v1/telegram/status',
+      'POST /api/v1/telegram/clients/:clientId/link',
       'POST /api/v1/telegram/webhook',
       'GET  /api/v1/telegram/clients/:clientId/messages',
       'POST /api/v1/telegram/send',
@@ -190,4 +191,7 @@ app.listen(PORT, () => {
   console.log('  Documents:   http://localhost:5000/api/v1/documents');
   console.log('  Deadlines:   http://localhost:5000/api/v1/deadlines');
   console.log('');
+  telegramRouter.configureWebhook().catch((error) => {
+    console.error(`[Telegram] Webhook auto-configuration failed: ${error.message}`);
+  });
 });

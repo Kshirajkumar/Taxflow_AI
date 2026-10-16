@@ -13,10 +13,23 @@ function secretMatches(value, expected) { const left = Buffer.from(String(value 
 
 async function telegramCall(method, payload) {
   if (!botToken()) throw new Error('Telegram bot is not configured');
-  const response = await fetch(`https://api.telegram.org/bot${botToken()}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  const response = await fetch(`https://api.telegram.org/bot${botToken()}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(10000) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || !result.ok) throw new Error(result.description || `Telegram API request failed (${response.status})`);
   return result.result;
+}
+
+async function configureWebhook() {
+  const publicUrl = String(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+  if (!publicUrl) {
+    console.warn('[Telegram] Webhook auto-configuration skipped: PUBLIC_URL/RENDER_EXTERNAL_URL is not set.');
+    return { configured: false, reason: 'public_url_missing' };
+  }
+  if (!/^https:\/\//i.test(publicUrl)) throw new Error('Telegram webhook public URL must use HTTPS');
+  const webhookUrl = `${publicUrl}/api/v1/telegram/webhook`;
+  await telegramCall('setWebhook', { url: webhookUrl, ...(webhookSecret() ? { secret_token: webhookSecret() } : {}), allowed_updates: ['message'] });
+  console.log(`[Telegram] Webhook configured: ${webhookUrl}`);
+  return { configured: true, webhookUrl };
 }
 
 router.get('/status', requireAuth, async (_req, res) => {
@@ -107,4 +120,5 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
 });
 
 module.exports = router;
+module.exports.configureWebhook = configureWebhook;
 module.exports._test = { secretMatches };
