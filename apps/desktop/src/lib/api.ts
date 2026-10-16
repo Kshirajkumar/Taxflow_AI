@@ -1,7 +1,8 @@
 // TaxFlow.AI — API Client Service (Production Grade)
 // All API calls require Authorization header when user is authenticated.
 
-const API_BASE_URL = 'http://127.0.0.1:5000/api/v1';
+const API_ORIGIN = String(import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
+const API_BASE_URL = `${API_ORIGIN}/api/v1`;
 
 // ─── Token helpers ─────────────────────────────────────────────
 function getToken(): string | null {
@@ -237,6 +238,19 @@ export interface WhatsAppMessage {
   vaultFileRef?: string;
   timestamp: string;
   status: string;
+}
+
+export interface TelegramMessage {
+  id: string;
+  client_id: string;
+  provider_message_id: string;
+  direction: 'inbound' | 'outbound';
+  chat_id: string;
+  sender_user_id?: string | null;
+  body: string;
+  message_type: string;
+  delivery_status: string;
+  created_at: string;
 }
 
 export interface ComplianceTask {
@@ -585,6 +599,33 @@ export async function fetchWhatsAppMessages(): Promise<WhatsAppMessage[]> {
     console.warn('Failed to fetch WhatsApp messages', err);
     return [];
   }
+}
+
+export async function fetchTelegramStatus(): Promise<{ connected: boolean; bot?: { username?: string; name?: string }; message?: string }> {
+  const res = await fetch(`${API_BASE_URL}/telegram/status`, { headers: authHeaders() });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.message || `Telegram status failed (HTTP ${res.status}).`);
+  return json;
+}
+
+export async function createTelegramLink(clientId: string): Promise<{ link: string; expiresAt: string }> {
+  const res = await fetch(`${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/link`, { method: 'POST', headers: authHeaders(), body: '{}' });
+  const json = await res.json();
+  if (!res.ok || !json.success) throw new Error(json.message || `Unable to create Telegram link (HTTP ${res.status}).`);
+  return json;
+}
+
+export async function fetchTelegramMessages(clientId: string): Promise<{ linked: boolean; messages: TelegramMessage[] }> {
+  const res = await fetch(`${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/messages`, { headers: authHeaders() });
+  const json = await res.json();
+  if (!res.ok || !json.success) throw new Error(json.message || `Unable to load Telegram conversation (HTTP ${res.status}).`);
+  return { linked: Boolean(json.linked), messages: json.data || [] };
+}
+
+export async function sendTelegramMessage(clientId: string, message: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/telegram/send`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ clientId, message, approved: true, requestId: crypto.randomUUID() }) });
+  const json = await res.json();
+  if (!res.ok || !json.success) throw new Error(json.message || `Unable to send Telegram message (HTTP ${res.status}).`);
 }
 
 // ─── Compliance API ────────────────────────────────────────────

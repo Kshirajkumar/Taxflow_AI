@@ -50,6 +50,7 @@ const clientsRouter = require('./routes/clients');
 const documentsRouter = require('./routes/documents');
 const extractionRouter = require('./routes/extraction');
 const whatsappRouter = require('./routes/whatsapp');
+const telegramRouter = require('./routes/telegram');
 const deadlinesRouter = require('./routes/deadlines');
 const generateRouter = require('./routes/generate');
 const metadataRouter = require('./routes/metadata');
@@ -83,6 +84,9 @@ app.use('/api/v1/notifications', requireAuth, require('./routes/notifications'))
 app.use('/api/v1/documents', requireAuth, documentsRouter);
 app.use('/api/v1/extraction', requireAuth, extractionRouter);
 app.use('/api/v1/whatsapp', whatsappRouter);
+app.use('/api/v1/telegram', telegramRouter);
+// Backward-compatible webhook path for the existing Render bot configuration.
+app.use('/telegram', telegramRouter);
 app.use('/api/v1/deadlines', requireAuth, deadlinesRouter);
 app.use('/api/v1/generate', requireAuth, generateRouter);
 app.use('/api/v1/chat', requireAuth, chatRouter);
@@ -145,6 +149,10 @@ app.get('/api/v1/health', async (req, res) => {
       'GET  /api/v1/whatsapp/webhook (Meta verification)',
       'POST /api/v1/whatsapp/webhook (Incoming messages)',
       'POST /api/v1/whatsapp/send',
+      'GET  /api/v1/telegram/status',
+      'POST /api/v1/telegram/webhook',
+      'GET  /api/v1/telegram/clients/:clientId/messages',
+      'POST /api/v1/telegram/send',
       'GET  /api/v1/deadlines',
       'GET  /api/v1/deadlines/upcoming',
       'GET  /api/v1/deadlines/summary',

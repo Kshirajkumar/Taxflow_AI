@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
+import { createTelegramLink, fetchTelegramMessages, fetchTelegramStatus, sendTelegramMessage, type TelegramMessage } from '../lib/api';
 import { useAppState, useDispatch } from '../state/store';
 import { nextMsgId } from '../lib/messageIds';
 import { TPL } from '../data/seed';
@@ -22,13 +23,28 @@ export function WhatsAppPage() {
   const [channel, setChannel] = useState<'whatsapp' | 'telegram'>('whatsapp');
   const [input, setInput] = useState('');
   const [showSchedule, setShowSchedule] = useState(false);
+  const [telegramMessages, setTelegramMessages] = useState<TelegramMessage[]>([]);
+  const [telegramReady, setTelegramReady] = useState(false);
+  const [telegramLinked, setTelegramLinked] = useState(false);
+  const [telegramBot, setTelegramBot] = useState('');
+  const [telegramError, setTelegramError] = useState('');
   const threadRef = useRef<HTMLDivElement>(null);
   const c = s.clients.find((x) => x.id === s.ui.wa.client) || s.clients[0];
   const thread = c ? (s.threads[c.id] || []).slice().sort((a, b) => a.at.getTime() - b.at.getTime()) : [];
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
-  }, [thread.length, s.ui.wa.tab]);
+  }, [thread.length, telegramMessages.length, s.ui.wa.tab]);
+
+  useEffect(() => {
+    if (channel !== 'telegram' || !c) { setTelegramMessages([]); setTelegramLinked(false); return undefined; }
+    let active = true;
+    const load = async () => {
+      try { const [status, conversation] = await Promise.all([fetchTelegramStatus(), fetchTelegramMessages(c.id)]); if (active) { setTelegramReady(status.connected); setTelegramLinked(conversation.linked); setTelegramBot(status.bot?.username || ''); setTelegramMessages(conversation.messages); setTelegramError(''); } }
+      catch (error) { if (active) { setTelegramReady(false); setTelegramLinked(false); setTelegramError(error instanceof Error ? error.message : 'Telegram is unavailable.'); } }
+    };
+    void load(); const timer = window.setInterval(() => void load(), 4000); return () => { active = false; window.clearInterval(timer); };
+  }, [channel, c?.id]);
 
   if (!c) {
     return (
@@ -43,9 +59,14 @@ export function WhatsAppPage() {
     );
   }
 
-  function send() {
+  async function send() {
     const text = input.trim();
     if (!text) return;
+    if (channel === 'telegram') {
+      if (!telegramReady || !telegramLinked || !window.confirm(`Review message for ${c.name}:\n\n${text}\n\nPress OK to send it through Telegram.`)) return;
+      try { await sendTelegramMessage(c.id, text); setInput(''); const conversation = await fetchTelegramMessages(c.id); setTelegramLinked(conversation.linked); setTelegramMessages(conversation.messages); setTelegramError(''); } catch (error) { setTelegramError(error instanceof Error ? error.message : 'Unable to send Telegram message.'); }
+      return;
+    }
     const msg: ChatMsg = { id: nextMsgId(), f: 'me', t: text, at: vnow(), st: 'sent' };
     dispatch({ type: 'WA_APPEND', client: c.id, msg });
     setInput('');
@@ -74,8 +95,8 @@ export function WhatsAppPage() {
           <option value="whatsapp">WhatsApp</option>
           <option value="telegram">Telegram</option>
         </select>
-        <span className="chip green"><i className="sdot" style={{ margin: '0 2px 0 0' }} />Business API connected</span>
-        <span className="mut2">+91 99000 00000 · {TPL.length} templates approved</span>
+        {channel === 'telegram' && <><span className={'chip ' + (telegramReady ? 'green' : 'amber')}><i className="sdot" style={{ margin: '0 2px 0 0' }} />{telegramReady ? `Telegram @${telegramBot}` : 'Telegram unavailable'}</span><span className={'chip ' + (telegramLinked ? 'green' : 'amber')}>{telegramLinked ? 'Client linked' : 'Client not linked'}</span><button className="btn sm" onClick={async () => { try { const result = await createTelegramLink(c.id); await navigator.clipboard?.writeText(result.link); window.open(result.link, '_blank', 'noopener,noreferrer'); window.alert(`Telegram connection link opened and copied. It expires at ${new Date(result.expiresAt).toLocaleTimeString()}.`); } catch (error) { setTelegramError(error instanceof Error ? error.message : 'Unable to create Telegram link.'); } }}>{telegramLinked ? 'Reconnect client' : 'Connect client'}</button></>}
+        {channel === 'whatsapp' && <><span className="chip green"><i className="sdot" style={{ margin: '0 2px 0 0' }} />Business API connected</span><span className="mut2">+91 99000 00000 · {TPL.length} templates approved</span></>}
       </div>
 
       <div className="tabs">
@@ -118,7 +139,10 @@ export function WhatsAppPage() {
               </div>
             </div>
             <div id="wa-thread" ref={threadRef}>
-              {(() => {
+              {channel === 'telegram' && telegramError && <div className="empty"><b>Telegram unavailable</b>{telegramError}</div>}
+              {channel === 'telegram' && !telegramError && telegramMessages.length === 0 && <div className="empty"><b>No Telegram messages yet</b>Connect this client’s Telegram account, then ask them to message the bot.</div>}
+              {channel === 'telegram' && telegramMessages.map((m) => <div key={m.id} className={'msg ' + (m.direction === 'outbound' ? 'me' : 'cl')}><div>{m.body}</div><span className="mt">{fTime(new Date(m.created_at))} · {m.delivery_status}</span></div>)}
+              {channel === 'whatsapp' && (() => {
                 let last = '';
                 return thread.map((m) => {
                   const dl = dayLabel(m.at);
@@ -141,8 +165,8 @@ export function WhatsAppPage() {
                   );
                 });
               })()}
-              {scheduled.filter((r) => r.client === c.id).length > 0 && <div className="dsep">Scheduled</div>}
-              {scheduled.filter((r) => r.client === c.id).map((r) => (
+              {channel === 'whatsapp' && scheduled.filter((r) => r.client === c.id).length > 0 && <div className="dsep">Scheduled</div>}
+              {channel === 'whatsapp' && scheduled.filter((r) => r.client === c.id).map((r) => (
                 <div key={r.id} className="msg me sched">
                   <div className="sh">
                     <Icon name="clock" size={13} /><span>{fDT(r.at)} · {until(r.at)}</span>
@@ -167,7 +191,7 @@ export function WhatsAppPage() {
                 {TPL.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
               <input className="inp" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder={`Message ${c.contact.split(' ')[0]}`} />
-              <button className="btn pri" onClick={send} aria-label="Send message"><Icon name="send" size={15} /></button>
+              <button className="btn pri" onClick={() => void send()} disabled={channel === 'telegram' && (!telegramReady || !telegramLinked)} aria-label="Send message"><Icon name="send" size={15} /></button>
             </div>
           </div>
         </div>
