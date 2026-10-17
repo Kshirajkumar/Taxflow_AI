@@ -90,15 +90,26 @@ router.get('/previews', requireAuth, async (req, res) => {
     const clientIds = (clients || []).map((client) => client.id);
     if (!clientIds.length) return res.json({ success: true, data: {} });
 
-    const { data: latestMessages, error } = await supabase.rpc('get_latest_telegram_messages', {
-      p_client_ids: clientIds,
-    });
-    if (error) throw error;
-
     const data = {};
-    (latestMessages || []).forEach((message) => {
-      data[message.client_id] = message;
-    });
+    const batchSize = 10;
+    for (let index = 0; index < clientIds.length; index += batchSize) {
+      const batch = await Promise.all(clientIds.slice(index, index + batchSize).map(async (clientId) => {
+        const { data: message, error } = await supabase
+          .from('telegram_messages')
+          .select('client_id,body,message_type,direction,created_at')
+          .eq('client_id', clientId)
+          .eq('direction', 'inbound')
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        return message;
+      }));
+      batch.filter(Boolean).forEach((message) => {
+        data[message.client_id] = message;
+      });
+    }
     return res.json({ success: true, data });
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
 });
