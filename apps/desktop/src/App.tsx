@@ -75,7 +75,7 @@ function Shell() {
       <Titlebar />
       <div className="shell">
         <Sidebar />
-        <main className="main"><Page /></main>
+        <main className={`main${s.page === 'whatsapp' ? ' main-inbox' : ''}`}><Page /></main>
         <Chat />
       </div>
       <footer className="statusbar">
