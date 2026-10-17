@@ -461,29 +461,28 @@ export function WhatsAppPage() {
             </span>
           </>
         )}
+        <div className="tabs inbox-tabs" role="tablist" aria-label="Client inbox sections">
+          {(['chats', 'reminders', 'templates'] as const).map((tab) => (
+            <button
+              key={tab}
+              id={`inbox-tab-${tab}`}
+              type="button"
+              role="tab"
+              aria-selected={s.ui.wa.tab === tab}
+              aria-controls={`inbox-panel-${tab}`}
+              className={s.ui.wa.tab === tab ? 'on' : ''}
+              onClick={() => dispatch({ type: 'WA_TAB', tab })}
+            >
+              {tab === 'chats' ? 'Chats' : tab === 'reminders' ? `Scheduled reminders (${scheduled.length})` : 'Templates'}
+            </button>
+          ))}
+        </div>
         <span className="sp" />
         {channel === 'telegram' && <button className="btn sm wa-connect-btn" onClick={() => void connectTelegram()} disabled={telegramLoading || telegramConnecting || !telegramReady}>
           {telegramConnecting && <span className="spin" />}
           {telegramConnecting ? 'Connecting…' : telegramLinked ? 'Reconnect client' : 'Connect client'}
         </button>}
         {!whatsAppReady && channel === 'whatsapp' && <small className="wa-config-note">Configure Meta API credentials on the backend.</small>}
-      </div>
-
-      <div className="tabs inbox-tabs" role="tablist" aria-label="Client inbox sections">
-        {(['chats', 'reminders', 'templates'] as const).map((tab) => (
-          <button
-            key={tab}
-            id={`inbox-tab-${tab}`}
-            type="button"
-            role="tab"
-            aria-selected={s.ui.wa.tab === tab}
-            aria-controls={`inbox-panel-${tab}`}
-            className={s.ui.wa.tab === tab ? 'on' : ''}
-            onClick={() => dispatch({ type: 'WA_TAB', tab })}
-          >
-            {tab === 'chats' ? 'Chats' : tab === 'reminders' ? `Scheduled reminders (${scheduled.length})` : 'Templates'}
-          </button>
-        ))}
       </div>
 
       {s.ui.wa.tab === 'chats' && <div className="card wa" id="inbox-panel-chats" role="tabpanel" aria-labelledby="inbox-tab-chats">

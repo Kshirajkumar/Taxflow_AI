@@ -405,8 +405,11 @@ tr:last-child td{border-bottom:0}
 .rem p{color:var(--tx2);font-size:12.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .tpl{padding:16px}
 .tpl p{margin:8px 0 12px;color:var(--tx2);background:var(--panel);padding:10px 12px;border-radius:10px;font-size:12.5px}
-.inbox-tabs{margin:0 0 12px;gap:0}
-.inbox-tabs button{display:flex;align-items:center;min-height:38px;padding:8px 15px;font-size:12px}
+.wa-top .inbox-tabs{display:flex;flex:0 1 auto;align-self:center;align-items:center;gap:2px;margin:0 2px 0 4px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:inset 0 1px 2px color-mix(in srgb,var(--bg) 35%,transparent)}
+.wa-top .inbox-tabs button{display:flex;align-items:center;justify-content:center;min-height:31px;padding:5px 11px;border:1px solid transparent;border-radius:7px;margin:0;background:transparent;color:var(--tx3);font-size:11px;font-weight:650;white-space:nowrap;transition:background .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease}
+.wa-top .inbox-tabs button:hover{background:color-mix(in srgb,var(--blue) 8%,var(--panel));color:var(--tx)}
+.wa-top .inbox-tabs button.on{border-color:color-mix(in srgb,var(--blue) 34%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--blue) 17%,var(--card)),color-mix(in srgb,var(--blue) 10%,var(--card)));color:var(--tx);box-shadow:0 1px 3px color-mix(in srgb,var(--bg) 30%,transparent)}
+.wa-top .inbox-tabs button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .wa-reminders{padding:0 2px 16px}
 .wa-reminder-notice{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:9px 12px;border:1px solid color-mix(in srgb,var(--amber) 28%,var(--line));border-radius:9px;background:color-mix(in srgb,var(--amber) 7%,var(--card));color:var(--tx2);font-size:11.5px}
 .wa-reminder-notice .ic{color:var(--amber);flex:none}
@@ -3292,3 +3295,4 @@ body.sidebar-collapsed.chat-hidden .shell {
 .vault-global-open .btn{flex:none}
 @media (max-width:1120px){.subscription-plan-grid{grid-template-columns:1fr}.subscription-plan{padding:14px}.subscription-plan-features{margin-bottom:12px}}
 @media (max-width:860px){.inbox-page-head{align-items:flex-start}.wa{grid-template-columns:68px minmax(0,1fr);height:calc(100vh - 190px)}.wa-list-head{padding:8px}.wa-list-head>div:first-child span,.wa-client-search{display:none}.wa-c .pv,.wa-c .nm,.wa-c .tm{display:none}.wa-c{justify-content:center;padding:10px 6px}.wa-top{gap:6px}.wa-top .wa-linked-status{display:none}.subscription-current{align-items:flex-start;flex-wrap:wrap}.subscription-current .chip{margin-left:56px}}
+@media (max-width:650px){.wa-top .inbox-tabs{order:3;flex:1 0 100%;justify-content:flex-start;margin:3px 0 0;padding-top:6px;border-width:1px 0 0;border-radius:0;background:transparent;box-shadow:none}.wa-top .inbox-tabs button{flex:0 1 auto}.wa-top .wa-connect-btn{margin-left:auto}}
