@@ -1,8 +1,40 @@
 // TaxFlow.AI — API Client Service (Production Grade)
 // All API calls require Authorization header when user is authenticated.
 
-const API_ORIGIN = String(import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
+const API_ORIGIN = String(
+  import.meta.env.VITE_API_URL
+    || (import.meta.env.DEV ? 'http://127.0.0.1:5000' : 'https://taxflow-ai.onrender.com')
+).replace(/\/$/, '');
 const API_BASE_URL = `${API_ORIGIN}/api/v1`;
+
+async function fetchTelegramJson(url: string, init: RequestInit, timeoutMs: number, operation: string): Promise<{ response: Response; json: any }> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, signal: controller.signal });
+    } catch {
+      if (controller.signal.aborted) {
+        const timeoutMessage = operation === 'Telegram message delivery'
+          ? 'Delivery status is unknown. Check the conversation before retrying.'
+          : 'Check the backend connection and try again.';
+        throw new Error(`${operation} timed out after ${Math.round(timeoutMs / 1000)} seconds. ${timeoutMessage}`);
+      }
+      throw new Error(`${operation} could not reach the backend. Check your connection and try again.`);
+    }
+
+    let json: any;
+    try {
+      json = await response.json();
+    } catch {
+      throw new Error(`${operation} returned an invalid response (HTTP ${response.status}).`);
+    }
+    return { response, json };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
 
 // ─── Token helpers ─────────────────────────────────────────────
 function getToken(): string | null {
@@ -183,9 +215,11 @@ export interface FilingType {
 }
 
 async function metadataRequest<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const headers = authHeaders();
+
   let response: Response;
   try {
-    response = await fetch(url, { headers: authHeaders(), signal });
+    response = await fetch(url, { headers, signal });
   } catch {
     throw new Error('The backend is unavailable. Please check that TaxFlow.AI is running and try again.');
   }
@@ -208,7 +242,10 @@ export function fetchSupportedCountries(): Promise<SupportedCountry[]> {
 }
 
 export function fetchFilingTypes(countryId: string, signal?: AbortSignal): Promise<FilingType[]> {
-  return metadataRequest<FilingType[]>(`${API_BASE_URL}/metadata/filing-types?countryId=${encodeURIComponent(countryId)}`, signal);
+  return metadataRequest<FilingType[]>(
+    `${API_BASE_URL}/metadata/filing-types?countryId=${encodeURIComponent(countryId)}`,
+    signal
+  );
 }
 
 export interface DocumentItem {
@@ -319,7 +356,8 @@ export async function apiGetMeWithToken(token: string): Promise<AuthResponse> {
 }
 
 export async function fetchNotifications(): Promise<{ data: NotificationItem[]; unreadCount: number }> {
-  const response = await fetch(`${API_BASE_URL}/notifications?limit=20`, { headers: authHeaders() });
+  const headers = authHeaders();
+  const response = await fetch(`${API_BASE_URL}/notifications?limit=20`, { headers });
   let payload: { success?: boolean; data?: NotificationItem[]; unreadCount?: number; message?: string };
   try { payload = await response.json(); } catch { throw new Error(`The notification service returned an invalid response (HTTP ${response.status}).`); }
   if (!response.ok || !payload.success) throw new Error(payload.message || `Could not load notifications (HTTP ${response.status}).`);
@@ -387,6 +425,7 @@ export async function createClient(clientData: Partial<Client>): Promise<Client 
     let json: any;
     try { json = await res.json(); } catch { throw new Error(`The backend returned an invalid response (HTTP ${res.status}).`); }
     if (!res.ok || !json.success) throw new Error(json.message || `Failed to save client (HTTP ${res.status}).`);
+
     return json.data;
   } catch (err: any) {
     if (err instanceof TypeError) {
@@ -413,6 +452,7 @@ export async function updateClient(clientId: string, clientData: Partial<Client>
   });
   const json = await res.json();
   if (!res.ok || !json.success) throw new Error(json.message || `Failed to update client (HTTP ${res.status}).`);
+
   return json.data;
 }
 
@@ -429,6 +469,7 @@ export async function deleteClient(clientId: string): Promise<{ id: string; name
   let json: any;
   try { json = await res.json(); } catch { throw new Error(`The backend returned an invalid response (HTTP ${res.status}).`); }
   if (!res.ok || !json.success) throw new Error(json.message || `Could not delete the client (HTTP ${res.status}).`);
+
   return json.data;
 }
 
@@ -448,7 +489,8 @@ export interface VaultTreeResponse {
 }
 
 export async function fetchVaultTree(clientId: string): Promise<VaultTreeResponse> {
-  const res = await fetch(`${API_BASE_URL}/clients/${encodeURIComponent(clientId)}/vault-tree`, { headers: authHeaders() });
+  const headers = authHeaders();
+  const res = await fetch(`${API_BASE_URL}/clients/${encodeURIComponent(clientId)}/vault-tree`, { headers });
   let json: any;
   try { json = await res.json(); } catch { throw new Error(`The vault returned an invalid response (HTTP ${res.status}).`); }
   if (!res.ok || !json.success) throw new Error(json.message || `Could not read the vault (HTTP ${res.status}).`);
@@ -477,7 +519,8 @@ export async function deleteVaultFile(clientId: string, relativePath: string): P
 export async function fetchDocuments(clientId?: string): Promise<DocumentItem[]> {
   try {
     const url = clientId ? `${API_BASE_URL}/documents?clientId=${clientId}` : `${API_BASE_URL}/documents`;
-    const res = await fetch(url, { headers: authHeaders() });
+    const headers = authHeaders();
+    const res = await fetch(url, { headers });
     const json = await res.json();
     return json.data || [];
   } catch (err) {
@@ -487,7 +530,8 @@ export async function fetchDocuments(clientId?: string): Promise<DocumentItem[]>
 }
 
 export async function fetchClientDocuments(clientId: string, signal?: AbortSignal): Promise<DocumentItem[]> {
-  const res = await fetch(`${API_BASE_URL}/documents?clientId=${encodeURIComponent(clientId)}`, { headers: authHeaders(), signal });
+  const headers = authHeaders();
+  const res = await fetch(`${API_BASE_URL}/documents?clientId=${encodeURIComponent(clientId)}`, { headers, signal });
   let json: any;
   try { json = await res.json(); } catch { throw new Error(`The client document list returned an invalid response (HTTP ${res.status}).`); }
   if (!res.ok || !json.success) throw new Error(json.message || `Could not load this client's files (HTTP ${res.status}).`);
@@ -532,6 +576,7 @@ export async function uploadToLocalVault(payload: {
   if (!res.ok || !json.success) {
     throw new Error(json.message || `The file could not be uploaded (HTTP ${res.status}).`);
   }
+
   return json;
 }
 
@@ -563,6 +608,7 @@ export async function verifyDocumentExtraction(documentId: string, verifiedBy = 
     });
     const json = await res.json();
     if (!res.ok || !json.success) throw new Error(json.message || `Could not save the reviewed extraction (HTTP ${res.status}).`);
+
     return json;
   } catch (err) {
     console.error('Failed to verify document', err);
@@ -585,6 +631,7 @@ export async function processDocumentExtraction(documentId: string, category = '
   let json: any;
   try { json = await res.json(); } catch { throw new Error(`The extraction service returned an invalid response (HTTP ${res.status}).`); }
   if (!res.ok || !json.success) throw new Error(json.message || `AI extraction failed (HTTP ${res.status}).`);
+
   return json;
 }
 
@@ -602,29 +649,25 @@ export async function fetchWhatsAppMessages(): Promise<WhatsAppMessage[]> {
 }
 
 export async function fetchTelegramStatus(): Promise<{ connected: boolean; bot?: { username?: string; name?: string }; message?: string }> {
-  const res = await fetch(`${API_BASE_URL}/telegram/status`, { headers: authHeaders() });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.message || `Telegram status failed (HTTP ${res.status}).`);
+  const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/status`, { headers: authHeaders() }, 20000, 'Telegram status check');
+  if (!res.ok || !json.success) throw new Error(json.message || `Telegram status failed (HTTP ${res.status}).`);
   return json;
 }
 
 export async function createTelegramLink(clientId: string): Promise<{ link: string; expiresAt: string }> {
-  const res = await fetch(`${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/link`, { method: 'POST', headers: authHeaders(), body: '{}' });
-  const json = await res.json();
+  const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/link`, { method: 'POST', headers: authHeaders(), body: '{}' }, 30000, 'Telegram connection');
   if (!res.ok || !json.success) throw new Error(json.message || `Unable to create Telegram link (HTTP ${res.status}).`);
   return json;
 }
 
 export async function fetchTelegramMessages(clientId: string): Promise<{ linked: boolean; messages: TelegramMessage[] }> {
-  const res = await fetch(`${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/messages`, { headers: authHeaders() });
-  const json = await res.json();
+  const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/messages`, { headers: authHeaders() }, 30000, 'Telegram conversation');
   if (!res.ok || !json.success) throw new Error(json.message || `Unable to load Telegram conversation (HTTP ${res.status}).`);
   return { linked: Boolean(json.linked), messages: json.data || [] };
 }
 
-export async function sendTelegramMessage(clientId: string, message: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/telegram/send`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ clientId, message, approved: true, requestId: crypto.randomUUID() }) });
-  const json = await res.json();
+export async function sendTelegramMessage(clientId: string, message: string, requestId: string = crypto.randomUUID()): Promise<void> {
+  const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/send`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ clientId, message, approved: true, requestId }) }, 60000, 'Telegram message delivery');
   if (!res.ok || !json.success) throw new Error(json.message || `Unable to send Telegram message (HTTP ${res.status}).`);
 }
 

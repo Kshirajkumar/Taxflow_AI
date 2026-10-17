@@ -33,6 +33,7 @@ export function WhatsAppPage() {
   const [telegramConnecting, setTelegramConnecting] = useState(false);
   const [telegramSending, setTelegramSending] = useState(false);
   const [telegramDraft, setTelegramDraft] = useState('');
+  const [telegramRequestId, setTelegramRequestId] = useState('');
   const [telegramRetry, setTelegramRetry] = useState(0);
   const threadRef = useRef<HTMLDivElement>(null);
   const c = s.clients.find((x) => x.id === s.ui.wa.client) || s.clients[0];
@@ -73,9 +74,14 @@ export function WhatsAppPage() {
 
   function requestTelegramSend() {
     const text = input.trim();
-    if (!text || telegramSending || !telegramReady || !telegramLinked) return;
+    if (!text || telegramSending) return;
+    if (!telegramReady || !telegramLinked) {
+      setTelegramError('Telegram is not ready or this client is not linked. Please check the connection and try again.');
+      return;
+    }
     setTelegramError('');
     setTelegramInfo('');
+    setTelegramRequestId(crypto.randomUUID());
     setTelegramDraft(text);
   }
 
@@ -85,13 +91,20 @@ export function WhatsAppPage() {
     setTelegramError('');
     setTelegramInfo('Sending securely through Telegram…');
     try {
-      await sendTelegramMessage(c.id, telegramDraft);
+      await sendTelegramMessage(c.id, telegramDraft, telegramRequestId || crypto.randomUUID());
       setInput('');
-      const conversation = await fetchTelegramMessages(c.id);
-      setTelegramLinked(conversation.linked);
-      setTelegramMessages(conversation.messages);
       setTelegramDraft('');
+      setTelegramRequestId('');
       setTelegramInfo('Message sent through Telegram.');
+      setTelegramSending(false);
+
+      try {
+        const conversation = await fetchTelegramMessages(c.id);
+        setTelegramLinked(conversation.linked);
+        setTelegramMessages(conversation.messages);
+      } catch {
+        setTelegramInfo('Message sent through Telegram. The conversation could not refresh; it will update automatically when the connection recovers.');
+      }
     } catch (error) {
       setTelegramInfo('');
       setTelegramError(error instanceof Error ? error.message : 'Unable to send Telegram message. Please try again.');
@@ -117,8 +130,7 @@ export function WhatsAppPage() {
     const text = input.trim();
     if (!text) return;
     if (channel === 'telegram') {
-      if (!telegramReady || !telegramLinked || !window.confirm(`Review message for ${c.name}:\n\n${text}\n\nPress OK to send it through Telegram.`)) return;
-      try { await sendTelegramMessage(c.id, text); setInput(''); const conversation = await fetchTelegramMessages(c.id); setTelegramLinked(conversation.linked); setTelegramMessages(conversation.messages); setTelegramError(''); } catch (error) { setTelegramError(error instanceof Error ? error.message : 'Unable to send Telegram message.'); }
+      requestTelegramSend();
       return;
     }
     const msg: ChatMsg = { id: nextMsgId(), f: 'me', t: text, at: vnow(), st: 'sent' };

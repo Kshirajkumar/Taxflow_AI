@@ -7,7 +7,7 @@ import {
 } from '../data/seed';
 import { vnow, ago } from '../lib/format';
 import { nextTaskFor, pendingBill, missing } from '../lib/domain';
-import { apiGetMe, fetchClients, fetchDocuments, fetchWhatsAppMessages, fetchComplianceTasks, AuthUser } from '../lib/api';
+import { apiGetMe, fetchClients, fetchDocuments, fetchWhatsAppMessages, fetchComplianceTasks, type AuthUser } from '../lib/api';
 
 export interface Settings {
   autoExtract: boolean;
@@ -150,13 +150,13 @@ function reducer(state: AppState, action: Action): AppState {
       const nextCollapsed = !state.sidebarCollapsed;
       try {
         localStorage.setItem('taxflow_sidebar_collapsed', String(nextCollapsed));
-      } catch (e) {}
+      } catch (e) { }
       return { ...state, sidebarCollapsed: nextCollapsed };
     }
     case 'LOGIN': {
       try {
         localStorage.setItem('taxflow_session', JSON.stringify({ user: action.user, token: action.token, refreshToken: action.refreshToken }));
-      } catch (e) {}
+      } catch (e) { }
       return {
         ...state,
         currentUser: action.user,
@@ -169,7 +169,7 @@ function reducer(state: AppState, action: Action): AppState {
         const raw = localStorage.getItem('taxflow_session');
         const session = raw ? JSON.parse(raw) : {};
         localStorage.setItem('taxflow_session', JSON.stringify({ ...session, user: action.user }));
-      } catch (e) {}
+      } catch (e) { }
       return { ...state, currentUser: action.user };
     }
     case 'SESSION_ACTIVE':
@@ -183,7 +183,7 @@ function reducer(state: AppState, action: Action): AppState {
         const raw = localStorage.getItem('taxflow_session');
         const session = raw ? JSON.parse(raw) : {};
         localStorage.setItem('taxflow_session', JSON.stringify({ ...session, user: updatedUser }));
-      } catch (e) {}
+      } catch (e) { }
       return { ...state, currentUser: updatedUser };
     }
     case 'ADD_CLIENT':
@@ -210,7 +210,7 @@ function reducer(state: AppState, action: Action): AppState {
     case 'LOGOUT': {
       try {
         localStorage.removeItem('taxflow_session');
-      } catch (e) {}
+      } catch (e) { }
       return {
         ...state,
         currentUser: null,
@@ -236,7 +236,7 @@ function reducer(state: AppState, action: Action): AppState {
       const nextTheme = state.theme === 'dark' ? 'light' : 'dark';
       try {
         localStorage.setItem('taxflow_theme', nextTheme);
-      } catch (e) {}
+      } catch (e) { }
       return { ...state, theme: nextTheme };
     }
     case 'TOGGLE_CHAT':
@@ -355,7 +355,7 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, log: [action.entry, ...state.log] };
     case 'API_DATA_LOADED': {
       const { apiClients, apiDocs, apiMsgs, apiTasks } = action.payload;
-      
+
       // Map API Clients
       const mappedClients = Array.isArray(apiClients) ? apiClients.map((c: any) => ({
         id: c.id,
@@ -428,7 +428,7 @@ function reducer(state: AppState, action: Action): AppState {
       if (mappedClients.length > 0) {
         const firstId = mappedClients[0].id;
         const fallbackId = (id: string) => mappedClients.find((c: any) => c.id === id) ? id : firstId;
-        
+
         if (!mappedClients.find((c: any) => c.id === newUi.wa.client)) newUi.wa.client = firstId;
         if (!mappedClients.find((c: any) => c.id === newUi.gen.client)) newUi.gen.client = firstId;
 
@@ -471,7 +471,7 @@ function reducer(state: AppState, action: Action): AppState {
 }
 
 const StateCtx = createContext<AppState>(initialState);
-const DispatchCtx = createContext<React.Dispatch<Action>>(() => {});
+const DispatchCtx = createContext<React.Dispatch<Action>>(() => { });
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -497,7 +497,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           fetchWhatsAppMessages(),
           fetchComplianceTasks()
         ]);
-        
+
         dispatch({
           type: 'API_DATA_LOADED',
           payload: { apiClients, apiDocs, apiMsgs, apiTasks }
