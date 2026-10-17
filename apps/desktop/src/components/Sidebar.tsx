@@ -22,7 +22,7 @@ const NAV: Array<{ g: string; items: Array<[Page, string, string]> }> = [
     g: 'Practice',
     items: [
       ['clients', 'Clients', 'users'],
-      ['billing', 'Billing & Fees', 'rupee'],
+      ['subscriptions', 'Subscriptions', 'spark'],
       ['profile', 'Profile', 'users'],
       ['settings', 'Settings', 'sliders'],
     ],

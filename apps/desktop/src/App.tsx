@@ -15,8 +15,9 @@ import { WhatsAppPage } from './pages/WhatsApp';
 import { FilesPage } from './pages/Files';
 import { DeadlinesPage } from './pages/Deadlines';
 import { GeneratePage } from './pages/Generate';
-import { ClientsPage, BillingPage, SettingsPage } from './pages/Other';
+import { ClientsPage, SettingsPage } from './pages/Other';
 import { ProfilePage } from './pages/Profile';
+import { SubscriptionsPage } from './pages/Subscriptions';
 
 function Shell() {
   const s = useAppState();
@@ -65,7 +66,7 @@ function Shell() {
     deadlines: DeadlinesPage,
     generate: GeneratePage,
     clients: ClientsPage,
-    billing: BillingPage,
+    subscriptions: SubscriptionsPage,
     profile: ProfilePage,
     settings: SettingsPage,
   }[s.page] || Dashboard;
@@ -78,11 +79,6 @@ function Shell() {
         <main className={`main${s.page === 'whatsapp' ? ' main-inbox' : ''}`}><Page /></main>
         <Chat />
       </div>
-      <footer className="statusbar">
-        <span><i className="sdot" /><b>Client Inbox integrations</b></span>
-        <span>Vault <b>D:\Taxflow\Clients</b></span>
-        <span className="sp" />
-      </footer>
     </div>
   );
 }

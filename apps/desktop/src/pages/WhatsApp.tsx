@@ -57,6 +57,7 @@ export function WhatsAppPage() {
   const dispatch = useDispatch();
   const [channel, setChannel] = useState<'whatsapp' | 'telegram'>('telegram');
   const [input, setInput] = useState('');
+  const [clientSearch, setClientSearch] = useState('');
   const [showSchedule, setShowSchedule] = useState(false);
   const [telegramMessages, setTelegramMessages] = useState<TelegramMessage[]>([]);
   const [telegramReady, setTelegramReady] = useState(false);
@@ -91,6 +92,7 @@ export function WhatsAppPage() {
   const threadRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const c = s.clients.find((x) => x.id === s.ui.wa.client) || s.clients[0];
+  const visibleClients = s.clients.filter((client) => client.name.toLocaleLowerCase().includes(clientSearch.trim().toLocaleLowerCase()));
   const thread = c ? (s.threads[c.id] || []).slice().sort((a, b) => a.at.getTime() - b.at.getTime()) : [];
   const clientIds = s.clients.map((client) => client.id).join(',');
 
@@ -349,7 +351,7 @@ export function WhatsAppPage() {
   if (!c) {
     return (
       <div className="inbox-page">
-        <div className="ph"><div><h1>Client Inbox</h1><p>WhatsApp and Telegram client conversations in one place, with the reminders that will go out next.</p></div><div className="ph-a"><label className="f" htmlFor="inbox-channel-empty">Channel</label><select id="inbox-channel-empty" className="sel" style={{ width: 160 }} value={channel} onChange={(e) => setChannel(e.target.value as 'whatsapp' | 'telegram')}><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option></select></div></div>
+        <div className="ph inbox-page-head"><div><span className="eyebrow">MESSAGES</span><h1>Client Inbox</h1><p>Your WhatsApp and Telegram conversations.</p></div><label className="wa-channel-control"><span>Channel</span><select id="inbox-channel-empty" className="sel" value={channel} onChange={(e) => setChannel(e.target.value as 'whatsapp' | 'telegram')}><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option></select></label></div>
         <div className="card workspace-empty workspace-empty-inbox">
           <div className="workspace-empty-visual"><span className="workspace-empty-ring ring-one" /><span className="workspace-empty-ring ring-two" /><span className="workspace-empty-orb"><Icon name="chat" size={30} /></span><span className="workspace-empty-float float-one"><Icon name="send" size={14} /></span><span className="workspace-empty-float float-two"><Icon name="bell" size={14} /></span></div>
           <div className="workspace-empty-copy"><span className="eyebrow">A QUIET INBOX IS A CLEAN START</span><h2>Your client conversations will appear here</h2><p>Once a client is added, chats, reminders, and approved message templates will stay together in one focused workspace.</p><button className="btn pri" onClick={() => dispatch({ type: 'GO', page: 'clients' })}><Icon name="users" size={14} />Add your first client</button></div>
@@ -389,25 +391,24 @@ export function WhatsAppPage() {
   const scheduled = s.reminders.filter((r) => r.status === 'scheduled').sort((a, b) => a.at.getTime() - b.at.getTime());
 
   return (
-    <>
-      <div className="ph">
-        <div><h1>Client Inbox</h1><p>WhatsApp and Telegram client conversations in one place, with the reminders that will go out next.</p></div>
-        <div className="ph-a"><button className="btn pri" onClick={() => setShowSchedule(true)}><Icon name="plus" size={14} />Schedule reminder</button></div>
+    <div className="inbox-page">
+      <div className="ph inbox-page-head">
+        <div><span className="eyebrow">MESSAGES</span><h1>Client Inbox</h1><p>Conversations, files, and follow-ups in one focused workspace.</p></div>
+        <button className="btn sm" onClick={() => setShowSchedule(true)}><Icon name="plus" size={14} />Schedule reminder</button>
       </div>
 
       <div className="card wa-top">
-        <label className="f" htmlFor="inbox-channel">Channel</label>
-        <select id="inbox-channel" className="sel" style={{ width: 160 }} value={channel} onChange={(e) => setChannel(e.target.value as 'whatsapp' | 'telegram')}>
+        <label className="wa-channel-control" htmlFor="inbox-channel"><span>Channel</span><select id="inbox-channel" className="sel" value={channel} onChange={(e) => setChannel(e.target.value as 'whatsapp' | 'telegram')}>
           <option value="telegram">Telegram</option>
           <option value="whatsapp">WhatsApp</option>
-        </select>
+        </select></label>
         {channel === 'telegram' && (
           <>
             <span className={'chip ' + (telegramLoading ? 'amber' : telegramReady ? 'green' : 'amber')}>
               <i className="sdot" style={{ margin: '0 2px 0 0' }} />
-              {telegramLoading ? 'Checking Telegram…' : telegramReady ? `Telegram @${telegramBot}` : 'Telegram unavailable'}
+              {telegramLoading ? 'Checking Telegram…' : telegramReady ? `@${telegramBot}` : 'Telegram unavailable'}
             </span>
-            <span className={'chip ' + (telegramLinked ? 'green' : 'amber')}>
+            <span className={'chip wa-linked-status ' + (telegramLinked ? 'green' : 'amber')}>
               {telegramLinked ? 'Client linked' : 'Client not linked'}
             </span>
             {totalUnreadAcrossClients > 0 && (
@@ -416,39 +417,31 @@ export function WhatsAppPage() {
                 {totalUnreadAcrossClients} unread {totalUnreadAcrossClients === 1 ? 'message' : 'messages'}
               </span>
             )}
-            <button className="btn sm" onClick={() => void connectTelegram()} disabled={telegramLoading || telegramConnecting || !telegramReady}>
-              {telegramConnecting && <span className="spin" />}
-              {telegramConnecting ? 'Connecting…' : telegramLinked ? 'Reconnect client' : 'Connect client'}
-            </button>
           </>
         )}
         {channel === 'whatsapp' && (
           <>
             <span className={'chip ' + (whatsAppLoading ? 'amber' : whatsAppReady ? 'green' : 'amber')}>
               <i className="sdot" style={{ margin: '0 2px 0 0' }} />
-              {whatsAppLoading ? 'Checking WhatsApp…' : whatsAppReady ? 'WhatsApp Cloud API Connected' : 'WhatsApp API Not Configured'}
+              {whatsAppLoading ? 'Checking WhatsApp…' : whatsAppReady ? 'WhatsApp connected' : 'WhatsApp not configured'}
             </span>
-            {!whatsAppReady && (
-              <span className="mut2" style={{ fontSize: 11.5 }}>
-                Missing Meta Cloud API credentials in backend
-              </span>
-            )}
           </>
         )}
+        <span className="sp" />
+        {channel === 'telegram' && <button className="btn sm wa-connect-btn" onClick={() => void connectTelegram()} disabled={telegramLoading || telegramConnecting || !telegramReady}>
+          {telegramConnecting && <span className="spin" />}
+          {telegramConnecting ? 'Connecting…' : telegramLinked ? 'Reconnect client' : 'Connect client'}
+        </button>}
+        {!whatsAppReady && channel === 'whatsapp' && <small className="wa-config-note">Configure Meta API credentials on the backend.</small>}
       </div>
 
-      <div className="tabs">
-        {(['chats', 'reminders', 'templates'] as const).map((t) => (
-          <button key={t} className={s.ui.wa.tab === t ? 'on' : ''} onClick={() => dispatch({ type: 'WA_TAB', tab: t })}>
-            {t === 'chats' ? 'Chats' : t === 'reminders' ? `Scheduled reminders (${scheduled.length})` : 'Templates'}
-          </button>
-        ))}
-      </div>
-
-      {s.ui.wa.tab === 'chats' && (
         <div className="card wa">
           <div className="wa-l">
-            {s.clients.map((cl) => {
+            <div className="wa-list-head">
+              <div><b>Conversations</b><span>{visibleClients.length} clients</span></div>
+              <label className="wa-client-search"><Icon name="search" size={13} /><input value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Find a client" aria-label="Filter clients" /></label>
+            </div>
+            {visibleClients.map((cl) => {
               const th = s.threads[cl.id] || [];
               const whatsappLast = th
                 .filter((message) => message.f !== 'sys')
@@ -785,44 +778,10 @@ export function WhatsAppPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {s.ui.wa.tab === 'reminders' && (
-        <div className="tline">
-          {scheduled.map((r) => {
-            const cl = s.clients.find((x) => x.id === r.client)!;
-            return (
-              <div key={r.id} className="card rem">
-                <div className="rt">{fTime(r.at)}<small>{until(r.at)}</small></div>
-                <div style={{ minWidth: 0 }}>
-                  <div className="row"><span className="av" style={{ ['--t' as any]: cl.tone }}>{cl.short.slice(0, 2).toUpperCase()}</span><b>{cl.name}</b></div>
-                  <p>{r.text}</p>
-                </div>
-                <div className="row">
-                  {r.approve ? <button className="btn sm" onClick={() => dispatch({ type: 'REM_APPROVE', id: r.id })}>Approve</button> : null}
-                  <button className="btn sm" onClick={() => dispatch({ type: 'REM_SEND_NOW', id: r.id })}>Send now</button>
-                  <button className="btn sm gh" onClick={() => dispatch({ type: 'REM_CANCEL', id: r.id })}><Icon name="x" size={13} /></button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {s.ui.wa.tab === 'templates' && (
-        <div className="grid g3">
-          {TPL.map((t) => (
-            <div key={t.id} className="card tpl">
-              <div className="row"><b>{t.name}</b><span className="sp" /><span className="chip blue">Utility</span></div>
-              <p>{t.body}</p>
-            </div>
-          ))}
-        </div>
-      )}
 
       {showSchedule && <ScheduleModal onClose={() => setShowSchedule(false)} defaultClient={c.id} />}
 
-    </>
+    </div>
   );
 }
 

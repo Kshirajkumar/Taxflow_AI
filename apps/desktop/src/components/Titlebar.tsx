@@ -4,7 +4,32 @@ import { ThemeToggle } from './ThemeToggle';
 import { BrandMark } from './BrandMark';
 import { useAppState, useDispatch } from '../state/store';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { fetchNotifications, markNotificationsRead, type NotificationItem } from '../lib/api';
+import { fetchNotifications, markNotificationsRead, searchTelegramMessages, searchVaultFiles, type NotificationItem, type TelegramSearchResult, type VaultFileSearchResult } from '../lib/api';
+import type { Page } from '../types';
+
+interface WorkspaceSearchResult {
+  id: string;
+  kind: 'client' | 'document' | 'file' | 'conversation' | 'deadline' | 'page';
+  title: string;
+  subtitle: string;
+  clientId?: string;
+  documentId?: string;
+  file?: VaultFileSearchResult;
+  page?: Page;
+}
+
+const SEARCH_PAGES: Array<{ title: string; page: Page; keywords: string }> = [
+  { title: 'Dashboard', page: 'dashboard', keywords: 'home overview' },
+  { title: 'Clients', page: 'clients', keywords: 'client directory' },
+  { title: 'Client Inbox', page: 'whatsapp', keywords: 'telegram whatsapp messages chats' },
+  { title: 'Client Folders', page: 'files', keywords: 'vault files documents' },
+  { title: 'Deadlines', page: 'deadlines', keywords: 'compliance due dates' },
+  { title: 'Invoice Extraction', page: 'extract', keywords: 'invoices scan' },
+  { title: 'File Generator', page: 'generate', keywords: 'reports forms' },
+  { title: 'Subscriptions', page: 'subscriptions', keywords: 'plans account pricing' },
+  { title: 'Profile', page: 'profile', keywords: 'account user' },
+  { title: 'Settings', page: 'settings', keywords: 'preferences integrations' },
+];
 
 export function Titlebar() {
   const s = useAppState();
@@ -15,6 +40,10 @@ export function Titlebar() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [vaultResults, setVaultResults] = useState<VaultFileSearchResult[]>([]);
+  const [telegramSearchResults, setTelegramSearchResults] = useState<TelegramSearchResult[]>([]);
+  const [vaultSearchLoading, setVaultSearchLoading] = useState(false);
+  const [vaultSearchError, setVaultSearchError] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -32,6 +61,50 @@ export function Titlebar() {
     initWindow();
     return () => { if (unlisten) unlisten(); };
   }, []);
+
+  useEffect(() => {
+    const query = q.trim();
+    if (!focused || query.length < 2) {
+      setVaultResults([]);
+      setTelegramSearchResults([]);
+      setVaultSearchLoading(false);
+      setVaultSearchError('');
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setVaultSearchLoading(true);
+      setVaultSearchError('');
+      void Promise.allSettled([
+        searchVaultFiles(query, controller.signal),
+        searchTelegramMessages(query, controller.signal),
+      ])
+        .then(([files, messages]) => {
+          if (controller.signal.aborted) return;
+          const errors: string[] = [];
+          if (files.status === 'fulfilled') setVaultResults(files.value);
+          else {
+            setVaultResults([]);
+            errors.push(files.reason instanceof Error ? files.reason.message : 'Vault files could not be searched.');
+          }
+          if (messages.status === 'fulfilled') setTelegramSearchResults(messages.value);
+          else {
+            setTelegramSearchResults([]);
+            errors.push(messages.reason instanceof Error ? messages.reason.message : 'Telegram conversations could not be searched.');
+          }
+          setVaultSearchError(errors.join(' '));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setVaultSearchLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [q, focused]);
 
   // Notifications are created by the database trigger and refreshed here so
   // the titlebar remains current without coupling client mutations to UI state.
@@ -83,16 +156,131 @@ export function Titlebar() {
     }
   };
 
-  const results = q.trim()
+  const query = q.trim().toLocaleLowerCase();
+  const clientResults: WorkspaceSearchResult[] = query
     ? s.clients
-        .filter(
-          (c) =>
-            c.name.toLowerCase().includes(q.toLowerCase()) ||
-            c.gstin.toLowerCase().includes(q.toLowerCase())
-        )
-        .slice(0, 6)
+        .filter((client) => [client.name, client.gstin, client.pan, client.phone, client.contact].some((value) => value?.toLocaleLowerCase().includes(query)))
+        .slice(0, 3)
+        .map((client) => ({
+          id: `client:${client.id}`,
+          kind: 'client',
+          title: client.name,
+          subtitle: `Client · ${client.city} · ${client.gstin || 'No GSTIN'}`,
+          clientId: client.id,
+        }))
     : [];
+  const localFileResults: WorkspaceSearchResult[] = query
+    ? s.files
+        .filter((file) => file.name.toLocaleLowerCase().includes(query))
+        .slice(0, 3)
+        .map((file) => ({
+          id: `local-file:${file.id}`,
+          kind: 'file',
+          title: file.name,
+          subtitle: `Client vault · ${s.clients.find((client) => client.id === file.client)?.name || 'Client folder'}`,
+          clientId: file.client,
+        }))
+    : [];
+  const documentResults: WorkspaceSearchResult[] = query
+    ? s.docs
+        .filter((document) => [document.party, document.gstin, document.no, document.kind].some((value) => value.toLocaleLowerCase().includes(query)))
+        .slice(0, 3)
+        .map((document) => ({
+          id: `document:${document.id}`,
+          kind: 'document',
+          title: document.party || document.no || 'Invoice record',
+          subtitle: `Extraction · ${s.clients.find((client) => client.id === document.client)?.name || 'Client'} · ${document.no}`,
+          clientId: document.client,
+          documentId: document.id,
+        }))
+    : [];
+  const conversationResults: WorkspaceSearchResult[] = query
+    ? Object.entries(s.threads)
+        .flatMap(([clientId, messages]): WorkspaceSearchResult[] => {
+          const matchingMessage = [...messages].reverse().find((message) => (
+            message.t.toLocaleLowerCase().includes(query) || message.file?.toLocaleLowerCase().includes(query)
+          ));
+          const client = s.clients.find((item) => item.id === clientId);
+          if (!matchingMessage || !client) return [];
+          return [{
+            id: `message:${clientId}:${matchingMessage.id}`,
+            kind: 'conversation',
+            title: client.name,
+            subtitle: `Conversation · ${(matchingMessage.file || matchingMessage.t).slice(0, 90)}`,
+            clientId,
+          }];
+        })
+        .slice(0, 3)
+    : [];
+  const deadlineResults: WorkspaceSearchResult[] = query
+    ? s.tasks
+        .filter((task) => task.name.toLocaleLowerCase().includes(query))
+        .slice(0, 2)
+        .map((task) => ({
+          id: `deadline:${task.id}`,
+          kind: 'deadline',
+          title: task.name,
+          subtitle: `Deadline · ${s.clients.find((client) => client.id === task.client)?.name || 'Client'}`,
+          clientId: task.client,
+        }))
+    : [];
+  const pageResults: WorkspaceSearchResult[] = query
+    ? SEARCH_PAGES
+        .filter((item) => `${item.title} ${item.keywords}`.toLocaleLowerCase().includes(query))
+        .slice(0, 2)
+        .map((item) => ({
+          id: `page:${item.page}`,
+          kind: 'page',
+          title: item.title,
+          subtitle: 'Workspace page',
+          page: item.page,
+        }))
+    : [];
+  const remoteFileResults: WorkspaceSearchResult[] = vaultResults.map((file) => ({
+    id: `vault:${file.clientId}:${file.relativePath}`,
+    kind: 'file',
+    title: file.fileName,
+    subtitle: `Vault file · ${file.clientName} · ${file.relativePath}`,
+    clientId: file.clientId,
+    file,
+  }));
+  const remoteConversationResults: WorkspaceSearchResult[] = telegramSearchResults.map((message) => ({
+    id: `telegram-message:${message.id}`,
+    kind: 'conversation',
+    title: message.clientName,
+    subtitle: `Telegram · ${message.body.slice(0, 90)}`,
+    clientId: message.clientId,
+  }));
+  const results = [...clientResults, ...remoteFileResults, ...localFileResults, ...documentResults, ...conversationResults, ...remoteConversationResults, ...deadlineResults, ...pageResults].slice(0, 10);
   const sessionExpired = s.sessionStatus === 'expired';
+
+  function openSearchResult(result: WorkspaceSearchResult) {
+    if (result.kind === 'client' || result.kind === 'conversation') {
+      if (result.clientId) dispatch({ type: 'WA_CLIENT', id: result.clientId });
+      dispatch({ type: 'GO', page: 'whatsapp' });
+    } else if (result.kind === 'file') {
+      if (result.clientId) {
+        dispatch({ type: 'GO', page: 'files' });
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent('taxflow:open-vault-file', {
+          detail: {
+            clientId: result.clientId,
+            fileName: result.file?.fileName || result.title,
+            relativePath: result.file?.relativePath,
+          },
+        })), 0);
+      }
+    } else if (result.kind === 'document' && result.documentId) {
+      dispatch({ type: 'EX_SELECT', id: result.documentId });
+      dispatch({ type: 'GO', page: 'extract' });
+    } else if (result.kind === 'deadline' && result.clientId) {
+      dispatch({ type: 'DL_TOGGLE', client: result.clientId });
+      dispatch({ type: 'GO', page: 'deadlines' });
+    } else if (result.page) {
+      dispatch({ type: 'GO', page: result.page });
+    }
+    setQ('');
+    setFocused(false);
+  }
 
   return (
     <header className="titlebar">
@@ -106,7 +294,7 @@ export function Titlebar() {
       </div>
 
       {/* Search Bar */}
-      <div className={`gsearch${focused || results.length > 0 ? ' focused' : ''}`}>
+      <div className={`gsearch${focused ? ' focused' : ''}`}>
         <span className="gi">
           <Icon name="search" size={14} />
         </span>
@@ -115,10 +303,14 @@ export function Titlebar() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onFocus={() => setFocused(true)}
-          placeholder="Search clients, invoices, files…"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setFocused(false);
+            if (event.key === 'Enter' && results[0]) openSearchResult(results[0]);
+          }}
+          placeholder="Search clients, messages, files…"
           autoComplete="off"
           aria-label="Search workspace"
-          aria-expanded={results.length > 0}
+          aria-expanded={focused && (results.length > 0 || vaultSearchLoading)}
           aria-haspopup="listbox"
         />
         {q && (
@@ -132,31 +324,29 @@ export function Titlebar() {
             </svg>
           </button>
         )}
-        {results.length > 0 && (
+        {focused && q.trim() && (
           <div className="gres" ref={dropRef} role="listbox">
             {results.map((c) => (
               <button
                 key={c.id}
                 role="option"
-                onClick={() => {
-                  dispatch({ type: 'WA_CLIENT', id: c.id });
-                  dispatch({ type: 'GO', page: 'whatsapp' });
-                  setQ('');
-                  setFocused(false);
-                }}
+                onClick={() => openSearchResult(c)}
               >
-                <span className="gres-av" style={{ background: 'var(--accent-alpha)' }}>
-                  {c.short}
+                <span className={`gres-av gres-icon gres-${c.kind}`}>
+                  <Icon name={c.kind === 'client' ? 'users' : c.kind === 'file' || c.kind === 'document' ? 'file' : c.kind === 'conversation' ? 'chat' : c.kind === 'deadline' ? 'cal' : 'grid'} size={14} />
                 </span>
                 <span className="gres-info">
-                  <b>{c.name}</b>
-                  <small>{c.city} · {c.gstin || 'No GSTIN'}</small>
+                  <b>{c.title}</b>
+                  <small>{c.subtitle}</small>
                 </span>
                 <span className="gres-arrow">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
                 </span>
               </button>
             ))}
+            {vaultSearchLoading && <div className="gres-status"><span className="spin" />Searching client vaults…</div>}
+            {!vaultSearchLoading && !results.length && !vaultSearchError && <div className="gres-status">No matching workspace items.</div>}
+            {vaultSearchError && <div className="gres-status error">{vaultSearchError}</div>}
           </div>
         )}
       </div>

@@ -260,6 +260,50 @@ function listClientVaultTree(clientRoot, maxEntries = 5000) {
   return walk(root);
 }
 
+function searchClientVaultFiles(clientRoots, query, maxEntries = 3000, maxResults = 12) {
+  const clientsRoot = path.resolve(getVaultBaseDir(), 'clients');
+  const term = String(query || '').trim().toLocaleLowerCase();
+  const results = [];
+  let scanned = 0;
+
+  for (const client of clientRoots) {
+    const root = path.resolve(client.root);
+    if (!root.startsWith(`${clientsRoot}${path.sep}`) || !fs.existsSync(root)) continue;
+    const rootStat = fs.lstatSync(root);
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) continue;
+
+    function walk(dir, depth = 0) {
+      if (depth > 8 || scanned >= maxEntries || results.length >= maxResults) return;
+      const entries = fs.readdirSync(dir, { withFileTypes: true })
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      for (const entry of entries) {
+        if (scanned >= maxEntries || results.length >= maxResults) return;
+        if (entry.isSymbolicLink()) continue;
+        const fullPath = path.join(dir, entry.name);
+        const stat = fs.lstatSync(fullPath);
+        scanned += 1;
+        if (entry.isDirectory()) {
+          walk(fullPath, depth + 1);
+        } else if (entry.isFile() && entry.name.toLocaleLowerCase().includes(term)) {
+          results.push({
+            clientId: client.id,
+            clientName: client.name,
+            fileName: entry.name,
+            relativePath: path.relative(root, fullPath).split(path.sep).join('/'),
+            size: stat.size,
+            modifiedAt: stat.mtime.toISOString()
+          });
+        }
+      }
+    }
+
+    walk(root);
+    if (scanned >= maxEntries || results.length >= maxResults) break;
+  }
+
+  return results;
+}
+
 /**
  * Delete a file from the vault (use with caution — irreversible)
  */
@@ -278,6 +322,14 @@ function deleteVaultFile(vaultPath) {
  * client's configured local folder.
  */
 function deleteClientVaultFile(clientRoot, relativePath) {
+  const target = resolveClientVaultFile(clientRoot, relativePath);
+  if (!target) return false;
+  fs.unlinkSync(target);
+  console.log(`[Vault] Deleted client file: ${target}`);
+  return true;
+}
+
+function resolveClientVaultFile(clientRoot, relativePath) {
   const root = path.resolve(clientRoot);
   const vaultClientsRoot = path.resolve(getVaultBaseDir(), 'clients');
   const requestedPath = String(relativePath || '');
@@ -287,18 +339,38 @@ function deleteClientVaultFile(clientRoot, relativePath) {
 
   const target = path.resolve(root, requestedPath);
   if (!root.startsWith(`${vaultClientsRoot}${path.sep}`) || !target.startsWith(`${root}${path.sep}`)) {
-    throw new Error('Refused to delete a file outside the client vault.');
+    throw new Error('Refused to access a file outside the client vault.');
   }
-  if (!fs.existsSync(target)) return false;
-
-  const stat = fs.lstatSync(target);
-  if (!stat.isFile() || stat.isSymbolicLink()) {
-    throw new Error('Only files stored directly in the local vault can be deleted.');
+  let rootStat;
+  try {
+    rootStat = fs.lstatSync(root);
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
   }
-
-  fs.unlinkSync(target);
-  console.log(`[Vault] Deleted client file: ${target}`);
-  return true;
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error('Refused to access an invalid client vault.');
+  }
+  const relativeTarget = path.relative(root, target);
+  let current = root;
+  const segments = relativeTarget.split(path.sep);
+  let stat;
+  for (let index = 0; index < segments.length; index += 1) {
+    current = path.join(current, segments[index]);
+    try {
+      stat = fs.lstatSync(current);
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
+    if (stat.isSymbolicLink() || (index < segments.length - 1 && !stat.isDirectory())) {
+      throw new Error('Refused to access a file through an invalid vault path.');
+    }
+  }
+  if (!stat || !stat.isFile()) {
+    throw new Error('Only regular files stored in the local vault can be accessed.');
+  }
+  return target;
 }
 
 module.exports = {
@@ -313,7 +385,9 @@ module.exports = {
   vaultFileExists,
   listClientVaultFiles,
   listClientVaultTree,
+  searchClientVaultFiles,
   deleteVaultFile,
+  resolveClientVaultFile,
   deleteClientVaultFile,
   getVaultBaseDir,
   getVaultUsage,

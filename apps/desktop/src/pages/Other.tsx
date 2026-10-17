@@ -1,8 +1,8 @@
 import React from 'react';
 import { Icon } from '../components/Icon';
 import { useAppState, useDispatch } from '../state/store';
-import { allTasks, missing, pendingBill } from '../lib/domain';
-import { fDate, money, sum } from '../lib/format';
+import { allTasks, missing } from '../lib/domain';
+import { money, sum } from '../lib/format';
 import { createClient, deleteClient, updateClient } from '../lib/api';
 import { FilingTypePicker } from '../components/FilingTypePicker';
 
@@ -166,56 +166,6 @@ export function ClientsPage() {
           </div>
         </div>
       </div>}
-    </>
-  );
-}
-
-export function BillingPage() {
-  const s = useAppState();
-  const dispatch = useDispatch();
-  const FX: Record<string, number> = { INR: 1, AED: 22.8, GBP: 108 };
-  const inr = (b: (typeof s.bills)[0]) => {
-    const client = s.clients.find((c) => c.id === b.client);
-    return b.amt * (client ? FX[client.cur] : 1);
-  };
-  const paid = sum(s.bills.filter((b) => b.status === 'paid'), inr);
-  const pend = sum(s.bills.filter((b) => b.status === 'pending'), inr);
-  const ov = sum(s.bills.filter((b) => b.status === 'overdue'), inr);
-  const L = (v: number) => `₹${(v / 1e5).toFixed(2)} L`;
-
-  return (
-    <>
-      <div className="ph"><div><h1>Billing &amp; fees</h1><p>Your own fee invoices, who has paid, and who needs a nudge.</p></div></div>
-      <div className="grid g4">
-        <div className="card kpi"><span>Collected</span><b style={{ color: 'var(--green)' }}>{L(paid)}</b></div>
-        <div className="card kpi"><span>Pending</span><b>{L(pend)}</b></div>
-        <div className="card kpi"><span>Overdue</span><b style={{ color: 'var(--red)' }}>{L(ov)}</b></div>
-        <div className="card kpi"><span>Collection rate</span><b>{Math.round((paid / (paid + pend + ov)) * 100)}%</b></div>
-      </div>
-      <div className="card" style={{ marginTop: 14 }}>
-        <div style={{ overflow: 'auto' }}>
-          <table>
-            <thead><tr><th>Invoice</th><th>Client</th><th>For</th><th>Amount</th><th>Due</th><th>Status</th><th /></tr></thead>
-            <tbody>
-              {s.bills.slice().sort((a, b) => a.due.getTime() - b.due.getTime()).map((b) => {
-                const c = s.clients.find((x) => x.id === b.client);
-                if (!c) return null;
-                return (
-                  <tr key={b.no}>
-                    <td className="mono">{b.no}</td>
-                    <td><div className="row"><span className="av" style={{ ['--t' as any]: c.tone }}>{c.short.slice(0, 2).toUpperCase()}</span>{c.short}</div></td>
-                    <td>{b.desc}</td>
-                    <td><b>{money(b.amt, c.cur)}</b></td>
-                    <td>{fDate(b.due)}</td>
-                    <td>{b.status === 'paid' ? <span className="chip green">Paid</span> : b.status === 'overdue' ? <span className="chip red">Overdue</span> : <span className="chip amber">Pending</span>}</td>
-                    <td style={{ textAlign: 'right' }}>{b.status !== 'paid' && <button className="btn sm gh" onClick={() => dispatch({ type: 'BILL_PAID', no: b.no })}>Mark paid</button>}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </>
   );
 }

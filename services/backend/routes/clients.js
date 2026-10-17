@@ -7,7 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
-const { ensureClientVaultStructure, listClientVaultTree, getClientVaultRoot, deleteClientVaultFile } = require('../vault/vaultManager');
+const { ensureClientVaultStructure, listClientVaultTree, getClientVaultRoot, deleteClientVaultFile, resolveClientVaultFile, searchClientVaultFiles } = require('../vault/vaultManager');
 
 // --- In-Memory Fallback Data (used when Supabase is not connected) ---
 let fallbackClients = [
@@ -56,6 +56,44 @@ function storeClientsCache(userId, clients) {
   clientsCache.delete(userId);
   clientsCache.set(userId, clients);
 }
+
+// GET /api/v1/clients/search/files — search filenames in this user's vaults
+router.get('/search/files', async (req, res) => {
+  try {
+    const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (query.length < 2 || query.length > 100) {
+      return res.status(400).json({ success: false, message: 'Search text must be between 2 and 100 characters.' });
+    }
+
+    let clients;
+    if (isConnected) {
+      const cachedClients = clientsCache.get(req.user.id);
+      if (cachedClients) {
+        clients = cachedClients.map(({ id, name }) => ({ id, name }));
+      } else {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('id, name')
+          .eq('user_id', req.user.id)
+          .order('created_at', { ascending: false })
+          .limit(500);
+        if (error) throw error;
+        clients = data || [];
+      }
+    } else {
+      clients = fallbackClients.map(({ id, name }) => ({ id, name }));
+    }
+
+    const data = searchClientVaultFiles(
+      clients.map(client => ({ ...client, root: getClientVaultRoot(client.name) })),
+      query
+    );
+    return res.json({ success: true, source: isConnected ? 'supabase' : 'demo', data });
+  } catch (err) {
+    console.error('[Clients] Vault filename search failed:', err);
+    return res.status(500).json({ success: false, message: 'The local vault could not be searched.' });
+  }
+});
 
 // GET /api/v1/clients — List all clients
 router.get('/', async (req, res) => {
@@ -263,6 +301,40 @@ router.get('/:id/vault-summary', async (req, res) => {
     if (files.length > 0) summary[cat] = files;
   }
   res.json({ success: true, clientId: req.params.id, vaultSummary: summary });
+});
+
+// GET /api/v1/clients/:id/vault-file — open one regular file from this client's vault
+router.get('/:id/vault-file', async (req, res) => {
+  try {
+    const relativePath = typeof req.query.relativePath === 'string' ? req.query.relativePath.trim() : '';
+    let client;
+    if (isConnected) {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, name')
+        .eq('id', req.params.id)
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+      if (error) throw error;
+      client = data;
+    } else {
+      client = fallbackClients.find(item => item.id === req.params.id);
+    }
+    if (!client) return res.status(404).json({ success: false, message: 'Client not found.' });
+
+    const target = resolveClientVaultFile(getClientVaultRoot(client.name), relativePath);
+    if (!target) return res.status(404).json({ success: false, message: 'Vault file not found.' });
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.sendFile(target, error => {
+      if (error && !res.headersSent) {
+        console.error(`[Clients] Could not serve vault file for ${req.params.id}:`, error);
+        res.status(500).json({ success: false, message: 'The vault file could not be opened.' });
+      }
+    });
+  } catch (err) {
+    console.error(`[Clients] Vault file access failed for ${req.params.id}:`, err);
+    return res.status(400).json({ success: false, message: 'The requested vault file could not be opened.' });
+  }
 });
 
 // DELETE /api/v1/clients/:id/vault-file — permanently remove one local file

@@ -131,6 +131,6 @@ export type Page =
   | 'deadlines'
   | 'generate'
   | 'clients'
-  | 'billing'
+  | 'subscriptions'
   | 'profile'
   | 'settings';

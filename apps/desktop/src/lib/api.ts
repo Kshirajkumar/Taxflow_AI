@@ -524,6 +524,62 @@ export interface VaultTreeResponse {
   entries: VaultTreeEntry[];
 }
 
+export interface VaultFileSearchResult {
+  clientId: string;
+  clientName: string;
+  fileName: string;
+  relativePath: string;
+  size: number;
+  modifiedAt: string;
+}
+
+export interface TelegramSearchResult {
+  id: string;
+  clientId: string;
+  clientName: string;
+  body: string;
+  createdAt: string;
+}
+
+export async function searchVaultFiles(query: string, signal?: AbortSignal): Promise<VaultFileSearchResult[]> {
+  const params = new URLSearchParams({ q: query });
+  const res = await fetch(`${API_BASE_URL}/clients/search/files?${params}`, { headers: authHeaders(), signal });
+  let json: any;
+  try { json = await res.json(); } catch { throw new Error(`The vault search returned an invalid response (HTTP ${res.status}).`); }
+  if (!res.ok || !json.success) throw new Error(json.message || `Could not search vault files (HTTP ${res.status}).`);
+  return Array.isArray(json.data) ? json.data : [];
+}
+
+export async function searchTelegramMessages(query: string, signal?: AbortSignal): Promise<TelegramSearchResult[]> {
+  const params = new URLSearchParams({ q: query });
+  const res = await fetch(`${API_BASE_URL}/telegram/search?${params}`, { headers: authHeaders(), signal });
+  let json: any;
+  try { json = await res.json(); } catch { throw new Error(`Telegram search returned an invalid response (HTTP ${res.status}).`); }
+  if (!res.ok || !json.success) throw new Error(json.message || `Could not search Telegram messages (HTTP ${res.status}).`);
+  return Array.isArray(json.data) ? json.data : [];
+}
+
+export async function fetchVaultFile(clientId: string, relativePath: string): Promise<Blob> {
+  const params = new URLSearchParams({ relativePath });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/clients/${encodeURIComponent(clientId)}/vault-file?${params}`, {
+      headers: authHeaders(),
+    });
+  } catch {
+    throw new Error('The backend is unavailable. The vault file could not be opened.');
+  }
+  if (!res.ok) {
+    let message = `Could not open the vault file (HTTP ${res.status}).`;
+    try {
+      const json = await res.json();
+      message = json.message || message;
+    } catch { /* Keep the status-based error. */ }
+    throw new Error(message);
+  }
+  return res.blob();
+}
+
 export async function fetchVaultTree(clientId: string): Promise<VaultTreeResponse> {
   const headers = authHeaders();
   const res = await fetch(`${API_BASE_URL}/clients/${encodeURIComponent(clientId)}/vault-tree`, { headers });

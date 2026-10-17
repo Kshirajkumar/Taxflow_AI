@@ -248,6 +248,50 @@ router.post('/clients/:clientId/link', requireAuth, async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
 });
 
+router.get('/search', requireAuth, async (req, res) => {
+  try {
+    const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (query.length < 2 || query.length > 100) {
+      return res.status(400).json({ success: false, message: 'Search text must be between 2 and 100 characters.' });
+    }
+    if (!isConnected) return res.json({ success: true, source: 'demo', data: [] });
+
+    const { data: clients, error: clientsError } = await supabase
+      .from('clients')
+      .select('id, name')
+      .eq('user_id', req.user.id)
+      .limit(1000);
+    if (clientsError) throw clientsError;
+    const clientNames = new Map((clients || []).map((client) => [client.id, client.name]));
+    if (!clientNames.size) return res.json({ success: true, source: 'supabase', data: [] });
+
+    const escapedQuery = query.replace(/[\\%_]/g, '\\$&');
+    const { data: messages, error } = await supabase
+      .from('telegram_messages')
+      .select('id, client_id, body, created_at')
+      .in('client_id', Array.from(clientNames.keys()))
+      .ilike('body', `%${escapedQuery}%`)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (error) throw error;
+
+    return res.json({
+      success: true,
+      source: 'supabase',
+      data: (messages || []).map((message) => ({
+        id: message.id,
+        clientId: message.client_id,
+        clientName: clientNames.get(message.client_id),
+        body: message.body || '',
+        createdAt: message.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('[Telegram] Global message search failed:', error);
+    return res.status(500).json({ success: false, message: 'Telegram conversations could not be searched.' });
+  }
+});
+
 router.get('/unread', requireAuth, async (req, res) => {
   try {
     if (!isConnected) return res.json({ success: true, counts: {}, total: 0 });

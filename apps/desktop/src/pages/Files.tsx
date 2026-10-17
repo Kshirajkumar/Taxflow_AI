@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Icon } from '../components/Icon';
 import { useAppState, useDispatch } from '../state/store';
-import { deleteVaultFile, fetchVaultTree, uploadToLocalVault, type VaultTreeEntry } from '../lib/api';
+import { deleteVaultFile, fetchVaultFile, fetchVaultTree, uploadToLocalVault, type VaultTreeEntry } from '../lib/api';
 import { fDT } from '../lib/format';
 
 function formatBytes(bytes = 0) {
@@ -24,6 +24,18 @@ function findEntryAtPath(entries: VaultTreeEntry[], target: string, prefix = '')
     if (path === target) return entry;
     if (entry.type === 'folder') {
       const match = findEntryAtPath(entry.children || [], target, path);
+      if (match) return match;
+    }
+  }
+  return null;
+}
+
+function findFileByName(entries: VaultTreeEntry[], fileName: string, prefix = ''): { entry: VaultTreeEntry; path: string } | null {
+  for (const entry of entries) {
+    const path = `${prefix}/${entry.name}`;
+    if (entry.type === 'file' && entry.name.toLocaleLowerCase() === fileName.toLocaleLowerCase()) return { entry, path };
+    if (entry.type === 'folder') {
+      const match = findFileByName(entry.children || [], fileName, path);
       if (match) return match;
     }
   }
@@ -105,9 +117,25 @@ export function FilesPage() {
   const [uploadMessageKind, setUploadMessageKind] = useState<'success' | 'warning' | 'error' | ''>('');
   const [pendingDelete, setPendingDelete] = useState<{ entry: VaultTreeEntry; path: string } | null>(null);
   const [deletingFile, setDeletingFile] = useState(false);
+  const [openingFile, setOpeningFile] = useState(false);
+  const [loadedClientId, setLoadedClientId] = useState('');
+  const [pendingOpenFile, setPendingOpenFile] = useState<{ clientId: string; fileName: string; relativePath?: string } | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const client = s.clients.find(item => item.id === clientId) || s.clients[0];
+
+  useEffect(() => {
+    const onOpenFile = (event: Event) => {
+      const detail = (event as CustomEvent<{ clientId: string; fileName: string; relativePath?: string }>).detail;
+      if (!detail?.clientId || !detail.fileName || !s.clients.some(clientItem => clientItem.id === detail.clientId)) return;
+      setClientId(detail.clientId);
+      setSelected(null);
+      setQuery(detail.fileName);
+      setPendingOpenFile(detail);
+    };
+    window.addEventListener('taxflow:open-vault-file', onOpenFile);
+    return () => window.removeEventListener('taxflow:open-vault-file', onOpenFile);
+  }, [s.clients]);
 
   const fallbackTree = useMemo<VaultTreeEntry[]>(() => {
     if (!client) return [];
@@ -146,7 +174,7 @@ export function FilesPage() {
     fetchVaultTree(clientId).then(result => {
       if (cancelled) return;
       const tree = addRoot(result.entries || []);
-      setEntries(tree); setFallback(false); setExpanded(new Set(folderPaths(tree)));
+      setEntries(tree); setFallback(false); setLoadedClientId(clientId); setExpanded(new Set(folderPaths(tree)));
       if (selected?.path) {
         const refreshedSelection = findEntryAtPath(tree, selected.path);
         setSelected(refreshedSelection ? { entry: refreshedSelection, path: selected.path } : null);
@@ -154,7 +182,7 @@ export function FilesPage() {
     }).catch(err => {
       if (cancelled) return;
       const tree = addRoot(fallbackTree);
-      setEntries(tree); setFallback(true); setExpanded(new Set(folderPaths(tree)));
+      setEntries(tree); setFallback(true); setLoadedClientId(clientId); setExpanded(new Set(folderPaths(tree)));
       if (selected?.path) {
         const refreshedSelection = findEntryAtPath(tree, selected.path);
         setSelected(refreshedSelection ? { entry: refreshedSelection, path: selected.path } : null);
@@ -163,6 +191,26 @@ export function FilesPage() {
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [clientId, refresh]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!pendingOpenFile || loadedClientId !== pendingOpenFile.clientId || !client) return;
+    const requestedPath = pendingOpenFile.relativePath
+      ? `/${client.name}/${pendingOpenFile.relativePath.replace(/[\\/]+/g, '/')}`
+      : '';
+    const match = requestedPath
+      ? (() => {
+          const entry = findEntryAtPath(entries, requestedPath);
+          return entry ? { entry, path: requestedPath } : null;
+        })()
+      : findFileByName(entries, pendingOpenFile.fileName);
+    if (match) {
+      setSelected(match);
+    } else {
+      setUploadMessageKind('error');
+      setUploadMessage('This file is no longer available in the client vault. Refresh the folder and search again.');
+    }
+    setPendingOpenFile(null);
+  }, [pendingOpenFile, loadedClientId, client, entries]);
 
   useEffect(() => { if (fallback && !loading) { const tree = addRoot(fallbackTree); setEntries(tree); setExpanded(new Set(folderPaths(tree))); } }, [fallbackTree, fallback, loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -281,6 +329,38 @@ export function FilesPage() {
     }
   }
 
+  async function openSelectedFile() {
+    if (!client || selected?.entry.type !== 'file' || openingFile) return;
+    const rootPrefix = `/${client.name}/`;
+    const relativePath = selected.path.startsWith(rootPrefix) ? selected.path.slice(rootPrefix.length) : '';
+    if (!relativePath) {
+      setUploadMessageKind('error');
+      setUploadMessage('This file path could not be verified. It was not opened.');
+      return;
+    }
+
+    const preview = window.open('about:blank', '_blank');
+    if (!preview) {
+      setUploadMessageKind('error');
+      setUploadMessage('Allow pop-ups for TaxFlow.AI to open this file.');
+      return;
+    }
+
+    setOpeningFile(true);
+    try {
+      const file = await fetchVaultFile(client.id, relativePath);
+      const url = URL.createObjectURL(file);
+      preview.location.href = url;
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      preview.close();
+      setUploadMessageKind('error');
+      setUploadMessage(error instanceof Error ? error.message : 'The vault file could not be opened.');
+    } finally {
+      setOpeningFile(false);
+    }
+  }
+
   if (!client) {
     return <div className="vault-page">
       <div className="ph vault-page-head"><div><div className="eyebrow">LOCAL VAULT</div><h1>Client folders</h1><p>Your private document workspace is ready when you add your first client.</p></div><div className="vault-health"><span className="health-dot ok" /><span>Vault ready</span></div></div>
@@ -295,6 +375,7 @@ export function FilesPage() {
   return <div className="vault-page">
     <div className="ph vault-page-head"><div><div className="eyebrow">LOCAL VAULT</div><h1>Client folders</h1><p>Browse the selected client folder and inspect its local documents.</p></div><div className="vault-health"><span className={`health-dot ${error ? 'warn' : 'ok'}`} /><span>{error ? 'Limited access' : 'Vault ready'}</span></div></div>
     <div className="vault-toolbar"><div className={`vault-client-select ${clientMenuOpen ? 'menu-open' : ''}`} title="Select client" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setClientMenuOpen(false); }}><button className="vault-client-name" onClick={() => s.clients.length && setClientMenuOpen(value => !value)} disabled={!s.clients.length} aria-haspopup="listbox" aria-expanded={clientMenuOpen}>{client?.name || 'No clients'}</button><span className="vault-client-arrow" aria-hidden="true" />{clientMenuOpen && s.clients.length > 0 && <div className="vault-client-menu" role="listbox">{s.clients.map(item => <button key={item.id} className={`vault-client-option ${item.id === client?.id ? 'active' : ''}`} role="option" aria-selected={item.id === client?.id} onClick={() => { setClientId(item.id); setSelected(null); setUploadMessage(''); setClientMenuOpen(false); }}>{item.name}{item.id === client?.id && <Icon name="check" size={13} />}</button>)}</div>}</div><div className="vault-path-label"><Icon name="folder" size={15} /><span>{pathLabel}</span></div><label className="vault-search"><Icon name="search" size={15} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search this vault" aria-label="Search this vault" />{query && <button onClick={() => setQuery('')} aria-label="Clear search"><Icon name="x" size={13} /></button>}</label></div>
+    {selected?.entry.type === 'file' && <div className="vault-global-open"><span className="mut">Selected file: <b>{selected.entry.name}</b></span><button className="btn pri" onClick={() => void openSelectedFile()} disabled={openingFile}><Icon name="file" size={14} />{openingFile ? 'Opening…' : 'Open file'}</button></div>}
     <div className="vault-two-pane">
       <section className="vault-tree-panel card"><div className="vault-panel-head"><div><span className="eyebrow">FOLDER TREE</span><h2>{client?.name || 'No client selected'}</h2></div><button className="btn ghost" onClick={() => setRefresh(value => value + 1)} disabled={loading || !clientId}><Icon name="refresh" size={14} />Refresh</button></div>{error && <div className="vault-notice"><Icon name="bell" size={15} /><span>{error}</span></div>}<div className="vault-tree-scroll">{loading ? <div className="vault-loading"><span className="spin" /><span>Reading vault…</span></div> : visibleEntries.length ? visibleEntries.map(entry => <TreeNode key={entry.name} entry={entry} depth={0} path={`/${entry.name}`} expanded={expanded} selectedPath={selected?.path || ''} toggle={toggle} select={(entry, path) => setSelected({ entry, path })} />) : <div className="vault-empty"><span className="vault-empty-icon"><Icon name="folder" size={22} /></span><b>{query ? 'No matching items' : 'This vault is empty'}</b><span>{query ? 'Try a different search.' : 'Files will appear here when added.'}</span></div>}</div></section>
       <section className="vault-contents-panel card"><div className="vault-panel-head"><div><span className="eyebrow">SELECTED FOLDER</span><h2>{selected?.entry.name || client?.name || 'Folder contents'}</h2><small>{selected?.entry.type === 'folder' ? `${folderCount} folder${folderCount === 1 ? '' : 's'} · ${fileCount} file${fileCount === 1 ? '' : 's'}` : 'Select a folder in the tree'}</small></div><div className="vault-upload-action"><input ref={fileInputRef} type="file" className="vault-file-input" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.csv" onChange={uploadSelectedFile} /><button className="btn pri" onClick={() => fileInputRef.current?.click()} disabled={!canUpload} title={uploadCategory ? `Upload to ${selectedFolderName}` : 'Select the Raw or Extracted folder first'}><Icon name="upload" size={14} />{uploading ? 'Uploading…' : 'Upload file'}</button></div></div>{uploading && <div className="vault-uploading-state"><span className="vault-upload-orbit"><Icon name="upload" size={17} /></span><div><b>Uploading securely to {selectedFolderName}</b><small>Saving the file to the Local Vault and refreshing this folder…</small></div></div>}{uploadMessage && <div className={`vault-upload-message ${uploadMessageKind}`}><Icon name={uploadMessageKind === 'success' ? 'check' : uploadMessageKind === 'error' ? 'x' : 'bell'} size={14} /><span>{uploadMessage}</span></div>}{selected?.entry.type === 'file' ? <div className="vault-file-preview"><div className={fileClass(selected.entry.name)}><Icon name="file" size={28} /></div><h3>{selected.entry.name}</h3><div className="vault-detail-path">{selected.path}</div><div className="kv"><span>Type</span><b>{extension(selected.entry.name).toUpperCase()} file</b><span>Size</span><b>{formatBytes(selected.entry.size)}</b><span>Modified</span><b>{fDT(new Date(selected.entry.modifiedAt))}</b></div></div> : selected ? <div className="vault-contents"><div className="vault-current-path"><Icon name="folder" size={15} /><span>{selected.path}</span></div>{selectedChildren.length ? <div className="vault-file-grid">{selectedChildren.map(item => item.type === 'folder' ? <button className="vault-folder-card" key={item.name} onClick={() => setSelected({ entry: item, path: `${selected.path}/${item.name}` })}><span className="vault-folder-card-icon"><Icon name="folder" size={22} /></span><span><b>{item.name}</b><small>{item.children?.length || 0} items</small></span><Icon name="chev" size={14} /></button> : <FileCard key={item.name} item={item} onOpen={() => setSelected({ entry: item, path: `${selected.path}/${item.name}` })} onDelete={() => { setDeleteError(''); setPendingDelete({ entry: item, path: `${selected.path}/${item.name}` }); }} />)}</div> : <div className="vault-empty"><span className="vault-empty-icon"><Icon name="folder" size={22} /></span><b>This folder is empty</b><span>Files added to this folder will appear here.</span></div>}</div> : <div className="vault-overview"><div className="vault-overview-icon"><Icon name="folder" size={28}></Icon></div><b>Select a folder</b><span>Choose a folder from the tree to view everything inside it.</span></div>}</section>
