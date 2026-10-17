@@ -3246,6 +3246,37 @@ body.sidebar-collapsed.chat-hidden .shell {
 .ckl{gap:5px;margin-top:6px}
 .ckl .chip{padding:3px 7px;font-size:9.5px}
 #wa-thread{padding:14px 16px;gap:7px}
+.tg-conversation-skeleton{display:flex;flex:1;min-height:100%;flex-direction:column;justify-content:center;gap:15px;width:min(620px,100%);margin:0 auto;padding:18px 4px}
+.tg-skeleton-heading{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:5px;color:var(--tx3);font-size:11px;font-weight:600}
+.tg-skeleton-dot{width:7px;height:7px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 4px color-mix(in srgb,var(--blue) 13%,transparent);animation:tgSkeletonPulse 1.4s ease-in-out infinite}
+.tg-skeleton-message{display:flex;width:min(72%,360px);flex-direction:column;gap:7px;padding:12px 14px;border:1px solid var(--line);border-radius:13px;background:linear-gradient(145deg,var(--card2),color-mix(in srgb,var(--card) 88%,var(--blue) 12%));overflow:hidden}
+.tg-skeleton-message.incoming{align-self:flex-start;border-bottom-left-radius:4px}
+.tg-skeleton-message.outgoing{align-self:flex-end;border-color:color-mix(in srgb,var(--blue) 25%,var(--line));background:color-mix(in srgb,var(--blue) 10%,var(--card))}
+.tg-skeleton-message.short{width:min(55%,280px)}
+.tg-skeleton-message i{position:relative;display:block;width:84%;height:8px;overflow:hidden;border-radius:99px;background:color-mix(in srgb,var(--tx3) 18%,var(--panel))}
+.tg-skeleton-message i:nth-child(2){width:63%}
+.tg-skeleton-message i:nth-child(3){width:42%}
+.tg-skeleton-message i::after{position:absolute;inset:0;content:"";transform:translateX(-100%);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--tx) 13%,transparent),transparent);animation:tgSkeletonShimmer 1.5s ease-in-out infinite}
+.tg-unlinked-state,.tg-conversation-empty{display:flex;flex:1;min-height:100%;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:28px 20px;text-align:center}
+.tg-unlinked-art{position:relative;display:grid;width:74px;height:74px;place-items:center;margin-bottom:5px}
+.tg-unlinked-orbit{position:absolute;inset:4px;border:1px solid color-mix(in srgb,var(--blue) 24%,var(--line));border-radius:50%}
+.tg-unlinked-orbit.orbit-two{inset:12px;border-style:dashed;opacity:.75}
+.tg-unlinked-icon{display:grid;width:42px;height:42px;place-items:center;border:1px solid color-mix(in srgb,var(--blue) 34%,var(--line));border-radius:14px;background:linear-gradient(145deg,color-mix(in srgb,var(--blue) 18%,var(--card)),var(--card));color:var(--blue);box-shadow:0 8px 22px color-mix(in srgb,var(--blue) 14%,transparent)}
+.tg-unlinked-lock{position:absolute;right:0;bottom:3px;display:grid;width:23px;height:23px;place-items:center;border:2px solid var(--panel);border-radius:50%;background:color-mix(in srgb,var(--green) 17%,var(--card));color:var(--green)}
+.tg-unlinked-state .eyebrow{color:var(--blue);font-size:9px;letter-spacing:.13em}
+.tg-unlinked-state h3{font-size:14px}
+.tg-unlinked-state p,.tg-unlinked-state>small{max-width:390px;color:var(--tx3);font-size:11px;line-height:1.55}
+.tg-unlinked-state .btn{margin-top:3px}
+.tg-conversation-empty{gap:8px;color:var(--tx3)}
+.tg-conversation-empty>span{display:grid;width:42px;height:42px;place-items:center;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--blue)}
+.tg-conversation-empty>b{color:var(--tx);font-size:12px}
+.tg-conversation-empty>small{max-width:320px;font-size:10.5px;line-height:1.5}
+.tg-pending-client-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left}
+.tg-pending-client-notice>span{min-width:0}
+@keyframes tgSkeletonShimmer{to{transform:translateX(100%)}}
+@keyframes tgSkeletonPulse{50%{opacity:.55;transform:scale(.86)}}
+@media(prefers-reduced-motion:reduce){.tg-skeleton-dot,.tg-skeleton-message i::after{animation:none}}
+@media(max-width:650px){.tg-pending-client-notice{align-items:flex-start;flex-direction:column}}
 .msg{max-width:70%;padding:8px 11px 6px;font-size:12px;line-height:1.48}
 .msg .mt{font-size:9.5px}
 .dsep{font-size:10px;margin:4px 0}

@@ -62,6 +62,7 @@ export function WhatsAppPage() {
   const [sendingReminderId, setSendingReminderId] = useState('');
   const [reminderSendErrors, setReminderSendErrors] = useState<Record<string, string>>({});
   const [telegramMessages, setTelegramMessages] = useState<TelegramMessage[]>([]);
+  const [telegramConversationClientId, setTelegramConversationClientId] = useState('');
   const [telegramReady, setTelegramReady] = useState(false);
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [telegramBot, setTelegramBot] = useState('');
@@ -77,6 +78,7 @@ export function WhatsAppPage() {
   const [telegramRetry, setTelegramRetry] = useState(0);
   /** Text staged inline in the thread waiting for approval — NOT yet sent */
   const [pendingTelegramMsg, setPendingTelegramMsg] = useState('');
+  const [pendingTelegramClientId, setPendingTelegramClientId] = useState('');
   /** Whether the approval card is currently in inline-edit mode */
   const [isEditingPending, setIsEditingPending] = useState(false);
   /** Holds the in-progress edit text while editing mode is active */
@@ -94,8 +96,13 @@ export function WhatsAppPage() {
   const threadRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const c = s.clients.find((x) => x.id === s.ui.wa.client) || s.clients[0];
+  const pendingTelegramClient = s.clients.find((client) => client.id === pendingTelegramClientId);
+  const pendingTelegramForCurrentClient = !!pendingTelegramMsg && pendingTelegramClientId === c?.id;
+  const pendingTelegramForOtherClient = !!pendingTelegramMsg && !!pendingTelegramClientId && pendingTelegramClientId !== c?.id;
   const visibleClients = s.clients.filter((client) => client.name.toLocaleLowerCase().includes(clientSearch.trim().toLocaleLowerCase()));
   const thread = c ? (s.threads[c.id] || []).slice().sort((a, b) => a.at.getTime() - b.at.getTime()) : [];
+  const isTelegramConversationLoading = channel === 'telegram' && !!c && telegramConversationClientId !== c.id;
+  const isTelegramLinkedForCurrentClient = !!c && telegramConversationClientId === c.id && telegramLinked;
   const clientIds = s.clients.map((client) => client.id).join(',');
 
   const loadUnreadCounts = useCallback(async () => {
@@ -155,15 +162,43 @@ export function WhatsAppPage() {
   }, [thread.length, telegramMessages.length, s.ui.wa.tab]);
 
   useEffect(() => {
-    if (channel !== 'telegram' || !c) { setTelegramMessages([]); setTelegramLinked(false); return undefined; }
+    if (channel !== 'telegram' || !c) {
+      setTelegramMessages([]);
+      setTelegramLinked(false);
+      setTelegramConversationClientId('');
+      setTelegramLoading(false);
+      return undefined;
+    }
     let active = true;
     let loadingConversation = false;
+    setTelegramMessages([]);
+    setTelegramLinked(false);
+    setTelegramError('');
+    setTelegramInfo('');
+    setTelegramConversationClientId('');
     const load = async (showLoading = false) => {
       if (loadingConversation) return;
       loadingConversation = true;
       if (active && showLoading) setTelegramLoading(true);
-      try { const [status, conversation] = await Promise.all([fetchTelegramStatus(), fetchTelegramMessages(c.id)]); if (active) { setTelegramReady(status.connected); setTelegramLinked(conversation.linked); setTelegramBot(status.bot?.username || ''); setTelegramMessages((current) => mergeTelegramMessages(conversation.messages, current, c.id)); setTelegramError(''); } }
-      catch (error) { if (active) { setTelegramReady(false); setTelegramLinked(false); setTelegramError(error instanceof Error ? error.message : 'Telegram is unavailable.'); } }
+      try {
+        const [status, conversation] = await Promise.all([fetchTelegramStatus(), fetchTelegramMessages(c.id)]);
+        if (active) {
+          setTelegramReady(status.connected);
+          setTelegramLinked(conversation.linked);
+          setTelegramBot(status.bot?.username || '');
+          setTelegramMessages((current) => mergeTelegramMessages(conversation.messages, current, c.id));
+          setTelegramConversationClientId(c.id);
+          setTelegramError('');
+        }
+      }
+      catch (error) {
+        if (active) {
+          setTelegramReady(false);
+          setTelegramLinked(false);
+          setTelegramConversationClientId(c.id);
+          setTelegramError(error instanceof Error ? error.message : 'Telegram is unavailable.');
+        }
+      }
       finally { loadingConversation = false; if (active) setTelegramLoading(false); }
     };
     void load(true); const timer = window.setInterval(() => void load(), 4000); return () => { active = false; window.clearInterval(timer); };
@@ -240,8 +275,8 @@ export function WhatsAppPage() {
 
   function requestTelegramSend() {
     const text = input.trim();
-    if (!text || telegramSending || pendingTelegramMsg) return;
-    if (!telegramReady || !telegramLinked) {
+    if (!text || telegramSending || pendingTelegramMsg || !c) return;
+    if (!telegramReady || !isTelegramLinkedForCurrentClient || isTelegramConversationLoading) {
       setTelegramError('Telegram is not ready or this client is not linked. Please check the connection and try again.');
       return;
     }
@@ -250,11 +285,13 @@ export function WhatsAppPage() {
     setTelegramRequestId(crypto.randomUUID());
     setTelegramDraft(text);
     setPendingTelegramMsg(text);
+    setPendingTelegramClientId(c.id);
     setInput('');
   }
 
   async function confirmTelegramSend() {
-    if (!telegramDraft || telegramSending) return;
+    if (!telegramDraft || telegramSending || !c || pendingTelegramClientId !== c.id) return;
+    const targetClientId = pendingTelegramClientId;
     setTelegramSending(true);
     setTelegramError('');
     setTelegramInfo('Sending securely through Telegram…');
@@ -262,7 +299,7 @@ export function WhatsAppPage() {
       const requestId = telegramRequestId || crypto.randomUUID();
       const optimisticMessage: TelegramMessage = {
         id: `local-${requestId}`,
-        client_id: c.id,
+        client_id: targetClientId,
         provider_message_id: `taxflow:${requestId}`,
         direction: 'outbound',
         chat_id: '',
@@ -274,17 +311,19 @@ export function WhatsAppPage() {
       setTelegramMessages((current) => mergeTelegramMessages(
         [optimisticMessage],
         current,
-        c.id,
+        targetClientId,
       ));
       setPendingTelegramMsg('');
+      setPendingTelegramClientId('');
       setTelegramDraft('');
       setTelegramRequestId('');
       setIsEditingPending(false);
       setEditText('');
 
-      const sentMessage = await sendTelegramMessage(c.id, telegramDraft, requestId);
-      setTelegramMessages((current) => mergeTelegramMessages([sentMessage], current, c.id));
+      const sentMessage = await sendTelegramMessage(targetClientId, telegramDraft, requestId);
+      setTelegramMessages((current) => mergeTelegramMessages([sentMessage], current, targetClientId));
       setPendingTelegramMsg('');
+      setPendingTelegramClientId('');
       setTelegramDraft('');
       setTelegramRequestId('');
       setTelegramInfo('Message sent through Telegram.');
@@ -303,6 +342,7 @@ export function WhatsAppPage() {
           : message
       ));
       setPendingTelegramMsg('');
+      setPendingTelegramClientId('');
       setTelegramDraft('');
       setTelegramRequestId('');
       setIsEditingPending(false);
@@ -315,6 +355,7 @@ export function WhatsAppPage() {
 
   function cancelTelegramPending() {
     setPendingTelegramMsg('');
+    setPendingTelegramClientId('');
     setTelegramDraft('');
     setTelegramRequestId('');
     setTelegramError('');
@@ -442,8 +483,8 @@ export function WhatsAppPage() {
               <i className="sdot" style={{ margin: '0 2px 0 0' }} />
               {telegramLoading ? 'Checking Telegram…' : telegramReady ? `@${telegramBot}` : 'Telegram unavailable'}
             </span>
-            <span className={'chip wa-linked-status ' + (telegramLinked ? 'green' : 'amber')}>
-              {telegramLinked ? 'Client linked' : 'Client not linked'}
+            <span className={'chip wa-linked-status ' + (isTelegramConversationLoading ? 'amber' : isTelegramLinkedForCurrentClient ? 'green' : 'amber')}>
+              {isTelegramConversationLoading ? 'Loading chat…' : isTelegramLinkedForCurrentClient ? 'Client linked' : 'Client not linked'}
             </span>
             {totalUnreadAcrossClients > 0 && (
               <span className="chip wa-total-unread-pill" title={`${totalUnreadAcrossClients} unread message${totalUnreadAcrossClients > 1 ? 's' : ''} across all connected clients`}>
@@ -478,9 +519,9 @@ export function WhatsAppPage() {
           ))}
         </div>
         <span className="sp" />
-        {channel === 'telegram' && <button className="btn sm wa-connect-btn" onClick={() => void connectTelegram()} disabled={telegramLoading || telegramConnecting || !telegramReady}>
+        {channel === 'telegram' && <button className="btn sm wa-connect-btn" onClick={() => void connectTelegram()} disabled={telegramLoading || isTelegramConversationLoading || telegramConnecting || !telegramReady}>
           {telegramConnecting && <span className="spin" />}
-          {telegramConnecting ? 'Connecting…' : telegramLinked ? 'Reconnect client' : 'Connect client'}
+          {telegramConnecting ? 'Connecting…' : isTelegramLinkedForCurrentClient ? 'Reconnect client' : 'Connect client'}
         </button>}
         {!whatsAppReady && channel === 'whatsapp' && <small className="wa-config-note">Configure Meta API credentials on the backend.</small>}
       </div>
@@ -560,6 +601,15 @@ export function WhatsAppPage() {
               </div>
             </div>
             <div id="wa-thread" ref={threadRef}>
+              {channel === 'telegram' && isTelegramConversationLoading && (
+                <div className="tg-conversation-skeleton" role="status" aria-live="polite" aria-label={`Loading Telegram conversation with ${c.name}`}>
+                  <div className="tg-skeleton-heading"><span className="tg-skeleton-dot" /><span>Loading conversation history</span></div>
+                  <div className="tg-skeleton-message incoming"><i /><i /><i /></div>
+                  <div className="tg-skeleton-message outgoing"><i /><i /></div>
+                  <div className="tg-skeleton-message incoming short"><i /><i /></div>
+                  <div className="tg-skeleton-message outgoing short"><i /><i /><i /></div>
+                </div>
+              )}
               {channel === 'whatsapp' && (!whatsAppReady || whatsAppError) && (
                 <div className="empty whatsapp-state error">
                   <b>WhatsApp API is not connected</b>
@@ -570,7 +620,7 @@ export function WhatsAppPage() {
                   </div>
                 </div>
               )}
-              {channel === 'telegram' && telegramError && (
+              {channel === 'telegram' && telegramConversationClientId === c.id && telegramError && (
                 <div className="empty telegram-state error">
                   <b>Telegram action needs attention</b>
                   <span>{telegramError}</span>
@@ -582,8 +632,44 @@ export function WhatsAppPage() {
                   </div>
                 </div>
               )}
-              {channel === 'telegram' && telegramInfo && <div className="telegram-notice">{telegramInfo}</div>}
-              {channel === 'telegram' && telegramMessages.map((m) => {
+              {channel === 'telegram' && !isTelegramConversationLoading && telegramConversationClientId === c.id && !telegramError && !isTelegramLinkedForCurrentClient && (
+                <div className="tg-unlinked-state" role="status">
+                  <div className="tg-unlinked-art">
+                    <span className="tg-unlinked-orbit orbit-one" />
+                    <span className="tg-unlinked-orbit orbit-two" />
+                    <span className="tg-unlinked-icon"><Icon name="send" size={23} /></span>
+                    <span className="tg-unlinked-lock"><Icon name="lock" size={13} /></span>
+                  </div>
+                  <span className="eyebrow">PRIVATE CLIENT CONNECTION</span>
+                  <h3>{telegramReady ? `Connect ${c.short} to Telegram` : 'Telegram is unavailable'}</h3>
+                  <p>
+                    {telegramReady
+                      ? `Link ${c.name} with your Telegram bot to securely load this conversation and exchange messages here.`
+                      : 'The Telegram bot is not available right now. Check the backend connection and try again.'}
+                  </p>
+                  {telegramReady && (
+                    <button className="btn sm pri" onClick={() => void connectTelegram()} disabled={telegramConnecting}>
+                      {telegramConnecting ? <><span className="spin spin-light" />Creating secure link…</> : <><Icon name="link" size={13} />Connect client</>}
+                    </button>
+                  )}
+                  <small>Messages will appear in this conversation after the client completes the Telegram link.</small>
+                </div>
+              )}
+              {channel === 'telegram' && !isTelegramConversationLoading && isTelegramLinkedForCurrentClient && !telegramError && telegramMessages.length === 0 && !pendingTelegramForCurrentClient && (
+                <div className="tg-conversation-empty" role="status">
+                  <span><Icon name="chat" size={20} /></span>
+                  <b>No messages yet</b>
+                  <small>This Telegram conversation is connected. Send a message to start the conversation.</small>
+                </div>
+              )}
+              {channel === 'telegram' && pendingTelegramForOtherClient && pendingTelegramClient && (
+                <div className="telegram-notice tg-pending-client-notice">
+                  <span>A message for {pendingTelegramClient.short} is waiting for your approval.</span>
+                  <button className="btn sm" onClick={() => dispatch({ type: 'WA_CLIENT', id: pendingTelegramClient.id })}>Review message</button>
+                </div>
+              )}
+              {channel === 'telegram' && telegramConversationClientId === c.id && !isTelegramConversationLoading && telegramInfo && <div className="telegram-notice">{telegramInfo}</div>}
+              {channel === 'telegram' && isTelegramLinkedForCurrentClient && !isTelegramConversationLoading && telegramMessages.map((m) => {
                 const hasAttachment = m.message_type === 'document' || m.message_type === 'image';
                 const attachmentName = m.telegram_file_name || m.body;
                 return (
@@ -624,7 +710,7 @@ export function WhatsAppPage() {
                   </div>
                 );
               })}
-              {channel === 'telegram' && pendingTelegramMsg && (
+              {channel === 'telegram' && pendingTelegramForCurrentClient && (
                 <div className="tg-pending-group">
 
                   {/* ── Message bubble (muted while pending / editing) ── */}
@@ -793,7 +879,9 @@ export function WhatsAppPage() {
                 }}
                 placeholder={
                   channel === 'telegram'
-                    ? pendingTelegramMsg || isEditingPending
+                    ? pendingTelegramForOtherClient
+                      ? `Review the pending message for ${pendingTelegramClient?.short || 'another client'} first…`
+                      : pendingTelegramForCurrentClient || isEditingPending
                       ? isEditingPending
                         ? 'Finish editing the message above first…'
                         : 'Approve, edit, or discard the pending message first…'
@@ -806,7 +894,7 @@ export function WhatsAppPage() {
                 }
                 disabled={
                   channel === 'telegram'
-                    ? telegramSending || !!pendingTelegramMsg || isEditingPending
+                    ? telegramSending || telegramLoading || isTelegramConversationLoading || !!pendingTelegramMsg || isEditingPending
                     : whatsAppLoading || !whatsAppReady || whatsAppSending
                 }
                 aria-label="Message input"
@@ -817,7 +905,7 @@ export function WhatsAppPage() {
                 disabled={
                   !input.trim() ||
                   (channel === 'telegram'
-                    ? !telegramReady || !telegramLinked || telegramSending || telegramLoading || !!pendingTelegramMsg || isEditingPending
+                    ? !telegramReady || !isTelegramLinkedForCurrentClient || isTelegramConversationLoading || telegramSending || telegramLoading || !!pendingTelegramMsg || isEditingPending
                     : whatsAppLoading || !whatsAppReady || whatsAppSending)
                 }
                 aria-label="Send message"

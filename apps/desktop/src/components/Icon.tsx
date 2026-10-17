@@ -28,6 +28,8 @@ const PATHS: Record<string, string> = {
   pencil: '<path d="m4 20 4.5-1 10.8-10.8a2.1 2.1 0 0 0-3-3L5.5 16Z"/><path d="m14.5 6.5 3 3"/><path d="M4 20h5"/>',
   trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 15H6L5 6"/><path d="M10 11v6M14 11v6"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  lock: '<rect width="14" height="11" x="5" y="11" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/><path d="M12 15v3"/>',
 };
 
 export function Icon({ name, size = 16, className = 'ic' }: { name: string; size?: number; className?: string }) {
