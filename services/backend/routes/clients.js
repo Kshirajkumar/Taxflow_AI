@@ -324,6 +324,16 @@ router.get('/:id/vault-file', async (req, res) => {
 
     const target = resolveClientVaultFile(getClientVaultRoot(client.name), relativePath);
     if (!target) return res.status(404).json({ success: false, message: 'Vault file not found.' });
+    if (isConnected) {
+      const { data: document, error: documentError } = await supabase
+        .from('documents_metadata')
+        .select('id')
+        .eq('client_id', client.id)
+        .eq('vault_path', target)
+        .maybeSingle();
+      if (documentError) throw documentError;
+      if (!document) return res.status(404).json({ success: false, message: 'This file is not registered to the selected client.' });
+    }
     res.setHeader('Cache-Control', 'private, no-store');
     return res.sendFile(target, error => {
       if (error && !res.headersSent) {
