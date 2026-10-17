@@ -6,6 +6,6 @@ ALTER TABLE public.documents_metadata
 
 ALTER TABLE public.documents_metadata
   ADD CONSTRAINT documents_metadata_source_check
-  CHECK (source IN ('WhatsApp', 'Manual', 'Portal', 'Upload'));
+  CHECK (source IN ('WhatsApp', 'Telegram', 'Manual', 'Portal', 'Upload'));
 
 NOTIFY pgrst, 'reload schema';

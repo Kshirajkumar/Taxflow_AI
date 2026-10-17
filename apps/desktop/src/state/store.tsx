@@ -3,7 +3,7 @@ import type {
   Client, InvoiceDoc, VaultFile, ChatMsg, Reminder, FilingTask, Bill, CheckItem, LogEntry, Page,
 } from '../types';
 import {
-  CLIENTS, DOCS, FILES, TPL, REMINDERS, TASKS, BILLS, CHECKS, seedThreads, INITIAL_LOG,
+  DOCS, FILES, TPL, REMINDERS, TASKS, BILLS, CHECKS, seedThreads, INITIAL_LOG,
 } from '../data/seed';
 import { vnow, ago } from '../lib/format';
 import { nextTaskFor, pendingBill, missing } from '../lib/domain';
@@ -62,6 +62,35 @@ function getSavedSidebarCollapsed(): boolean {
   }
 }
 
+function clientCacheKey(userId: string): string {
+  return `taxflow_clients_${userId}`;
+}
+
+function getSavedClients(userId: string | undefined): Client[] {
+  if (!userId) return [];
+  try {
+    const raw = localStorage.getItem(clientCacheKey(userId));
+    if (!raw) return [];
+    const clients = JSON.parse(raw);
+    return Array.isArray(clients)
+      ? clients.filter((client): client is Client =>
+        client && typeof client.id === 'string' && typeof client.name === 'string' && Array.isArray(client.svc))
+      : [];
+  } catch (error) {
+    console.warn('Failed to read the cached client list.', error);
+    return [];
+  }
+}
+
+function saveClients(userId: string | undefined, clients: Client[]): void {
+  if (!userId) return;
+  try {
+    localStorage.setItem(clientCacheKey(userId), JSON.stringify(clients));
+  } catch (error) {
+    console.warn('Failed to cache the client list.', error);
+  }
+}
+
 type Action =
   | { type: 'GO'; page: Page }
   | { type: 'TOGGLE_THEME' }
@@ -103,6 +132,7 @@ type Action =
   | { type: 'BILL_PAID'; no: string }
   | { type: 'SETTING_TOGGLE'; key: keyof Settings }
   | { type: 'LOG'; entry: LogEntry }
+  | { type: 'API_CLIENTS_LOADED'; userId: string; clients: any[] }
   | { type: 'API_DATA_LOADED'; payload: any };
 
 function getSavedTheme(): 'dark' | 'light' {
@@ -122,7 +152,7 @@ const initialState: AppState = {
   chatOpen: true,
   sidebarCollapsed: getSavedSidebarCollapsed(),
   currentUser: getSavedUser(),
-  clients: CLIENTS,
+  clients: getSavedClients(getSavedUser()?.id),
   docs: DOCS,
   files: FILES,
   threads: seedThreads(),
@@ -144,6 +174,28 @@ const initialState: AppState = {
 
 let MID = 1000;
 
+function mapApiClients(apiClients: any[]): Client[] {
+  return apiClients.map((client: any) => ({
+    id: client.id,
+    name: client.name || '',
+    entityType: client.entity_type || '',
+    short: (client.name || 'CLI').substring(0, 3).toUpperCase(),
+    city: 'Local',
+    country: client.country_name || 'India',
+    countryId: client.country_id || undefined,
+    cur: (client.currency_code || 'INR') as any,
+    gstin: client.gstin || '',
+    pan: client.pan || '',
+    svc: Array.isArray(client.filing_types) && client.filing_types.length ? client.filing_types : ['GST', 'Income Tax'],
+    filingTypes: Array.isArray(client.filing_types) ? client.filing_types : [],
+    contact: client.email || '',
+    phone: client.phone || '',
+    fee: 5000,
+    tone: 'Professional',
+    alias: []
+  }));
+}
+
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'TOGGLE_SIDEBAR': {
@@ -160,6 +212,7 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         currentUser: action.user,
+        clients: state.currentUser?.id === action.user.id ? state.clients : getSavedClients(action.user.id),
         sessionStatus: 'active',
         log: [{ at: vnow(), ic: 'user', t: `Signed in as ${action.user.name}` }, ...state.log]
       };
@@ -186,18 +239,26 @@ function reducer(state: AppState, action: Action): AppState {
       } catch (e) { }
       return { ...state, currentUser: updatedUser };
     }
-    case 'ADD_CLIENT':
-      return { ...state, clients: [action.client, ...state.clients] };
-    case 'UPDATE_CLIENT':
-      return { ...state, clients: state.clients.map((client) => client.id === action.client.id ? action.client : client) };
+    case 'ADD_CLIENT': {
+      const clients = [action.client, ...state.clients];
+      saveClients(state.currentUser?.id, clients);
+      return { ...state, clients };
+    }
+    case 'UPDATE_CLIENT': {
+      const clients = state.clients.map((client) => client.id === action.client.id ? action.client : client);
+      saveClients(state.currentUser?.id, clients);
+      return { ...state, clients };
+    }
     case 'DELETE_CLIENT': {
       const checks = { ...state.checks };
       delete checks[action.id];
       const threads = { ...state.threads };
       delete threads[action.id];
+      const clients = state.clients.filter(client => client.id !== action.id);
+      saveClients(state.currentUser?.id, clients);
       return {
         ...state,
-        clients: state.clients.filter(client => client.id !== action.id),
+        clients,
         docs: state.docs.filter(doc => doc.client !== action.id),
         files: state.files.filter(file => file.client !== action.id),
         tasks: state.tasks.filter(task => task.client !== action.id),
@@ -210,6 +271,7 @@ function reducer(state: AppState, action: Action): AppState {
     case 'LOGOUT': {
       try {
         localStorage.removeItem('taxflow_session');
+        if (state.currentUser) localStorage.removeItem(clientCacheKey(state.currentUser.id));
       } catch (e) { }
       return {
         ...state,
@@ -353,29 +415,17 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, settings: { ...state.settings, [action.key]: !state.settings[action.key] } };
     case 'LOG':
       return { ...state, log: [action.entry, ...state.log] };
+    case 'API_CLIENTS_LOADED': {
+      if (state.currentUser?.id !== action.userId) return state;
+      const clients = mapApiClients(action.clients);
+      saveClients(action.userId, clients);
+      return { ...state, clients };
+    }
     case 'API_DATA_LOADED': {
       const { apiClients, apiDocs, apiMsgs, apiTasks } = action.payload;
 
-      // Map API Clients
-      const mappedClients = Array.isArray(apiClients) ? apiClients.map((c: any) => ({
-        id: c.id,
-        name: c.name || '',
-        entityType: c.entity_type || '',
-        short: (c.name || 'CLI').substring(0, 3).toUpperCase(),
-        city: 'Local',
-        country: c.country_name || 'India',
-        countryId: c.country_id || undefined,
-        cur: (c.currency_code || 'INR') as any,
-        gstin: c.gstin || '',
-        pan: c.pan || '',
-        svc: Array.isArray(c.filing_types) && c.filing_types.length ? c.filing_types : ['GST', 'Income Tax'],
-        filingTypes: Array.isArray(c.filing_types) ? c.filing_types : [],
-        contact: c.email || '',
-        phone: c.phone || '',
-        fee: 5000,
-        tone: 'Professional',
-        alias: []
-      })) : state.clients;
+      const mappedClients = Array.isArray(apiClients) ? mapApiClients(apiClients) : state.clients;
+      if (Array.isArray(apiClients)) saveClients(state.currentUser?.id, mappedClients);
 
       // Map Tasks
       const mappedTasks = apiTasks && apiTasks.length > 0 ? apiTasks.map((t: any) => ({
@@ -492,6 +542,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const rawSession = localStorage.getItem('taxflow_session');
         const savedSession = rawSession ? JSON.parse(rawSession) : null;
         if (!state.currentUser || !savedSession?.token) return;
+        const userId = state.currentUser.id;
+        const clientsRequest = fetchClients().catch((error) => {
+          console.error('Failed to load the client list.', error);
+          return null;
+        });
         if (savedSession?.token) {
           const sessionCheck = await apiGetMe();
           if (!sessionCheck.success || !sessionCheck.user) {
@@ -501,16 +556,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           dispatch({ type: 'LOGIN', user: sessionCheck.user, token: savedSession.token, refreshToken: savedSession.refreshToken });
         }
 
-        const [apiClients, apiDocs, apiMsgs, apiTasks] = await Promise.all([
-          fetchClients(),
+        const otherDataRequest = Promise.all([
           fetchDocuments(),
           fetchWhatsAppMessages(),
           fetchComplianceTasks()
         ]);
+        const apiClients = await clientsRequest;
+        if (apiClients) dispatch({ type: 'API_CLIENTS_LOADED', userId, clients: apiClients });
+
+        const [apiDocs, apiMsgs, apiTasks] = await otherDataRequest;
 
         dispatch({
           type: 'API_DATA_LOADED',
-          payload: { apiClients, apiDocs, apiMsgs, apiTasks }
+          payload: { apiDocs, apiMsgs, apiTasks }
         });
       } catch (err) {
         console.error("Failed to load API data", err);

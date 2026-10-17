@@ -18,6 +18,12 @@ create table if not exists public.telegram_messages (
   sender_user_id text,
   body text not null check (char_length(body) between 1 and 4096),
   message_type text not null default 'text',
+  telegram_file_id text,
+  telegram_file_name text,
+  mime_type text,
+  file_size bigint,
+  vault_file_ref uuid,
+  file_download_error text,
   delivery_status text not null default 'received',
   approved_by uuid references auth.users(id),
   approved_at timestamptz,
@@ -34,6 +40,12 @@ create index if not exists telegram_messages_client_created_idx on public.telegr
 alter table public.telegram_messages add column if not exists approved_by uuid references auth.users(id);
 alter table public.telegram_messages add column if not exists approved_at timestamptz;
 alter table public.telegram_messages add column if not exists provider_response_id text;
+alter table public.telegram_messages add column if not exists telegram_file_id text;
+alter table public.telegram_messages add column if not exists telegram_file_name text;
+alter table public.telegram_messages add column if not exists mime_type text;
+alter table public.telegram_messages add column if not exists file_size bigint;
+alter table public.telegram_messages add column if not exists vault_file_ref uuid;
+alter table public.telegram_messages add column if not exists file_download_error text;
 alter table public.telegram_messages drop constraint if exists telegram_messages_delivery_status_check;
 alter table public.telegram_messages add constraint telegram_messages_delivery_status_check check (delivery_status in ('received', 'queued', 'sent', 'failed'));
 

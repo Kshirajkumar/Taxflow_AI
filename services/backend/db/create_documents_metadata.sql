@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.documents_metadata (
   file_type           VARCHAR(30) NOT NULL CHECK (file_type IN ('PDF', 'PNG', 'JPG', 'JPEG', 'WEBP', 'XLS', 'XLSX', 'CSV', 'DOC', 'DOCX')),
   file_size_kb        NUMERIC(10,2),
   category            VARCHAR(50) NOT NULL CHECK (category IN ('GST', 'IncomeTax', 'Form16', 'BankStatement', 'Notice', 'TDS', 'Audit', 'General', 'Extracted')),
-  source              VARCHAR(20) NOT NULL DEFAULT 'Manual' CHECK (source IN ('WhatsApp', 'Manual', 'Portal', 'Upload')),
+  source              VARCHAR(20) NOT NULL DEFAULT 'Manual' CHECK (source IN ('WhatsApp', 'Telegram', 'Manual', 'Portal', 'Upload')),
   status              VARCHAR(30) NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Processing', 'Extracted', 'Verified', 'Rejected')),
   vault_path          TEXT NOT NULL,
   assessment_year     VARCHAR(10) DEFAULT '2026-27',
@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS public.documents_metadata (
   verified_by         VARCHAR(255),
   verified_at         TIMESTAMPTZ,
   whatsapp_message_id UUID,
+  telegram_message_id UUID,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -28,7 +29,7 @@ CREATE TABLE IF NOT EXISTS public.documents_metadata (
 -- WhatsApp/Manual/Portal-only source constraint.
 ALTER TABLE public.documents_metadata DROP CONSTRAINT IF EXISTS documents_metadata_source_check;
 ALTER TABLE public.documents_metadata ADD CONSTRAINT documents_metadata_source_check
-  CHECK (source IN ('WhatsApp', 'Manual', 'Portal', 'Upload'));
+  CHECK (source IN ('WhatsApp', 'Telegram', 'Manual', 'Portal', 'Upload'));
 
 CREATE INDEX IF NOT EXISTS idx_documents_metadata_client_id ON public.documents_metadata(client_id);
 CREATE INDEX IF NOT EXISTS idx_documents_metadata_status ON public.documents_metadata(status);

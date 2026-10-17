@@ -40,17 +40,48 @@ let fallbackClients = [
   }
 ];
 
+const CLIENT_CACHE_LIMIT = 100;
+const clientsCache = new Map();
+const clientsCacheVersions = new Map();
+
+function invalidateClientsCache(userId) {
+  clientsCache.delete(userId);
+  clientsCacheVersions.set(userId, (clientsCacheVersions.get(userId) || 0) + 1);
+}
+
+function storeClientsCache(userId, clients) {
+  if (!clientsCache.has(userId) && clientsCache.size >= CLIENT_CACHE_LIMIT) {
+    clientsCache.delete(clientsCache.keys().next().value);
+  }
+  clientsCache.delete(userId);
+  clientsCache.set(userId, clients);
+}
+
 // GET /api/v1/clients — List all clients
 router.get('/', async (req, res) => {
   try {
     if (isConnected) {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('*, supported_countries(country_name,currency_code)')
-        .eq('user_id', req.user.id)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return res.json({ success: true, count: data.length, source: 'supabase', data: data.map(client => ({ ...client, country_name: client.supported_countries?.country_name, currency_code: client.supported_countries?.currency_code })) });
+      const userId = req.user.id;
+      const cachedClients = clientsCache.get(userId);
+      if (cachedClients) {
+        return res.json({ success: true, count: cachedClients.length, source: 'supabase', data: cachedClients });
+      }
+      let cacheVersion;
+      let data;
+      do {
+        cacheVersion = clientsCacheVersions.get(userId) || 0;
+        const result = await supabase
+          .from('clients')
+          .select('*, supported_countries(country_name,currency_code)')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+        if (result.error) throw result.error;
+        data = result.data;
+      } while ((clientsCacheVersions.get(userId) || 0) !== cacheVersion);
+      const clients = data.map(client => ({ ...client, country_name: client.supported_countries?.country_name, currency_code: client.supported_countries?.currency_code }));
+      storeClientsCache(userId, clients);
+      clientsCacheVersions.delete(userId);
+      return res.json({ success: true, count: clients.length, source: 'supabase', data: clients });
     }
     res.json({ success: true, count: fallbackClients.length, source: 'demo', data: fallbackClients });
   } catch (err) {
@@ -111,6 +142,7 @@ router.post('/', async (req, res) => {
         console.error(`[Clients] Vault folder creation failed for ${data.id}:`, vaultError);
         vault = { created: false, warning: 'Client saved, but the local vault folder could not be created. Check the configured vault path and permissions.' };
       }
+      invalidateClientsCache(req.user.id);
       return res.status(201).json({ success: true, source: 'supabase', data: { ...data, country_name: data.supported_countries?.country_name, currency_code: data.supported_countries?.currency_code }, vault });
     }
 
@@ -152,6 +184,7 @@ router.patch('/:id', async (req, res) => {
       const { data, error } = await supabase
         .from('clients').update(updates).eq('id', req.params.id).eq('user_id', req.user.id).select('*, supported_countries(country_name,currency_code)').single();
       if (error) throw error;
+      invalidateClientsCache(req.user.id);
       return res.json({ success: true, source: 'supabase', data: { ...data, country_name: data.supported_countries?.country_name, currency_code: data.supported_countries?.currency_code } });
     }
     const idx = fallbackClients.findIndex(c => c.id === req.params.id);
@@ -191,6 +224,7 @@ router.delete('/:id', async (req, res) => {
         .eq('id', clientId)
         .eq('user_id', req.user.id);
       if (deleteError) throw deleteError;
+      invalidateClientsCache(req.user.id);
 
       let vaultWarning = null;
       try { deleteClientVault(existing.name); } catch (vaultError) {

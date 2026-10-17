@@ -8,6 +8,8 @@ import {
   fetchTelegramUnread,
   fetchTelegramPreviews,
   markTelegramClientRead,
+  downloadTelegramMessageFile,
+  fetchDocumentPreview,
   fetchWhatsAppStatus,
   sendWhatsAppManualMessage,
   type TelegramMessage,
@@ -29,6 +31,27 @@ function fillTpl(body: string, name: string) {
   return body.replace(/\{(\w+)\}/g, (_, k) => (k === 'name' ? name : k === 'period' ? 'August 2026' : k === 'due' ? '20 Sep 2026' : k === 'filing' ? 'GSTR-3B' : k === 'doc' ? 'bank statement' : '—'));
 }
 
+function mergeTelegramMessages(serverMessages: TelegramMessage[], currentMessages: TelegramMessage[], clientId: string): TelegramMessage[] {
+  const merged = new Map<string, TelegramMessage>();
+  const statusRank: Record<string, number> = { received: 0, queued: 1, sending: 2, failed: 3, sent: 4 };
+  for (const message of serverMessages) {
+    merged.set(message.provider_message_id || message.id, message);
+  }
+  for (const message of currentMessages) {
+    if (message.client_id !== clientId || !message.provider_message_id?.startsWith('taxflow:')) continue;
+    const key = message.provider_message_id;
+    const serverMessage = merged.get(key);
+    if (!serverMessage) {
+      merged.set(key, message);
+    } else if ((statusRank[message.delivery_status] || 0) > (statusRank[serverMessage.delivery_status] || 0)) {
+      merged.set(key, { ...message, ...serverMessage, delivery_status: message.delivery_status });
+    }
+  }
+  return Array.from(merged.values())
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .slice(-200);
+}
+
 export function WhatsAppPage() {
   const s = useAppState();
   const dispatch = useDispatch();
@@ -44,6 +67,8 @@ export function WhatsAppPage() {
   const [telegramLoading, setTelegramLoading] = useState(false);
   const [telegramConnecting, setTelegramConnecting] = useState(false);
   const [telegramSending, setTelegramSending] = useState(false);
+  const [openingTelegramFileId, setOpeningTelegramFileId] = useState('');
+  const [retryingTelegramFileId, setRetryingTelegramFileId] = useState('');
   const [telegramDraft, setTelegramDraft] = useState('');
   const [telegramRequestId, setTelegramRequestId] = useState('');
   const [telegramRetry, setTelegramRetry] = useState(0);
@@ -128,11 +153,14 @@ export function WhatsAppPage() {
   useEffect(() => {
     if (channel !== 'telegram' || !c) { setTelegramMessages([]); setTelegramLinked(false); return undefined; }
     let active = true;
+    let loadingConversation = false;
     const load = async (showLoading = false) => {
+      if (loadingConversation) return;
+      loadingConversation = true;
       if (active && showLoading) setTelegramLoading(true);
-      try { const [status, conversation] = await Promise.all([fetchTelegramStatus(), fetchTelegramMessages(c.id)]); if (active) { setTelegramReady(status.connected); setTelegramLinked(conversation.linked); setTelegramBot(status.bot?.username || ''); setTelegramMessages(conversation.messages); setTelegramError(''); } }
+      try { const [status, conversation] = await Promise.all([fetchTelegramStatus(), fetchTelegramMessages(c.id)]); if (active) { setTelegramReady(status.connected); setTelegramLinked(conversation.linked); setTelegramBot(status.bot?.username || ''); setTelegramMessages((current) => mergeTelegramMessages(conversation.messages, current, c.id)); setTelegramError(''); } }
       catch (error) { if (active) { setTelegramReady(false); setTelegramLinked(false); setTelegramError(error instanceof Error ? error.message : 'Telegram is unavailable.'); } }
-      finally { if (active) setTelegramLoading(false); }
+      finally { loadingConversation = false; if (active) setTelegramLoading(false); }
     };
     void load(true); const timer = window.setInterval(() => void load(), 4000); return () => { active = false; window.clearInterval(timer); };
   }, [channel, c?.id, telegramRetry]);
@@ -171,6 +199,42 @@ export function WhatsAppPage() {
     }
   }
 
+  async function openTelegramFile(message: TelegramMessage) {
+    if (!message.vault_file_ref || openingTelegramFileId) return;
+    const preview = window.open('', '_blank');
+    if (!preview) {
+      setTelegramError('Allow pop-ups for TaxFlow.AI to open this attachment.');
+      return;
+    }
+    setOpeningTelegramFileId(message.id);
+    setTelegramError('');
+    try {
+      const file = await fetchDocumentPreview(message.vault_file_ref);
+      const url = URL.createObjectURL(file);
+      preview.location.href = url;
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      preview.close();
+      setTelegramError(error instanceof Error ? error.message : 'Could not open this Telegram attachment.');
+    } finally {
+      setOpeningTelegramFileId('');
+    }
+  }
+
+  async function retryTelegramFile(message: TelegramMessage) {
+    if (!c || retryingTelegramFileId) return;
+    setRetryingTelegramFileId(message.id);
+    setTelegramError('');
+    try {
+      const updated = await downloadTelegramMessageFile(c.id, message.id);
+      setTelegramMessages((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch (error) {
+      setTelegramError(error instanceof Error ? error.message : 'Could not download this Telegram attachment.');
+    } finally {
+      setRetryingTelegramFileId('');
+    }
+  }
+
   function requestTelegramSend() {
     const text = input.trim();
     if (!text || telegramSending || pendingTelegramMsg) return;
@@ -192,7 +256,31 @@ export function WhatsAppPage() {
     setTelegramError('');
     setTelegramInfo('Sending securely through Telegram…');
     try {
-      await sendTelegramMessage(c.id, telegramDraft, telegramRequestId || crypto.randomUUID());
+      const requestId = telegramRequestId || crypto.randomUUID();
+      const optimisticMessage: TelegramMessage = {
+        id: `local-${requestId}`,
+        client_id: c.id,
+        provider_message_id: `taxflow:${requestId}`,
+        direction: 'outbound',
+        chat_id: '',
+        body: telegramDraft,
+        message_type: 'text',
+        delivery_status: 'sending',
+        created_at: new Date().toISOString(),
+      };
+      setTelegramMessages((current) => mergeTelegramMessages(
+        [optimisticMessage],
+        current,
+        c.id,
+      ));
+      setPendingTelegramMsg('');
+      setTelegramDraft('');
+      setTelegramRequestId('');
+      setIsEditingPending(false);
+      setEditText('');
+
+      const sentMessage = await sendTelegramMessage(c.id, telegramDraft, requestId);
+      setTelegramMessages((current) => mergeTelegramMessages([sentMessage], current, c.id));
       setPendingTelegramMsg('');
       setTelegramDraft('');
       setTelegramRequestId('');
@@ -200,19 +288,22 @@ export function WhatsAppPage() {
       setTelegramSending(false);
 
       try {
-        const conversation = await fetchTelegramMessages(c.id);
-        setTelegramLinked(conversation.linked);
-        setTelegramMessages(conversation.messages);
-        try {
-          setTelegramPreviews(await fetchTelegramPreviews());
-        } catch (error) {
-          console.warn('Failed to refresh Telegram preview after sending', error);
-        }
-      } catch {
-        setTelegramInfo('Message sent through Telegram. The conversation could not refresh; it will update automatically when the connection recovers.');
+        setTelegramPreviews(await fetchTelegramPreviews());
+      } catch (error) {
+        console.warn('Failed to refresh Telegram preview after sending', error);
       }
     } catch (error) {
       setTelegramInfo('');
+      setTelegramMessages((current) => current.map((message) =>
+        message.provider_message_id === `taxflow:${telegramRequestId}`
+          ? { ...message, delivery_status: 'failed' }
+          : message
+      ));
+      setPendingTelegramMsg('');
+      setTelegramDraft('');
+      setTelegramRequestId('');
+      setIsEditingPending(false);
+      setEditText('');
       setTelegramError(error instanceof Error ? error.message : 'Unable to send Telegram message. Please try again.');
     } finally {
       setTelegramSending(false);
@@ -449,7 +540,47 @@ export function WhatsAppPage() {
                 </div>
               )}
               {channel === 'telegram' && telegramInfo && <div className="telegram-notice">{telegramInfo}</div>}
-              {channel === 'telegram' && telegramMessages.map((m) => <div key={m.id} className={'msg ' + (m.direction === 'outbound' ? 'me' : 'cl')}><div>{m.body}</div><span className="mt">{fTime(new Date(m.created_at))} · {m.delivery_status}</span></div>)}
+              {channel === 'telegram' && telegramMessages.map((m) => {
+                const hasAttachment = m.message_type === 'document' || m.message_type === 'image';
+                const attachmentName = m.telegram_file_name || m.body;
+                return (
+                  <div key={m.provider_message_id || m.id} className={'msg ' + (m.direction === 'outbound' ? 'me' : 'cl')}>
+                    {hasAttachment ? (
+                      <>
+                        {m.body && m.body !== attachmentName && <div className="tg-file-caption">{m.body}</div>}
+                        <div className="tg-file-attachment">
+                          <Icon name="file" size={17} />
+                          <span className="tg-file-attachment-name">
+                            <b>{attachmentName}</b>
+                            <small>{m.message_type === 'image' ? 'Image attachment' : 'Telegram document'}</small>
+                          </span>
+                          {m.vault_file_ref ? (
+                            <button className="btn sm tg-file-open" onClick={() => void openTelegramFile(m)} disabled={openingTelegramFileId === m.id}>
+                              {openingTelegramFileId === m.id ? 'Opening…' : 'Open'}
+                            </button>
+                          ) : m.file_download_error ? (
+                            <button className="btn sm tg-file-open" onClick={() => void retryTelegramFile(m)} disabled={retryingTelegramFileId === m.id}>
+                              {retryingTelegramFileId === m.id ? 'Retrying…' : 'Retry'}
+                            </button>
+                          ) : (
+                            <small className="tg-file-pending">{m.file_download_pending ? 'Saving…' : 'Waiting to download…'}</small>
+                          )}
+                        </div>
+                        {m.file_download_error && <small className="tg-file-error">{m.file_download_error}</small>}
+                      </>
+                    ) : <div>{m.body}</div>}
+                    <span className="mt">
+                      {fTime(new Date(m.created_at))} · {
+                        m.delivery_status === 'sending' || m.delivery_status === 'queued'
+                          ? 'Sending…'
+                          : m.delivery_status === 'failed'
+                            ? 'Delivery failed'
+                            : m.delivery_status === 'sent' ? 'Sent' : m.delivery_status
+                      }
+                    </span>
+                  </div>
+                );
+              })}
               {channel === 'telegram' && pendingTelegramMsg && (
                 <div className="tg-pending-group">
 

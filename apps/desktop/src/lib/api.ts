@@ -309,6 +309,12 @@ export interface TelegramMessage {
   message_type: string;
   delivery_status: string;
   created_at: string;
+  telegram_file_name?: string | null;
+  mime_type?: string | null;
+  file_size?: number | null;
+  vault_file_ref?: string | null;
+  file_download_error?: string | null;
+  file_download_pending?: boolean;
 }
 
 export interface ComplianceTask {
@@ -415,14 +421,23 @@ export async function apiSetupVault(vaultPath: string): Promise<{ success: boole
 // ─── Client API ────────────────────────────────────────────────
 
 export async function fetchClients(): Promise<Client[]> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/clients`, { headers: authHeaders() });
-    const json = await res.json();
-    return json.data || [];
-  } catch (err) {
-    console.warn('Failed to fetch clients', err);
-    return [];
+  const request = () => authRequest<{ success: boolean; message?: string; data?: Client[] }>(
+    `${API_BASE_URL}/clients`,
+    { headers: authHeaders() },
+  );
+  let response = await request();
+  if (!response.success && /session is invalid or has expired/i.test(response.message || '')) {
+    const refreshed = await refreshSession();
+    if (refreshed?.token) {
+      response = await request();
+    } else {
+      window.dispatchEvent(new CustomEvent('taxflow:session-expired'));
+    }
   }
+  if (!response.success || !Array.isArray(response.data)) {
+    throw new Error(response.message || 'The backend returned an invalid client list.');
+  }
+  return response.data;
 }
 
 export async function createClient(clientData: Partial<Client>): Promise<Client | null> {
@@ -737,9 +752,24 @@ export async function fetchTelegramMessages(clientId: string): Promise<{ linked:
   return { linked: Boolean(json.linked), messages: json.data || [] };
 }
 
-export async function sendTelegramMessage(clientId: string, message: string, requestId: string = crypto.randomUUID()): Promise<void> {
+export async function downloadTelegramMessageFile(clientId: string, messageId: string): Promise<TelegramMessage> {
+  const { response: res, json } = await fetchTelegramJson(
+    `${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/messages/${encodeURIComponent(messageId)}/download`,
+    { method: 'POST', headers: authHeaders() },
+    45000,
+    'Telegram attachment download',
+  );
+  if (!res.ok || !json.success) throw new Error(json.message || `Unable to download the Telegram attachment (HTTP ${res.status}).`);
+  return json.data;
+}
+
+export async function sendTelegramMessage(clientId: string, message: string, requestId: string = crypto.randomUUID()): Promise<TelegramMessage> {
   const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/send`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ clientId, message, approved: true, requestId }) }, 60000, 'Telegram message delivery');
   if (!res.ok || !json.success) throw new Error(json.message || `Unable to send Telegram message (HTTP ${res.status}).`);
+  if (!json.data || typeof json.data.id !== 'string') {
+    throw new Error('Telegram sent the message, but the backend did not return its saved conversation message.');
+  }
+  return json.data;
 }
 
 export interface TelegramUnreadSummary {

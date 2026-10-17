@@ -64,6 +64,7 @@ To ensure the frontend can handle responses predictably, all routes **must** ret
 ### 3.1 Supabase (Metadata)
 - **Service Role**: Use the `service_role` key for administrative backend operations.
 - **Demo Mode**: Every route must check `isConnected` from `db/supabase.js`. If false, provide a fallback to in-memory demo data to ensure the app remains runnable locally.
+- **Client List Cache**: The authenticated client-list route may cache results in memory per user. Invalidate that cache after successful client creation, update, or deletion. The desktop may show its last-known per-user client list while refreshing in the background; a backend restart clears the server cache. Changes made outside the app are reflected after that cache is cleared or the backend restarts.
 
 ### 3.2 Local Vault (Physical Files)
 **Never hardcode filesystem paths.** Always use the helpers provided in `vault/vaultManager.js`.
@@ -77,6 +78,9 @@ Files must be organized strictly by this pattern:
 2. **Binary Handling**: Convert base64 uploads to buffers immediately.
 3. **Collision Prevention**: Prefix files with a timestamp or unique ID during `saveFileToVault()`.
 4. **Categories**: Only use `ALLOWED_CATEGORIES` (e.g., `GST`, `IncomeTax`, `Form16`, `Notice`).
+5. **Telegram Attachments**: When a user opens a Telegram client conversation, supported inbound files are downloaded once from Telegram and saved under that client's current calendar year/month `Raw` folder. Their metadata is linked to the Telegram message so the authenticated document-serving route can open the file.
+
+Before enabling Telegram attachment downloads on an existing database, run `db/telegram_document_storage.sql` after the Telegram message and document metadata tables have been created. It adds Telegram attachment fields and allows `Telegram` as a document source.
 
 #### Sync Logic:
 - **Creation**: When a client is created in Supabase $\rightarrow$ Create their root vault directory.
