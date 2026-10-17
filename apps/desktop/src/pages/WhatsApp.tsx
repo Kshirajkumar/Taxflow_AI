@@ -59,6 +59,8 @@ export function WhatsAppPage() {
   const [input, setInput] = useState('');
   const [clientSearch, setClientSearch] = useState('');
   const [showSchedule, setShowSchedule] = useState(false);
+  const [sendingReminderId, setSendingReminderId] = useState('');
+  const [reminderSendErrors, setReminderSendErrors] = useState<Record<string, string>>({});
   const [telegramMessages, setTelegramMessages] = useState<TelegramMessage[]>([]);
   const [telegramReady, setTelegramReady] = useState(false);
   const [telegramLinked, setTelegramLinked] = useState(false);
@@ -168,7 +170,6 @@ export function WhatsAppPage() {
   }, [channel, c?.id, telegramRetry]);
 
   useEffect(() => {
-    if (channel !== 'whatsapp') return;
     let active = true;
     setWhatsAppLoading(true);
     void fetchWhatsAppStatus().then((status) => {
@@ -182,7 +183,7 @@ export function WhatsAppPage() {
       setWhatsAppLoading(false);
     });
     return () => { active = false; };
-  }, [channel]);
+  }, []);
 
   async function connectTelegram() {
     if (telegramConnecting) return;
@@ -348,6 +349,15 @@ export function WhatsAppPage() {
     setEditText('');
   }
 
+  const scheduled = s.reminders.filter((r) => r.status === 'scheduled').sort((a, b) => a.at.getTime() - b.at.getTime());
+  const reminderGroups = scheduled.reduce<{ label: string; items: Reminder[] }[]>((groups, reminder) => {
+    const label = dayLabel(reminder.at);
+    const lastGroup = groups[groups.length - 1];
+    if (lastGroup?.label === label) lastGroup.items.push(reminder);
+    else groups.push({ label, items: [reminder] });
+    return groups;
+  }, []);
+
   if (!c) {
     return (
       <div className="inbox-page">
@@ -388,7 +398,31 @@ export function WhatsAppPage() {
     }
   }
 
-  const scheduled = s.reminders.filter((r) => r.status === 'scheduled').sort((a, b) => a.at.getTime() - b.at.getTime());
+  async function sendReminder(reminder: Reminder) {
+    const reminderClient = s.clients.find((client) => client.id === reminder.client);
+    if (!reminderClient) {
+      setReminderSendErrors((errors) => ({ ...errors, [reminder.id]: 'The selected client could not be found.' }));
+      return;
+    }
+    if (!whatsAppReady) {
+      setReminderSendErrors((errors) => ({ ...errors, [reminder.id]: 'Connect WhatsApp before sending this reminder.' }));
+      return;
+    }
+
+    setSendingReminderId(reminder.id);
+    setReminderSendErrors((errors) => ({ ...errors, [reminder.id]: '' }));
+    try {
+      await sendWhatsAppManualMessage(reminderClient.id, reminderClient.phone, reminder.text);
+      dispatch({ type: 'REM_SEND_NOW', id: reminder.id });
+    } catch (error) {
+      setReminderSendErrors((errors) => ({
+        ...errors,
+        [reminder.id]: error instanceof Error ? error.message : 'Could not send this reminder.',
+      }));
+    } finally {
+      setSendingReminderId('');
+    }
+  }
 
   return (
     <div className="inbox-page">
@@ -435,7 +469,24 @@ export function WhatsAppPage() {
         {!whatsAppReady && channel === 'whatsapp' && <small className="wa-config-note">Configure Meta API credentials on the backend.</small>}
       </div>
 
-        <div className="card wa">
+      <div className="tabs inbox-tabs" role="tablist" aria-label="Client inbox sections">
+        {(['chats', 'reminders', 'templates'] as const).map((tab) => (
+          <button
+            key={tab}
+            id={`inbox-tab-${tab}`}
+            type="button"
+            role="tab"
+            aria-selected={s.ui.wa.tab === tab}
+            aria-controls={`inbox-panel-${tab}`}
+            className={s.ui.wa.tab === tab ? 'on' : ''}
+            onClick={() => dispatch({ type: 'WA_TAB', tab })}
+          >
+            {tab === 'chats' ? 'Chats' : tab === 'reminders' ? `Scheduled reminders (${scheduled.length})` : 'Templates'}
+          </button>
+        ))}
+      </div>
+
+      {s.ui.wa.tab === 'chats' && <div className="card wa" id="inbox-panel-chats" role="tabpanel" aria-labelledby="inbox-tab-chats">
           <div className="wa-l">
             <div className="wa-list-head">
               <div><b>Conversations</b><span>{visibleClients.length} clients</span></div>
@@ -714,9 +765,12 @@ export function WhatsAppPage() {
                   {r.text}
                   <div className="sa">
                     {r.approve && <button className="btn sm" onClick={() => dispatch({ type: 'REM_APPROVE', id: r.id })}>Approve</button>}
-                    <button className="btn sm" onClick={() => dispatch({ type: 'REM_SEND_NOW', id: r.id })}>Send now</button>
+                    <button className="btn sm" onClick={() => void sendReminder(r)} disabled={sendingReminderId === r.id || whatsAppLoading || !whatsAppReady}>
+                      {sendingReminderId === r.id ? 'Sending…' : 'Send now'}
+                    </button>
                     <button className="btn sm gh" onClick={() => dispatch({ type: 'REM_CANCEL', id: r.id })}>Cancel</button>
                   </div>
+                  {reminderSendErrors[r.id] && <small className="wa-reminder-error">{reminderSendErrors[r.id]}</small>}
                 </div>
               ))}
             </div>
@@ -777,7 +831,83 @@ export function WhatsAppPage() {
               </button>
             </div>
           </div>
+        </div>}
+
+      {s.ui.wa.tab === 'reminders' && (
+        <div className="wa-reminders" id="inbox-panel-reminders" role="tabpanel" aria-labelledby="inbox-tab-reminders">
+          {whatsAppLoading
+            ? <div className="wa-reminder-notice"><span className="spin" />Checking WhatsApp connection…</div>
+            : !whatsAppReady && <div className="wa-reminder-notice"><Icon name="info" size={14} />Connect WhatsApp to send reminders. You can still review and approve scheduled messages.</div>}
+          {scheduled.length === 0 ? (
+            <div className="card wa-tab-empty">
+              <Icon name="clock" size={22} />
+              <b>No scheduled reminders</b>
+              <span>Plan a follow-up and it will appear here.</span>
+              <button className="btn sm" onClick={() => setShowSchedule(true)}><Icon name="plus" size={13} />Schedule reminder</button>
+            </div>
+          ) : reminderGroups.map((group) => (
+            <section className="wa-reminder-group" key={group.label}>
+              <h2 className="wa-reminder-day">{group.label}</h2>
+              <div className="wa-reminder-list">
+                {group.items.map((reminder) => {
+                  const reminderClient = s.clients.find((client) => client.id === reminder.client);
+                  if (!reminderClient) return null;
+                  return (
+                    <article className="card wa-reminder-card" key={reminder.id}>
+                      <div className="wa-reminder-time">
+                        <b>{fTime(reminder.at)}</b>
+                        <small>{until(reminder.at)}</small>
+                      </div>
+                      <div className="wa-reminder-content">
+                        <div className="wa-reminder-client">
+                          <span className="av" style={{ ['--t' as any]: reminderClient.tone }}>{reminderClient.short.slice(0, 2).toUpperCase()}</span>
+                          <b>{reminderClient.name}</b>
+                          <span className="chip blue">{TPL.find((template) => template.id === reminder.tpl)?.name || 'Reminder'}</span>
+                        </div>
+                        <p>{reminder.text}</p>
+                        {reminderSendErrors[reminder.id] && <small className="wa-reminder-error">{reminderSendErrors[reminder.id]}</small>}
+                      </div>
+                      <div className="wa-reminder-actions">
+                        <span className={`chip ${reminder.approve ? 'amber' : 'green'}`}>{reminder.approve ? 'Needs approval' : 'Approved'}</span>
+                        {reminder.approve && <button className="btn sm" onClick={() => dispatch({ type: 'REM_APPROVE', id: reminder.id })}>Approve</button>}
+                        <button className="btn sm" onClick={() => void sendReminder(reminder)} disabled={sendingReminderId === reminder.id || whatsAppLoading || !whatsAppReady}>
+                          {sendingReminderId === reminder.id ? 'Sending…' : 'Send now'}
+                        </button>
+                        <button className="btn sm gh" onClick={() => dispatch({ type: 'REM_CANCEL', id: reminder.id })} aria-label={`Cancel reminder for ${reminderClient.name}`} title="Cancel reminder"><Icon name="x" size={13} /></button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </div>
+      )}
+
+      {s.ui.wa.tab === 'templates' && (
+        <div className="wa-template-grid" id="inbox-panel-templates" role="tabpanel" aria-labelledby="inbox-tab-templates">
+          {TPL.map((template) => (
+            <article className="card tpl wa-template-card" key={template.id}>
+              <div className="row">
+                <b>{template.name}</b><span className="sp" /><span className="chip blue">{template.cat}</span>
+              </div>
+              <p>{template.body}</p>
+              <div className="wa-template-footer">
+                <span className="chip green"><Icon name="check" size={11} />Ready to use</span>
+                <button
+                  className="btn sm"
+                  onClick={() => {
+                    setInput(fillTpl(template.body, c.contact.split(' ')[0]));
+                    dispatch({ type: 'WA_TAB', tab: 'chats' });
+                  }}
+                >
+                  Use template
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
 
       {showSchedule && <ScheduleModal onClose={() => setShowSchedule(false)} defaultClient={c.id} />}
 

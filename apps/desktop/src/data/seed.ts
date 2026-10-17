@@ -15,6 +15,7 @@ export const TPL: Template[] = [
   { id: 'pending', name: 'Missing document', cat: 'Utility', body: 'Hi {name}, we have not received the {doc} for {period} yet. Please send a photo or PDF right here on this chat.' },
   { id: 'fee', name: 'Fee payment due', cat: 'Utility', body: 'Hi {name}, our fee invoice {inv} for {amt} is due on {feedue}. You can pay securely here: pay.example.com/{inv}' },
   { id: 'filed', name: 'Filing completed', cat: 'Utility', body: 'Hi {name}, your {filing} has been filed. The acknowledgement is attached for your records.' },
+  { id: 'itr', name: 'ITR documents', cat: 'Utility', body: 'Hi {name}, to file your ITR please share Form 16 / 26AS, bank interest certificates, and investment proofs.' },
 ];
 
 export const STEPS: Record<string, string[]> = {
@@ -51,4 +52,3 @@ export const GEN: GenType[] = [
 export const INITIAL_LOG: LogEntry[] = [];
 
 export { MONTH_FULL };
-
