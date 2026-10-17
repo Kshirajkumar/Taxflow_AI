@@ -3064,3 +3064,108 @@ body.sidebar-collapsed.chat-hidden .shell {
 :root[data-theme="light"] .tg-approval-card--editing {
   border-color: color-mix(in srgb, var(--violet) 40%, var(--line2));
 }
+
+/* ── Unread Chat Badges & Notifications ───────────────────────── */
+.nav .bd.chat-unread {
+  background: linear-gradient(135deg, #059669, #10B981) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  font-size: 10.5px !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.45) !important;
+  letter-spacing: 0.2px;
+  animation: unreadBadgePulse 2.4s infinite ease-in-out;
+}
+@keyframes unreadBadgePulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4); transform: scale(1); }
+  50% { box-shadow: 0 2px 14px rgba(16, 185, 129, 0.7); transform: scale(1.06); }
+}
+
+/* Client list item unread states */
+.wa-c.has-unread {
+  background: color-mix(in srgb, var(--green) 7%, transparent);
+}
+.wa-c.has-unread:hover {
+  background: color-mix(in srgb, var(--green) 12%, var(--card2));
+}
+.wa-c.has-unread.on {
+  background: color-mix(in srgb, var(--blue) 12%, var(--card2));
+}
+.wa-c-unread-dot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #10B981;
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.8);
+}
+.unread-nm {
+  font-weight: 700 !important;
+  color: var(--tx) !important;
+}
+.unread-pv {
+  color: var(--tx) !important;
+  font-weight: 600 !important;
+}
+
+/* Client unread chip */
+.wa-unread-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 99px;
+  background: linear-gradient(135deg, #10B981, #059669);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.45);
+  margin-left: auto;
+  flex: none;
+  animation: unreadChipIn .2s ease-out;
+}
+@keyframes unreadChipIn {
+  from { transform: scale(0.7); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* Total unread pill in channel bar */
+.wa-total-unread-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, #10B981 16%, transparent) !important;
+  color: #10B981 !important;
+  border: 1px solid color-mix(in srgb, #10B981 35%, transparent) !important;
+  font-weight: 700 !important;
+}
+.wa-unread-glow-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 8px #10B981;
+  animation: glowDotPulse 1.8s infinite ease-in-out;
+}
+@keyframes glowDotPulse {
+  0%, 100% { opacity: 0.6; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* Notification popover enhancements */
+.notification-item.is-clickable {
+  cursor: pointer;
+  transition: background .15s ease;
+}
+.notification-item.is-clickable:hover {
+  background: color-mix(in srgb, var(--blue) 12%, var(--card));
+}
+.notification-item-icon.telegram {
+  background: color-mix(in srgb, #229ED9 16%, transparent);
+  color: #229ED9;
+}

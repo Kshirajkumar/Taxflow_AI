@@ -4,7 +4,7 @@ import { useAppState, useDispatch } from '../state/store';
 import type { Page } from '../types';
 import { allTasks } from '../lib/domain';
 import { dayDiff, vnow } from '../lib/format';
-import { getHealthStatus } from '../lib/api';
+import { getHealthStatus, fetchTelegramUnread } from '../lib/api';
 
 const NAV: Array<{ g: string; items: Array<[Page, string, string]> }> = [
   { g: 'Workspace', items: [['dashboard', 'Dashboard', 'grid']] },
@@ -35,6 +35,28 @@ export function Sidebar() {
   const dispatch = useDispatch();
   const collapsed = s.sidebarCollapsed;
   const [vaultUsage, setVaultUsage] = React.useState({ path: 'Local vault', usedBytes: 0, capacityBytes: 500 * 1024 ** 3, fileCount: 0, ready: false });
+  const [unreadChatTotal, setUnreadChatTotal] = React.useState(0);
+
+  React.useEffect(() => {
+    let active = true;
+    async function loadUnread() {
+      try {
+        const summary = await fetchTelegramUnread();
+        if (active) setUnreadChatTotal(summary.total);
+      } catch {
+        // Non-blocking
+      }
+    }
+    void loadUnread();
+    const timer = window.setInterval(loadUnread, 10000);
+    const onUpdated = () => void loadUnread();
+    window.addEventListener('taxflow:unread-updated', onUpdated);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('taxflow:unread-updated', onUpdated);
+    };
+  }, []);
 
   React.useEffect(() => {
     let disposed = false;
@@ -61,12 +83,15 @@ export function Sidebar() {
   const usagePercent = Math.min(100, Math.max(0, (vaultUsage.usedBytes / Math.max(vaultUsage.capacityBytes, 1)) * 100));
   const compactVaultPath = vaultUsage.path.length > 28 ? `…${vaultUsage.path.slice(-27)}` : vaultUsage.path;
 
-  const badge = (id: Page): { n: number; hot?: boolean } | null => {
+  const badge = (id: Page): { n: number; hot?: boolean; chatUnread?: boolean } | null => {
     if (id === 'extract') {
       const n = s.docs.filter((d) => d.status === 'queued' || d.status === 'review').length;
       return n ? { n } : null;
     }
     if (id === 'whatsapp') {
+      if (unreadChatTotal > 0) {
+        return { n: unreadChatTotal, chatUnread: true };
+      }
       const n = s.reminders.filter((r) => r.status === 'scheduled' && dayDiff(r.at, vnow()) === 0).length;
       return n ? { n } : null;
     }
@@ -129,7 +154,7 @@ export function Sidebar() {
                   <Icon name={icon} size={18} />
                 </span>
                 {!collapsed && <span className="lb">{label}</span>}
-                {b && <span className={'bd' + (b.hot ? ' hot' : '')}>{b.n}</span>}
+                {b && <span className={'bd' + (b.hot ? ' hot' : '') + (b.chatUnread ? ' chat-unread' : '')}>{b.n}</span>}
                 {id === 'extraction-review' && <span className="review-nav-dot" aria-label="Review required" />}
                 {isActive && <span className="nav-active-bar" />}
               </button>

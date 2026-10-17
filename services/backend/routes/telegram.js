@@ -49,6 +49,48 @@ router.post('/clients/:clientId/link', requireAuth, async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
 });
 
+router.get('/unread', requireAuth, async (req, res) => {
+  try {
+    if (!isConnected) return res.json({ success: true, counts: {}, total: 0 });
+    const { data: clients, error: clientError } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('user_id', req.user.id);
+    if (clientError) throw clientError;
+    const clientIds = (clients || []).map((c) => c.id);
+    if (!clientIds.length) return res.json({ success: true, counts: {}, total: 0 });
+
+    const { data: unreadRows, error } = await supabase
+      .from('telegram_messages')
+      .select('client_id')
+      .in('client_id', clientIds)
+      .eq('direction', 'inbound')
+      .eq('is_read', false);
+    if (error) throw error;
+
+    const counts = {};
+    let total = 0;
+    (unreadRows || []).forEach((r) => {
+      counts[r.client_id] = (counts[r.client_id] || 0) + 1;
+      total += 1;
+    });
+
+    return res.json({ success: true, counts, total });
+  } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
+});
+
+router.post('/clients/:clientId/read', requireAuth, async (req, res) => {
+  try {
+    if (!isConnected || !(await assertOwnedClient(req.user.id, req.params.clientId))) return res.status(404).json({ success: false, message: 'Client not found.' });
+    await supabase.from('telegram_messages')
+      .update({ is_read: true, read_at: new Date().toISOString() })
+      .eq('client_id', req.params.clientId)
+      .eq('direction', 'inbound')
+      .eq('is_read', false);
+    return res.json({ success: true });
+  } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
+});
+
 router.get('/clients/:clientId/messages', requireAuth, async (req, res) => {
   try {
     if (!isConnected || !(await assertOwnedClient(req.user.id, req.params.clientId))) return res.status(404).json({ success: false, message: 'Client not found.' });
@@ -59,6 +101,14 @@ router.get('/clients/:clientId/messages', requireAuth, async (req, res) => {
     ]);
     if (error) throw error;
     if (clientError) throw clientError;
+
+    // Automatically mark unread inbound messages as read for this client
+    await supabase.from('telegram_messages')
+      .update({ is_read: true, read_at: new Date().toISOString() })
+      .eq('client_id', req.params.clientId)
+      .eq('direction', 'inbound')
+      .eq('is_read', false);
+
     return res.json({ success: true, linked: Boolean(client?.telegram_chat_id), data: data || [] });
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
 });

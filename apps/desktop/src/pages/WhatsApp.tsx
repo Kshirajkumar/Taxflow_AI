@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Icon } from '../components/Icon';
-import { createTelegramLink, fetchTelegramMessages, fetchTelegramStatus, sendTelegramMessage, type TelegramMessage } from '../lib/api';
+import { createTelegramLink, fetchTelegramMessages, fetchTelegramStatus, sendTelegramMessage, fetchTelegramUnread, markTelegramClientRead, type TelegramMessage } from '../lib/api';
 import { useAppState, useDispatch } from '../state/store';
 import { nextMsgId } from '../lib/messageIds';
 import { TPL } from '../data/seed';
@@ -41,10 +41,45 @@ export function WhatsAppPage() {
   const [isEditingPending, setIsEditingPending] = useState(false);
   /** Holds the in-progress edit text while editing mode is active */
   const [editText, setEditText] = useState('');
+  /** Unread counts mapped by client_id */
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  /** Total unread messages across all clients */
+  const [totalUnreadAcrossClients, setTotalUnreadAcrossClients] = useState(0);
   const threadRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const c = s.clients.find((x) => x.id === s.ui.wa.client) || s.clients[0];
   const thread = c ? (s.threads[c.id] || []).slice().sort((a, b) => a.at.getTime() - b.at.getTime()) : [];
+
+  const loadUnreadCounts = useCallback(async () => {
+    try {
+      const summary = await fetchTelegramUnread();
+      setUnreadCounts(summary.counts || {});
+      setTotalUnreadAcrossClients(summary.total || 0);
+    } catch {
+      // Non-blocking
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadUnreadCounts();
+    const timer = window.setInterval(() => void loadUnreadCounts(), 5000);
+    return () => window.clearInterval(timer);
+  }, [loadUnreadCounts]);
+
+  useEffect(() => {
+    if (channel === 'telegram' && c?.id && unreadCounts[c.id]) {
+      void markTelegramClientRead(c.id).then(() => {
+        setUnreadCounts((prev) => {
+          if (!prev[c.id]) return prev;
+          const next = { ...prev, [c.id]: 0 };
+          const total = Object.values(next).reduce((a, b) => a + b, 0);
+          setTotalUnreadAcrossClients(total);
+          return next;
+        });
+        window.dispatchEvent(new CustomEvent('taxflow:unread-updated'));
+      });
+    }
+  }, [channel, c?.id, unreadCounts[c?.id || '']]);
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
@@ -206,7 +241,27 @@ export function WhatsAppPage() {
           <option value="whatsapp">WhatsApp</option>
           <option value="telegram">Telegram</option>
         </select>
-        {channel === 'telegram' && <><span className={'chip ' + (telegramLoading ? 'amber' : telegramReady ? 'green' : 'amber')}><i className="sdot" style={{ margin: '0 2px 0 0' }} />{telegramLoading ? 'Checking Telegram…' : telegramReady ? `Telegram @${telegramBot}` : 'Telegram unavailable'}</span><span className={'chip ' + (telegramLinked ? 'green' : 'amber')}>{telegramLinked ? 'Client linked' : 'Client not linked'}</span><button className="btn sm" onClick={() => void connectTelegram()} disabled={telegramLoading || telegramConnecting || !telegramReady}>{telegramConnecting && <span className="spin" />}{telegramConnecting ? 'Connecting…' : telegramLinked ? 'Reconnect client' : 'Connect client'}</button></>}
+        {channel === 'telegram' && (
+          <>
+            <span className={'chip ' + (telegramLoading ? 'amber' : telegramReady ? 'green' : 'amber')}>
+              <i className="sdot" style={{ margin: '0 2px 0 0' }} />
+              {telegramLoading ? 'Checking Telegram…' : telegramReady ? `Telegram @${telegramBot}` : 'Telegram unavailable'}
+            </span>
+            <span className={'chip ' + (telegramLinked ? 'green' : 'amber')}>
+              {telegramLinked ? 'Client linked' : 'Client not linked'}
+            </span>
+            {totalUnreadAcrossClients > 0 && (
+              <span className="chip wa-total-unread-pill" title={`${totalUnreadAcrossClients} unread message${totalUnreadAcrossClients > 1 ? 's' : ''} across all connected clients`}>
+                <span className="wa-unread-glow-dot" />
+                {totalUnreadAcrossClients} unread {totalUnreadAcrossClients === 1 ? 'message' : 'messages'}
+              </span>
+            )}
+            <button className="btn sm" onClick={() => void connectTelegram()} disabled={telegramLoading || telegramConnecting || !telegramReady}>
+              {telegramConnecting && <span className="spin" />}
+              {telegramConnecting ? 'Connecting…' : telegramLinked ? 'Reconnect client' : 'Connect client'}
+            </button>
+          </>
+        )}
         {channel === 'whatsapp' && <><span className="chip green"><i className="sdot" style={{ margin: '0 2px 0 0' }} />Business API connected</span><span className="mut2">+91 99000 00000 · {TPL.length} templates approved</span></>}
       </div>
 
@@ -225,12 +280,47 @@ export function WhatsAppPage() {
               const th = s.threads[cl.id] || [];
               const last = th.filter((m) => m.f !== 'sys').slice(-1)[0];
               const m = missing(s.checks, cl.id).length;
+              const clUnread = unreadCounts[cl.id] || 0;
+              const isSelected = s.ui.wa.client === cl.id;
               return (
-                <div key={cl.id} className={'wa-c' + (s.ui.wa.client === cl.id ? ' on' : '')} onClick={() => dispatch({ type: 'WA_CLIENT', id: cl.id })}>
-                  <span className="av" style={{ ['--t' as any]: cl.tone }}>{cl.short.slice(0, 2).toUpperCase()}</span>
+                <div
+                  key={cl.id}
+                  className={'wa-c' + (isSelected ? ' on' : '') + (clUnread > 0 ? ' has-unread' : '')}
+                  onClick={() => {
+                    dispatch({ type: 'WA_CLIENT', id: cl.id });
+                    if (clUnread > 0) {
+                      void markTelegramClientRead(cl.id);
+                      setUnreadCounts((prev) => {
+                        const next = { ...prev, [cl.id]: 0 };
+                        setTotalUnreadAcrossClients(Object.values(next).reduce((a, b) => a + b, 0));
+                        return next;
+                      });
+                      window.dispatchEvent(new CustomEvent('taxflow:unread-updated'));
+                    }
+                  }}
+                >
+                  <span className="av" style={{ ['--t' as any]: cl.tone }}>
+                    {cl.short.slice(0, 2).toUpperCase()}
+                    {clUnread > 0 && <span className="wa-c-unread-dot" />}
+                  </span>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div className="row"><span className="nm">{cl.short}</span><span className="sp" /><span className="tm">{last ? agoT(last.at) : ''}</span></div>
-                    <div className="row"><span className="pv">{last ? (last.file ? `Attachment: ${last.file}` : last.t) : 'No messages yet'}</span>{m ? <span className="chip amber" style={{ marginLeft: 'auto', padding: '0 7px' }}>{m}</span> : null}</div>
+                    <div className="row">
+                      <span className={'nm' + (clUnread > 0 ? ' unread-nm' : '')}>{cl.short}</span>
+                      <span className="sp" />
+                      <span className="tm">{last ? agoT(last.at) : ''}</span>
+                    </div>
+                    <div className="row">
+                      <span className={'pv' + (clUnread > 0 ? ' unread-pv' : '')}>
+                        {last ? (last.file ? `Attachment: ${last.file}` : last.t) : 'No messages yet'}
+                      </span>
+                      {clUnread > 0 ? (
+                        <span className="wa-unread-chip" title={`${clUnread} unread message${clUnread > 1 ? 's' : ''}`}>
+                          {clUnread}
+                        </span>
+                      ) : m ? (
+                        <span className="chip amber" style={{ marginLeft: 'auto', padding: '0 7px' }}>{m}</span>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               );

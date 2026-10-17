@@ -692,6 +692,29 @@ export async function sendTelegramMessage(clientId: string, message: string, req
   if (!res.ok || !json.success) throw new Error(json.message || `Unable to send Telegram message (HTTP ${res.status}).`);
 }
 
+export interface TelegramUnreadSummary {
+  counts: Record<string, number>;
+  total: number;
+}
+
+export async function fetchTelegramUnread(): Promise<TelegramUnreadSummary> {
+  try {
+    const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/unread`, { headers: authHeaders() }, 10000, 'Telegram unread summary');
+    if (!res.ok || !json.success) return { counts: {}, total: 0 };
+    return { counts: json.counts || {}, total: Number(json.total) || 0 };
+  } catch {
+    return { counts: {}, total: 0 };
+  }
+}
+
+export async function markTelegramClientRead(clientId: string): Promise<void> {
+  try {
+    await fetchTelegramJson(`${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/read`, { method: 'POST', headers: authHeaders() }, 10000, 'Mark client read');
+  } catch {
+    // Non-blocking
+  }
+}
+
 // ─── Compliance API ────────────────────────────────────────────
 
 export async function fetchComplianceTasks(): Promise<ComplianceTask[]> {

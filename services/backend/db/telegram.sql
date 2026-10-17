@@ -76,3 +76,66 @@ create policy telegram_messages_backend_fallback on public.telegram_messages
 drop policy if exists telegram_link_tokens_backend_fallback on public.telegram_link_tokens;
 create policy telegram_link_tokens_backend_fallback on public.telegram_link_tokens
   for all to anon using (true) with check (true);
+
+-- 4. Unread tracking and automatic notifications
+alter table public.telegram_messages add column if not exists is_read boolean not null default false;
+alter table public.telegram_messages add column if not exists read_at timestamptz;
+create index if not exists idx_telegram_messages_unread on public.telegram_messages(client_id, is_read) where direction = 'inbound' and is_read = false;
+
+create or replace function public.create_telegram_message_notification()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid;
+  v_client_name text;
+  v_body_preview text;
+begin
+  if NEW.direction = 'inbound' then
+    select user_id, name into v_user_id, v_client_name
+    from public.clients
+    where id = NEW.client_id;
+
+    if v_user_id is not null then
+      if length(NEW.body) > 120 then
+        v_body_preview := substring(NEW.body from 1 for 117) || '...';
+      else
+        v_body_preview := NEW.body;
+      end if;
+
+      insert into public.notifications (
+        user_id,
+        event_type,
+        title,
+        message,
+        entity_type,
+        entity_id,
+        metadata
+      ) values (
+        v_user_id,
+        'telegram.message_received',
+        format('Telegram from %s', coalesce(v_client_name, 'Client')),
+        v_body_preview,
+        'client',
+        NEW.client_id,
+        jsonb_build_object(
+          'client_id', NEW.client_id,
+          'client_name', v_client_name,
+          'chat_id', NEW.chat_id,
+          'message_id', NEW.id
+        )
+      );
+    end if;
+  end if;
+
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_telegram_message_notification on public.telegram_messages;
+create trigger trg_telegram_message_notification
+  after insert on public.telegram_messages
+  for each row
+  execute function public.create_telegram_message_notification();

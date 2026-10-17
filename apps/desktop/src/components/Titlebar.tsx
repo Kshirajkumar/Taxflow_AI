@@ -199,10 +199,43 @@ export function Titlebar() {
           {notificationsOpen && <div className="notifications-panel" role="dialog" aria-label="Notifications">
             <div className="notifications-panel-head"><div><b>Notifications</b><small>Database activity for your practice</small></div><button className="notifications-close" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications"><Icon name="x" size={14} /></button></div>
             <div className="notifications-list">
-              {notifications.length === 0 ? <div className="notifications-empty"><Icon name="bell" size={18} /><span>No recent activity</span><small>New client activity will appear here.</small></div> : notifications.map((notification) => <div className={`notification-item${notification.read_at ? '' : ' unread'}`} key={notification.id}>
-                <span className={`notification-item-icon ${notification.event_type === 'client.deleted' ? 'deleted' : 'created'}`}><Icon name={notification.event_type === 'client.deleted' ? 'x' : 'users'} size={13} /></span>
-                <span className="notification-item-copy"><b>{notification.title}</b><span>{notification.message}</span><small>{new Date(notification.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</small></span>
-              </div>)}
+              {notifications.length === 0 ? (
+                <div className="notifications-empty">
+                  <Icon name="bell" size={18} />
+                  <span>No recent activity</span>
+                  <small>New client activity will appear here.</small>
+                </div>
+              ) : (
+                notifications.map((notification) => {
+                  const isTelegram = notification.event_type === 'telegram.message_received';
+                  const isDeleted = notification.event_type === 'client.deleted';
+                  return (
+                    <div
+                      className={`notification-item${notification.read_at ? '' : ' unread'}${isTelegram ? ' is-clickable' : ''}`}
+                      key={notification.id}
+                      onClick={() => {
+                        if (isTelegram && notification.entity_id) {
+                          dispatch({ type: 'WA_CLIENT', id: notification.entity_id });
+                          dispatch({ type: 'GO', page: 'whatsapp' });
+                          setNotificationsOpen(false);
+                        }
+                      }}
+                      role={isTelegram ? 'button' : undefined}
+                      tabIndex={isTelegram ? 0 : undefined}
+                      title={isTelegram ? 'Click to open conversation' : undefined}
+                    >
+                      <span className={`notification-item-icon ${isDeleted ? 'deleted' : isTelegram ? 'telegram' : 'created'}`}>
+                        <Icon name={isDeleted ? 'x' : isTelegram ? 'chat' : 'users'} size={13} />
+                      </span>
+                      <span className="notification-item-copy">
+                        <b>{notification.title}</b>
+                        <span>{notification.message}</span>
+                        <small>{new Date(notification.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</small>
+                      </span>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>}
         </div>
