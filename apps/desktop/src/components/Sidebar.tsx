@@ -3,7 +3,6 @@ import { Icon } from './Icon';
 import { useAppState, useDispatch } from '../state/store';
 import type { Page } from '../types';
 import { allTasks } from '../lib/domain';
-import { dayDiff, vnow } from '../lib/format';
 import { getHealthStatus, fetchTelegramUnread } from '../lib/api';
 
 const NAV: Array<{ g: string; items: Array<[Page, string, string]> }> = [
@@ -43,8 +42,8 @@ export function Sidebar() {
       try {
         const summary = await fetchTelegramUnread();
         if (active) setUnreadChatTotal(summary.total);
-      } catch {
-        // Non-blocking
+      } catch (error) {
+        console.warn('Failed to refresh unread Telegram count', error);
       }
     }
     void loadUnread();
@@ -92,8 +91,7 @@ export function Sidebar() {
       if (unreadChatTotal > 0) {
         return { n: unreadChatTotal, chatUnread: true };
       }
-      const n = s.reminders.filter((r) => r.status === 'scheduled' && dayDiff(r.at, vnow()) === 0).length;
-      return n ? { n } : null;
+      return null;
     }
     if (id === 'deadlines') {
       const n = allTasks(s.tasks).filter((x) => x.st === 'overdue').length;

@@ -6,10 +6,12 @@ import {
   fetchTelegramStatus,
   sendTelegramMessage,
   fetchTelegramUnread,
+  fetchTelegramPreviews,
   markTelegramClientRead,
   fetchWhatsAppStatus,
   sendWhatsAppManualMessage,
   type TelegramMessage,
+  type TelegramPreview,
 } from '../lib/api';
 import { useAppState, useDispatch } from '../state/store';
 import { nextMsgId } from '../lib/messageIds';
@@ -53,6 +55,7 @@ export function WhatsAppPage() {
   const [editText, setEditText] = useState('');
   /** Unread counts mapped by client_id */
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [telegramPreviews, setTelegramPreviews] = useState<Record<string, TelegramPreview>>({});
   /** Total unread messages across all clients */
   const [totalUnreadAcrossClients, setTotalUnreadAcrossClients] = useState(0);
   /** WhatsApp status state */
@@ -64,14 +67,15 @@ export function WhatsAppPage() {
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const c = s.clients.find((x) => x.id === s.ui.wa.client) || s.clients[0];
   const thread = c ? (s.threads[c.id] || []).slice().sort((a, b) => a.at.getTime() - b.at.getTime()) : [];
+  const clientIds = s.clients.map((client) => client.id).join(',');
 
   const loadUnreadCounts = useCallback(async () => {
     try {
       const summary = await fetchTelegramUnread();
       setUnreadCounts(summary.counts || {});
       setTotalUnreadAcrossClients(summary.total || 0);
-    } catch {
-      // Non-blocking
+    } catch (error) {
+      console.warn('Failed to refresh unread Telegram counts', error);
     }
   }, []);
 
@@ -92,9 +96,30 @@ export function WhatsAppPage() {
           return next;
         });
         window.dispatchEvent(new CustomEvent('taxflow:unread-updated'));
+      }).catch((error) => {
+        console.warn('Failed to mark Telegram messages as read', error);
       });
     }
   }, [channel, c?.id, unreadCounts[c?.id || '']]);
+
+  useEffect(() => {
+    if (channel !== 'telegram') return undefined;
+    let active = true;
+    const load = async () => {
+      try {
+        const previews = await fetchTelegramPreviews();
+        if (active) setTelegramPreviews(previews);
+      } catch (error) {
+        console.warn('Failed to refresh Telegram message previews', error);
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [channel, clientIds]);
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
@@ -178,6 +203,11 @@ export function WhatsAppPage() {
         const conversation = await fetchTelegramMessages(c.id);
         setTelegramLinked(conversation.linked);
         setTelegramMessages(conversation.messages);
+        try {
+          setTelegramPreviews(await fetchTelegramPreviews());
+        } catch (error) {
+          console.warn('Failed to refresh Telegram preview after sending', error);
+        }
       } catch {
         setTelegramInfo('Message sent through Telegram. The conversation could not refresh; it will update automatically when the connection recovers.');
       }
@@ -329,7 +359,18 @@ export function WhatsAppPage() {
           <div className="wa-l">
             {s.clients.map((cl) => {
               const th = s.threads[cl.id] || [];
-              const last = th.filter((m) => m.f !== 'sys').slice(-1)[0];
+              const whatsappLast = th
+                .filter((message) => message.f !== 'sys')
+                .reduce<ChatMsg | undefined>((latest, message) => (
+                  !latest || message.at > latest.at ? message : latest
+                ), undefined);
+              const telegramLast = telegramPreviews[cl.id];
+              const previewText = channel === 'telegram'
+                ? telegramLast?.body
+                : whatsappLast?.file ? `Attachment: ${whatsappLast.file}` : whatsappLast?.t;
+              const previewAt = channel === 'telegram'
+                ? telegramLast?.created_at ? new Date(telegramLast.created_at) : undefined
+                : whatsappLast?.at;
               const m = missing(s.checks, cl.id).length;
               const clUnread = unreadCounts[cl.id] || 0;
               const isSelected = s.ui.wa.client === cl.id;
@@ -339,15 +380,6 @@ export function WhatsAppPage() {
                   className={'wa-c' + (isSelected ? ' on' : '') + (clUnread > 0 ? ' has-unread' : '')}
                   onClick={() => {
                     dispatch({ type: 'WA_CLIENT', id: cl.id });
-                    if (clUnread > 0) {
-                      void markTelegramClientRead(cl.id);
-                      setUnreadCounts((prev) => {
-                        const next = { ...prev, [cl.id]: 0 };
-                        setTotalUnreadAcrossClients(Object.values(next).reduce((a, b) => a + b, 0));
-                        return next;
-                      });
-                      window.dispatchEvent(new CustomEvent('taxflow:unread-updated'));
-                    }
                   }}
                 >
                   <span className="av" style={{ ['--t' as any]: cl.tone }}>
@@ -358,14 +390,14 @@ export function WhatsAppPage() {
                     <div className="row">
                       <span className={'nm' + (clUnread > 0 ? ' unread-nm' : '')}>{cl.short}</span>
                       <span className="sp" />
-                      <span className="tm">{last ? agoT(last.at) : ''}</span>
+                      <span className="tm">{previewAt ? agoT(previewAt) : ''}</span>
                     </div>
                     <div className="row">
-                      <span className={'pv' + (clUnread > 0 ? ' unread-pv' : '')}>
-                        {last ? (last.file ? `Attachment: ${last.file}` : last.t) : 'No messages yet'}
+                      <span className={'pv' + (clUnread > 0 ? ' unread-pv' : '')} title={previewText}>
+                        {previewText || 'No messages yet'}
                       </span>
                       {clUnread > 0 ? (
-                        <span className="wa-unread-chip" title={`${clUnread} unread message${clUnread > 1 ? 's' : ''}`}>
+                        <span className="wa-unread-chip" title={`${clUnread} unread Telegram message${clUnread > 1 ? 's' : ''}`} aria-label={`${clUnread} unread Telegram message${clUnread > 1 ? 's' : ''}`}>
                           {clUnread}
                         </span>
                       ) : m ? (

@@ -82,6 +82,33 @@ alter table public.telegram_messages add column if not exists is_read boolean no
 alter table public.telegram_messages add column if not exists read_at timestamptz;
 create index if not exists idx_telegram_messages_unread on public.telegram_messages(client_id, is_read) where direction = 'inbound' and is_read = false;
 
+create or replace function public.get_latest_telegram_messages(p_client_ids uuid[])
+returns table (
+  client_id uuid,
+  body text,
+  message_type text,
+  direction text,
+  created_at timestamptz
+)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select distinct on (messages.client_id)
+    messages.client_id,
+    messages.body,
+    messages.message_type,
+    messages.direction,
+    messages.created_at
+  from public.telegram_messages as messages
+  where messages.client_id = any(p_client_ids)
+  order by messages.client_id, messages.created_at desc, messages.id desc;
+$$;
+
+revoke all on function public.get_latest_telegram_messages(uuid[]) from public, anon, authenticated;
+grant execute on function public.get_latest_telegram_messages(uuid[]) to service_role;
+
 create or replace function public.create_telegram_message_notification()
 returns trigger
 language plpgsql

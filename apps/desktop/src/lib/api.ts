@@ -662,7 +662,23 @@ export async function fetchWhatsAppMessages(): Promise<WhatsAppMessage[]> {
   try {
     const res = await fetch(`${API_BASE_URL}/whatsapp/messages`, { headers: authHeaders() });
     const json = await res.json();
-    return json.data || [];
+    if (!Array.isArray(json.data)) return [];
+    return json.data.map((message: Record<string, unknown>) => ({
+      id: String(message.id || ''),
+      clientId: String(message.client_id || message.clientId || ''),
+      senderPhone: String(message.sender_phone || message.senderPhone || ''),
+      senderName: String(message.sender_name || message.senderName || ''),
+      direction: message.direction === 'outbound' ? 'outbound' : 'inbound',
+      messageType: message.message_type === 'document' || message.message_type === 'image'
+        ? message.message_type
+        : message.messageType === 'document' || message.messageType === 'image'
+          ? message.messageType
+          : 'text',
+      body: String(message.body || ''),
+      vaultFileRef: String(message.vault_file_ref || message.vaultFileRef || '') || undefined,
+      timestamp: String(message.created_at || message.timestamp || ''),
+      status: String(message.status || 'received'),
+    }));
   } catch (err) {
     console.warn('Failed to fetch WhatsApp messages', err);
     return [];
@@ -731,22 +747,29 @@ export interface TelegramUnreadSummary {
   total: number;
 }
 
+export interface TelegramPreview {
+  client_id: string;
+  body: string;
+  message_type: string;
+  direction: 'inbound' | 'outbound';
+  created_at: string;
+}
+
 export async function fetchTelegramUnread(): Promise<TelegramUnreadSummary> {
-  try {
-    const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/unread`, { headers: authHeaders() }, 10000, 'Telegram unread summary');
-    if (!res.ok || !json.success) return { counts: {}, total: 0 };
-    return { counts: json.counts || {}, total: Number(json.total) || 0 };
-  } catch {
-    return { counts: {}, total: 0 };
-  }
+  const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/unread`, { headers: authHeaders() }, 10000, 'Telegram unread summary');
+  if (!res.ok || !json.success) throw new Error(json.message || `Unable to load Telegram unread counts (HTTP ${res.status}).`);
+  return { counts: json.counts || {}, total: Number(json.total) || 0 };
+}
+
+export async function fetchTelegramPreviews(): Promise<Record<string, TelegramPreview>> {
+  const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/previews`, { headers: authHeaders() }, 10000, 'Telegram message previews');
+  if (!res.ok || !json.success) throw new Error(json.message || `Unable to load Telegram message previews (HTTP ${res.status}).`);
+  return json.data || {};
 }
 
 export async function markTelegramClientRead(clientId: string): Promise<void> {
-  try {
-    await fetchTelegramJson(`${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/read`, { method: 'POST', headers: authHeaders() }, 10000, 'Mark client read');
-  } catch {
-    // Non-blocking
-  }
+  const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/read`, { method: 'POST', headers: authHeaders() }, 10000, 'Mark client read');
+  if (!res.ok || !json.success) throw new Error(json.message || `Unable to mark Telegram messages as read (HTTP ${res.status}).`);
 }
 
 // ─── Compliance API ────────────────────────────────────────────

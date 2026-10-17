@@ -79,14 +79,39 @@ router.get('/unread', requireAuth, async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
 });
 
+router.get('/previews', requireAuth, async (req, res) => {
+  try {
+    if (!isConnected) return res.json({ success: true, data: {} });
+    const { data: clients, error: clientError } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('user_id', req.user.id);
+    if (clientError) throw clientError;
+    const clientIds = (clients || []).map((client) => client.id);
+    if (!clientIds.length) return res.json({ success: true, data: {} });
+
+    const { data: latestMessages, error } = await supabase.rpc('get_latest_telegram_messages', {
+      p_client_ids: clientIds,
+    });
+    if (error) throw error;
+
+    const data = {};
+    (latestMessages || []).forEach((message) => {
+      data[message.client_id] = message;
+    });
+    return res.json({ success: true, data });
+  } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
+});
+
 router.post('/clients/:clientId/read', requireAuth, async (req, res) => {
   try {
     if (!isConnected || !(await assertOwnedClient(req.user.id, req.params.clientId))) return res.status(404).json({ success: false, message: 'Client not found.' });
-    await supabase.from('telegram_messages')
+    const { error } = await supabase.from('telegram_messages')
       .update({ is_read: true, read_at: new Date().toISOString() })
       .eq('client_id', req.params.clientId)
       .eq('direction', 'inbound')
       .eq('is_read', false);
+    if (error) throw error;
     return res.json({ success: true });
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
 });
@@ -103,11 +128,12 @@ router.get('/clients/:clientId/messages', requireAuth, async (req, res) => {
     if (clientError) throw clientError;
 
     // Automatically mark unread inbound messages as read for this client
-    await supabase.from('telegram_messages')
+    const { error: markReadError } = await supabase.from('telegram_messages')
       .update({ is_read: true, read_at: new Date().toISOString() })
       .eq('client_id', req.params.clientId)
       .eq('direction', 'inbound')
       .eq('is_read', false);
+    if (markReadError) throw markReadError;
 
     return res.json({ success: true, linked: Boolean(client?.telegram_chat_id), data: data || [] });
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
