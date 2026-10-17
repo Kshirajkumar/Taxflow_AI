@@ -373,6 +373,9 @@ export function WhatsAppPage() {
                 : whatsappLast?.at;
               const m = missing(s.checks, cl.id).length;
               const clUnread = unreadCounts[cl.id] || 0;
+              const clientPreview = clUnread > 0
+                ? `${clUnread} New Message${clUnread === 1 ? '' : 's'}`
+                : previewText || 'No messages yet';
               const isSelected = s.ui.wa.client === cl.id;
               return (
                 <div
@@ -393,8 +396,8 @@ export function WhatsAppPage() {
                       <span className="tm">{previewAt ? agoT(previewAt) : ''}</span>
                     </div>
                     <div className="row">
-                      <span className={'pv' + (clUnread > 0 ? ' unread-pv' : '')} title={previewText}>
-                        {previewText || 'No messages yet'}
+                      <span className={'pv' + (clUnread > 0 ? ' unread-pv' : '')} title={clientPreview}>
+                        {clientPreview}
                       </span>
                       {clUnread > 0 ? (
                         <span className="wa-unread-chip" title={`${clUnread} unread Telegram message${clUnread > 1 ? 's' : ''}`} aria-label={`${clUnread} unread Telegram message${clUnread > 1 ? 's' : ''}`}>
