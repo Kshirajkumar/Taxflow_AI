@@ -566,7 +566,7 @@ export function WhatsAppPage() {
                   </span>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div className="row">
-                      <span className={'nm' + (clUnread > 0 ? ' unread-nm' : '')}>{cl.short}</span>
+                      <span className={'nm' + (clUnread > 0 ? ' unread-nm' : '')} title={cl.name}>{cl.name}</span>
                       <span className="sp" />
                       <span className="tm">{previewAt ? agoT(previewAt) : ''}</span>
                     </div>
@@ -860,14 +860,18 @@ export function WhatsAppPage() {
               ))}
             </div>
             <div className="wa-f">
-              <select
-                className="sel"
-                aria-label="Insert template"
-                onChange={(e) => { if (e.target.value) { const t = TPL.find((x) => x.id === e.target.value)!; setInput(fillTpl(t.body, c.contact.split(' ')[0])); e.target.value = ''; } }}
-              >
-                <option value="">Insert template</option>
-                {TPL.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
+              <label className="wa-template-picker">
+                <Icon name="file" size={14} />
+                <select
+                  className="sel"
+                  aria-label="Insert template"
+                  value=""
+                  onChange={(e) => { if (e.target.value) { const t = TPL.find((x) => x.id === e.target.value)!; setInput(fillTpl(t.body, c.contact.split(' ')[0])); } }}
+                >
+                  <option value="">Insert template</option>
+                  {TPL.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </label>
               <input
                 className="inp"
                 value={input}

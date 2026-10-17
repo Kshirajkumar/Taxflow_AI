@@ -71,6 +71,9 @@ const VAULT_BUCKETS = ['Raw', 'Extracted'];
 const CURRENT_AY = '2026-27';
 
 function getCurrentVaultPeriod(date = new Date()) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    throw new Error('A valid date is required to determine the vault period.');
+  }
   return {
     year: String(date.getFullYear()),
     month: new Intl.DateTimeFormat('en-US', { month: 'long' }).format(date)
@@ -144,9 +147,9 @@ function sanitizeName(name) {
  * Document categories remain metadata only; they never become filesystem folders.
  * Returns the absolute directory path
  */
-function getClientVaultDir(clientName, category = 'General', ay = CURRENT_AY) {
+function getClientVaultDir(clientName, category = 'General', ay = CURRENT_AY, date = new Date()) {
   const bucket = category === 'Extracted' || category === 'Generated' ? 'Extracted' : 'Raw';
-  const { periodDir } = ensureClientVaultStructure(clientName);
+  const { periodDir } = ensureClientVaultStructure(clientName, date);
   const dirPath = path.join(periodDir, bucket);
 
   if (!fs.existsSync(dirPath)) {
@@ -175,11 +178,11 @@ function deleteClientVault(clientVaultRoot) {
  * Save a base64-encoded file to the local vault
  * Returns an object with { vaultPath, fileName, fileSizeKb }
  */
-function saveFileToVault(clientId, originalFileName, fileBase64, category, ay = CURRENT_AY) {
+function saveFileToVault(clientId, originalFileName, fileBase64, category, ay = CURRENT_AY, date = new Date()) {
   const ext = path.extname(originalFileName) || '.pdf';
   const safeName = sanitizeName(path.basename(originalFileName, ext));
   const uniqueName = `${Date.now()}_${safeName}${ext}`;
-  const dir = getClientVaultDir(clientId, category, ay);
+  const dir = getClientVaultDir(clientId, category, ay, date);
   const fullPath = path.join(dir, uniqueName);
 
   const base64Data = fileBase64.replace(/^data:[^;]+;base64,/, '');
@@ -390,6 +393,7 @@ module.exports = {
   resolveClientVaultFile,
   deleteClientVaultFile,
   getVaultBaseDir,
+  getCurrentVaultPeriod,
   getVaultUsage,
   updateVaultBaseDir,
   CURRENT_AY,

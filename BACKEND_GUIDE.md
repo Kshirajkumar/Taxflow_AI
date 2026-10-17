@@ -78,9 +78,9 @@ Files must be organized strictly by this pattern:
 2. **Binary Handling**: Convert base64 uploads to buffers immediately.
 3. **Collision Prevention**: Prefix files with a timestamp or unique ID during `saveFileToVault()`.
 4. **Categories**: Only use `ALLOWED_CATEGORIES` (e.g., `GST`, `IncomeTax`, `Form16`, `Notice`).
-5. **Telegram Attachments**: When a user opens a Telegram client conversation, supported inbound files are downloaded once from Telegram and saved under that client's current calendar year/month `Raw` folder. Their metadata is linked to the Telegram message so the authenticated document-serving route can open the file.
+5. **Telegram Attachments**: When a user opens a Telegram client conversation, supported inbound files are downloaded once from Telegram and saved under that client's calendar year/month `Raw` folder using the Telegram message timestamp. Their metadata is linked to the Telegram message so the authenticated document-serving route can open the file. The webhook stores each inbound message before acknowledging it to Telegram; storage failures return a retryable response.
 
-Before enabling Telegram attachment downloads on an existing database, run `db/telegram_document_storage.sql` after the Telegram message and document metadata tables have been created. It adds Telegram attachment fields and allows `Telegram` as a document source.
+Before enabling Telegram on an existing database, ensure `clients` and `documents_metadata` exist, then run `npm run migrate:telegram` from `services/backend` with `DATABASE_URL` set. It applies `db/telegram.sql` and `db/telegram_document_storage.sql` in one transaction. The backend must use `SUPABASE_SERVICE_ROLE_KEY`; do not grant table access to `anon`. Configure `TELEGRAM_WEBHOOK_SECRET` and a public HTTPS URL (`PUBLIC_URL` or `RENDER_EXTERNAL_URL`) before starting the backend so it can register the webhook.
 
 #### Sync Logic:
 - **Creation**: When a client is created in Supabase $\rightarrow$ Create their root vault directory.

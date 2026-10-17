@@ -8,11 +8,13 @@ async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
   const client = await pool.connect();
   try {
-    const sql = await fs.readFile(path.join(__dirname, 'telegram.sql'), 'utf8');
     await client.query('begin');
-    await client.query(sql);
+    for (const migration of ['telegram.sql', 'telegram_document_storage.sql']) {
+      const sql = await fs.readFile(path.join(__dirname, migration), 'utf8');
+      await client.query(sql);
+    }
     await client.query('commit');
-    console.log('Telegram migration applied successfully.');
+    console.log('Telegram message and document-storage migrations applied successfully.');
   } catch (error) {
     await client.query('rollback').catch(() => {});
     throw error;

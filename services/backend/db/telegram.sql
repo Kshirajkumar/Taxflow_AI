@@ -52,11 +52,13 @@ alter table public.telegram_messages add constraint telegram_messages_delivery_s
 alter table public.telegram_link_tokens enable row level security;
 alter table public.telegram_messages enable row level security;
 
--- Grant permissions to service_role, authenticated, and anon
+-- The backend uses the service role. Authenticated access remains ownership-scoped.
 grant all on public.telegram_link_tokens to service_role;
 grant all on public.telegram_messages to service_role;
-grant select, insert, update, delete on public.telegram_link_tokens to authenticated, anon;
-grant select, insert, update, delete on public.telegram_messages to authenticated, anon;
+grant select, insert, update, delete on public.telegram_link_tokens to authenticated;
+grant select, insert, update, delete on public.telegram_messages to authenticated;
+revoke all on public.telegram_link_tokens from anon;
+revoke all on public.telegram_messages from anon;
 
 -- 1. Full access for service_role (backend worker)
 drop policy if exists telegram_link_tokens_service_role on public.telegram_link_tokens;
@@ -80,14 +82,9 @@ create policy telegram_messages_owner on public.telegram_messages
   using (exists (select 1 from public.clients c where c.id = client_id and c.user_id = auth.uid()))
   with check (exists (select 1 from public.clients c where c.id = client_id and c.user_id = auth.uid()));
 
--- 3. Fallback for backend operations running with anon key (e.g. Telegram webhooks)
+-- Remove legacy anon fallback policies. The backend must use SUPABASE_SERVICE_ROLE_KEY.
 drop policy if exists telegram_messages_backend_fallback on public.telegram_messages;
-create policy telegram_messages_backend_fallback on public.telegram_messages
-  for all to anon using (true) with check (true);
-
 drop policy if exists telegram_link_tokens_backend_fallback on public.telegram_link_tokens;
-create policy telegram_link_tokens_backend_fallback on public.telegram_link_tokens
-  for all to anon using (true) with check (true);
 
 -- 4. Unread tracking and automatic notifications
 alter table public.telegram_messages add column if not exists is_read boolean not null default false;

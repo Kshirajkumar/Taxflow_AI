@@ -5,7 +5,7 @@ const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
 const { requireAuth } = require('../middleware/requireAuth');
 const { assertOwnedClient } = require('../lib/ownership');
-const { saveFileToVault, deleteVaultFile } = require('../vault/vaultManager');
+const { saveFileToVault, deleteVaultFile, getCurrentVaultPeriod } = require('../vault/vaultManager');
 
 const botToken = () => process.env.TELEGRAM_BOT_TOKEN || '';
 const webhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET || '';
@@ -67,11 +67,24 @@ function normalizeTelegramFileName(fileName, mimeType) {
   return { fileName: `${stem}${extension}`, fileType: FILE_TYPES[extension] };
 }
 
+function getTelegramMessageDate(message) {
+  const date = new Date(message?.created_at);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error('Telegram message has an invalid timestamp; its attachment cannot be filed.');
+  }
+  return date;
+}
+
+function getAssessmentYear(date) {
+  const firstAssessmentYear = date.getFullYear() - (date.getMonth() < 3 ? 1 : 0);
+  return `${firstAssessmentYear}-${String(firstAssessmentYear + 1).slice(-2)}`;
+}
+
 function processTelegramAttachmentDownload(message, client) {
   return (async () => {
     const { data: current, error: lookupError } = await supabase
       .from('telegram_messages')
-      .select('vault_file_ref, telegram_file_id, telegram_file_name, mime_type, file_size')
+      .select('vault_file_ref, telegram_file_id, telegram_file_name, mime_type, file_size, created_at')
       .eq('id', message.id)
       .eq('client_id', client.id)
       .single();
@@ -95,10 +108,9 @@ function processTelegramAttachmentDownload(message, client) {
     const buffer = await readTelegramFile(response);
     if (!buffer.length) throw new Error('Telegram returned an empty file.');
 
-    const saved = saveFileToVault(client.name, normalized.fileName, buffer.toString('base64'), 'General');
-    const now = new Date();
-    const firstAssessmentYear = now.getFullYear() - (now.getMonth() < 3 ? 1 : 0);
-    const assessmentYear = `${firstAssessmentYear}-${String(firstAssessmentYear + 1).slice(-2)}`;
+    const receivedAt = getTelegramMessageDate(current);
+    // General is the document metadata category; the vault maps it to the Raw bucket.
+    const saved = saveFileToVault(client.name, normalized.fileName, buffer.toString('base64'), 'General', undefined, receivedAt);
     const metadata = {
       client_id: client.id,
       client_name: client.name,
@@ -109,7 +121,7 @@ function processTelegramAttachmentDownload(message, client) {
       source: 'Telegram',
       status: 'Pending',
       vault_path: saved.vaultPath,
-      assessment_year: assessmentYear,
+      assessment_year: getAssessmentYear(receivedAt),
       telegram_message_id: message.id
     };
 
@@ -225,6 +237,7 @@ async function configureWebhook() {
     return { configured: false, reason: 'public_url_missing' };
   }
   if (!/^https:\/\//i.test(publicUrl)) throw new Error('Telegram webhook public URL must use HTTPS');
+  if (!webhookSecret()) throw new Error('TELEGRAM_WEBHOOK_SECRET must be configured before enabling the Telegram webhook.');
   const webhookUrl = `${publicUrl}/api/v1/telegram/webhook`;
   await telegramCall('setWebhook', { url: webhookUrl, ...(webhookSecret() ? { secret_token: webhookSecret() } : {}), allowed_updates: ['message'] });
   console.log(`[Telegram] Webhook configured: ${webhookUrl}`);
@@ -466,33 +479,54 @@ router.post('/send', requireAuth, async (req, res) => {
 });
 
 router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
+  if (!webhookSecret()) {
+    console.error('[Telegram] Webhook request rejected: TELEGRAM_WEBHOOK_SECRET is not configured.');
+    return res.status(503).json({ ok: false, message: 'Telegram webhook is not configured.' });
+  }
   if (!secretMatches(req.headers['x-telegram-bot-api-secret-token'], webhookSecret())) return res.sendStatus(401);
-  res.status(200).json({ ok: true });
+  if (!isConnected || !supabase) {
+    console.error('[Telegram] Webhook request rejected: Supabase is not configured.');
+    return res.status(503).json({ ok: false, message: 'Message storage is unavailable; Telegram should retry this update.' });
+  }
+
   try {
     const update = req.body || {}; const message = update.message || update.edited_message;
-    if (!message?.chat?.id) return;
+    if (!message?.chat?.id) return res.status(200).json({ ok: true, ignored: true });
     const text = typeof message.text === 'string'
       ? message.text.trim()
       : typeof message.caption === 'string' ? message.caption.trim() : '';
     if (text.startsWith('/start')) {
-      const token = text.replace(/^\/start(?:@[^\s]+)?\s*/i, '').trim(); if (!token || message.chat.type !== 'private') return;
-      const { data: link } = await supabase.from('telegram_link_tokens').select('id,client_id').eq('token_hash', hash(token)).is('consumed_at', null).gt('expires_at', new Date().toISOString()).maybeSingle();
-      if (!link) return;
-      const { data: client } = await supabase.from('clients').select('id,name').eq('id', link.client_id).single();
-      if (!client) return;
-      const { data: consumed } = await supabase.from('telegram_link_tokens').update({ consumed_at: new Date().toISOString() }).eq('id', link.id).is('consumed_at', null).select('id').maybeSingle();
-      if (!consumed) return;
+      const token = text.replace(/^\/start(?:@[^\s]+)?\s*/i, '').trim();
+      if (!token || message.chat.type !== 'private') return res.status(200).json({ ok: true, ignored: true });
+      const { data: link, error: linkLookupError } = await supabase.from('telegram_link_tokens').select('id,client_id').eq('token_hash', hash(token)).is('consumed_at', null).gt('expires_at', new Date().toISOString()).maybeSingle();
+      if (linkLookupError) throw linkLookupError;
+      if (!link) return res.status(200).json({ ok: true, ignored: true });
+      const { data: client, error: clientLookupError } = await supabase.from('clients').select('id,name').eq('id', link.client_id).single();
+      if (clientLookupError) throw clientLookupError;
+      if (!client) return res.status(200).json({ ok: true, ignored: true });
+      const { data: consumed, error: consumeError } = await supabase.from('telegram_link_tokens').update({ consumed_at: new Date().toISOString() }).eq('id', link.id).is('consumed_at', null).select('id').maybeSingle();
+      if (consumeError) throw consumeError;
+      if (!consumed) return res.status(200).json({ ok: true, ignored: true });
       const { error: linkError } = await supabase.from('clients').update({ telegram_user_id: message.from?.id ? String(message.from.id) : null, telegram_chat_id: String(message.chat.id), telegram_linked_at: new Date().toISOString() }).eq('id', client.id);
-      if (linkError) { await supabase.from('telegram_link_tokens').update({ consumed_at: null }).eq('id', link.id); console.error('[Telegram] client linking failed:', linkError.message); return; }
+      if (linkError) {
+        const { error: restoreError } = await supabase.from('telegram_link_tokens').update({ consumed_at: null }).eq('id', link.id);
+        if (restoreError) console.error('[Telegram] failed to restore consumed link token:', restoreError.message);
+        throw linkError;
+      }
       const welcome = `Your Telegram account is connected to TaxFlow for ${client.name}.`;
       const sent = await telegramCall('sendMessage', { chat_id: message.chat.id, text: welcome });
-      await supabase.from('telegram_messages').insert({ client_id: client.id, provider_message_id: `telegram:${message.chat.id}:${sent.message_id}`, direction: 'outbound', chat_id: String(message.chat.id), body: welcome, delivery_status: 'sent' });
-      return;
+      const { error: welcomeError } = await supabase.from('telegram_messages').insert({ client_id: client.id, provider_message_id: `telegram:${message.chat.id}:${sent.message_id}`, direction: 'outbound', chat_id: String(message.chat.id), body: welcome, delivery_status: 'sent' });
+      if (welcomeError) throw welcomeError;
+      return res.status(200).json({ ok: true });
     }
     const attachment = getTelegramAttachment(message);
-    if ((!text && !attachment) || message.chat.type !== 'private') return;
-    const { data: client } = await supabase.from('clients').select('id').eq('telegram_chat_id', String(message.chat.id)).single();
-    if (!client) return;
+    if ((!text && !attachment) || message.chat.type !== 'private') return res.status(200).json({ ok: true, ignored: true });
+    const { data: client, error: clientError } = await supabase.from('clients').select('id').eq('telegram_chat_id', String(message.chat.id)).maybeSingle();
+    if (clientError) throw clientError;
+    if (!client) {
+      console.warn(`[Telegram] Ignored inbound message from unlinked chat ${message.chat.id}.`);
+      return res.status(200).json({ ok: true, ignored: true });
+    }
     const { error } = await supabase.from('telegram_messages').insert({
       client_id: client.id,
       provider_message_id: `telegram:update:${String(update.update_id || message.message_id)}`,
@@ -509,10 +543,14 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
       } : {}),
       delivery_status: 'received'
     });
-    if (error && error.code !== '23505') console.error('[Telegram] message persistence failed:', error.message);
-  } catch (error) { console.error('[Telegram] webhook processing failed:', error.message); }
+    if (error && error.code !== '23505') throw error;
+    return res.status(200).json({ ok: true, duplicate: error?.code === '23505' });
+  } catch (error) {
+    console.error('[Telegram] webhook processing failed; returning a retryable response:', error.message);
+    return res.status(503).json({ ok: false, message: 'Telegram update could not be stored; please retry.' });
+  }
 });
 
 module.exports = router;
 module.exports.configureWebhook = configureWebhook;
-module.exports._test = { secretMatches, getTelegramAttachment, normalizeTelegramFileName };
+module.exports._test = { secretMatches, getTelegramAttachment, normalizeTelegramFileName, getTelegramMessageDate, getAssessmentYear };
