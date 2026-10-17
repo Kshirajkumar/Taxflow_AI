@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Icon } from '../components/Icon';
 import { createTelegramLink, fetchTelegramMessages, fetchTelegramStatus, sendTelegramMessage, type TelegramMessage } from '../lib/api';
 import { useAppState, useDispatch } from '../state/store';
@@ -35,7 +35,14 @@ export function WhatsAppPage() {
   const [telegramDraft, setTelegramDraft] = useState('');
   const [telegramRequestId, setTelegramRequestId] = useState('');
   const [telegramRetry, setTelegramRetry] = useState(0);
+  /** Text staged inline in the thread waiting for approval — NOT yet sent */
+  const [pendingTelegramMsg, setPendingTelegramMsg] = useState('');
+  /** Whether the approval card is currently in inline-edit mode */
+  const [isEditingPending, setIsEditingPending] = useState(false);
+  /** Holds the in-progress edit text while editing mode is active */
+  const [editText, setEditText] = useState('');
   const threadRef = useRef<HTMLDivElement>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const c = s.clients.find((x) => x.id === s.ui.wa.client) || s.clients[0];
   const thread = c ? (s.threads[c.id] || []).slice().sort((a, b) => a.at.getTime() - b.at.getTime()) : [];
 
@@ -74,7 +81,7 @@ export function WhatsAppPage() {
 
   function requestTelegramSend() {
     const text = input.trim();
-    if (!text || telegramSending) return;
+    if (!text || telegramSending || pendingTelegramMsg) return;
     if (!telegramReady || !telegramLinked) {
       setTelegramError('Telegram is not ready or this client is not linked. Please check the connection and try again.');
       return;
@@ -83,6 +90,8 @@ export function WhatsAppPage() {
     setTelegramInfo('');
     setTelegramRequestId(crypto.randomUUID());
     setTelegramDraft(text);
+    setPendingTelegramMsg(text);
+    setInput('');
   }
 
   async function confirmTelegramSend() {
@@ -92,7 +101,7 @@ export function WhatsAppPage() {
     setTelegramInfo('Sending securely through Telegram…');
     try {
       await sendTelegramMessage(c.id, telegramDraft, telegramRequestId || crypto.randomUUID());
-      setInput('');
+      setPendingTelegramMsg('');
       setTelegramDraft('');
       setTelegramRequestId('');
       setTelegramInfo('Message sent through Telegram.');
@@ -111,6 +120,42 @@ export function WhatsAppPage() {
     } finally {
       setTelegramSending(false);
     }
+  }
+
+  function cancelTelegramPending() {
+    setPendingTelegramMsg('');
+    setTelegramDraft('');
+    setTelegramRequestId('');
+    setTelegramError('');
+    setTelegramInfo('');
+    setIsEditingPending(false);
+    setEditText('');
+  }
+
+  /** Enter inline-edit mode for the pending message */
+  const startEditingPending = useCallback(() => {
+    setEditText(pendingTelegramMsg);
+    setIsEditingPending(true);
+    // Focus the textarea on next paint
+    requestAnimationFrame(() => editTextareaRef.current?.focus());
+  }, [pendingTelegramMsg]);
+
+  /** Commit the edited text — updates both the visible bubble and the draft to be sent */
+  function commitEdit() {
+    const trimmed = editText.trim();
+    if (!trimmed) return; // guard: empty message not allowed
+    setPendingTelegramMsg(trimmed);
+    setTelegramDraft(trimmed);
+    // Regenerate request ID so a re-edit can't collide with a previous idempotency key
+    setTelegramRequestId(crypto.randomUUID());
+    setIsEditingPending(false);
+    setEditText('');
+  }
+
+  /** Abort inline-edit and return to the approval view without changing anything */
+  function abortEdit() {
+    setIsEditingPending(false);
+    setEditText('');
   }
 
   if (!c) {
@@ -205,11 +250,127 @@ export function WhatsAppPage() {
               </div>
             </div>
             <div id="wa-thread" ref={threadRef}>
-              {channel === 'telegram' && telegramLoading && telegramMessages.length === 0 && <div className="empty telegram-state"><span className="spin" /><b>Connecting to Telegram…</b><span>Checking the deployed Telegram service and loading this client’s conversation.</span></div>}
-              {channel === 'telegram' && telegramError && <div className="empty telegram-state error"><b>Telegram action needs attention</b><span>{telegramError}</span><button className="btn sm" onClick={() => { setTelegramError(''); setTelegramRetry((value) => value + 1); }}>Retry connection</button></div>}
-              {channel === 'telegram' && !telegramLoading && !telegramError && telegramMessages.length === 0 && <div className="empty"><b>No Telegram messages yet</b>Connect this client’s Telegram account, then ask them to message the bot.</div>}
+              {channel === 'telegram' && telegramError && (
+                <div className="empty telegram-state error">
+                  <b>Telegram action needs attention</b>
+                  <span>{telegramError}</span>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                    <button className="btn sm" onClick={() => { setTelegramError(''); setTelegramRetry((value) => value + 1); }}>Retry connection</button>
+                    {/session|expired|invalid|unauthorized|log in/i.test(telegramError) && (
+                      <button className="btn sm pri" onClick={() => dispatch({ type: 'LOGOUT' })}>Log in again</button>
+                    )}
+                  </div>
+                </div>
+              )}
               {channel === 'telegram' && telegramInfo && <div className="telegram-notice">{telegramInfo}</div>}
               {channel === 'telegram' && telegramMessages.map((m) => <div key={m.id} className={'msg ' + (m.direction === 'outbound' ? 'me' : 'cl')}><div>{m.body}</div><span className="mt">{fTime(new Date(m.created_at))} · {m.delivery_status}</span></div>)}
+              {channel === 'telegram' && pendingTelegramMsg && (
+                <div className="tg-pending-group">
+
+                  {/* ── Message bubble (muted while pending / editing) ── */}
+                  <div className={`msg me tg-pending-bubble${isEditingPending ? ' tg-pending-bubble--editing' : ''}`}>
+                    <div>{pendingTelegramMsg}</div>
+                    <span className="mt">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ display:'inline', verticalAlign:'middle', marginRight:3 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      {isEditingPending ? 'Editing…' : 'Pending approval'}
+                    </span>
+                  </div>
+
+                  {/* ── Approval / Edit card ── */}
+                  <div className={`tg-approval-card${isEditingPending ? ' tg-approval-card--editing' : ''}`}>
+
+                    {isEditingPending ? (
+                      /* ── EDIT MODE ── */
+                      <>
+                        <div className="tg-edit-header">
+                          <span className="tg-approval-icon tg-approval-icon--edit">
+                            {/* Pencil icon */}
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                          </span>
+                          <div className="tg-approval-text">
+                            <b>Edit your message</b>
+                            <span>Press Enter or click Update to re-review. Shift + Enter adds a new line.</span>
+                          </div>
+                        </div>
+                        <div className="tg-edit-body">
+                          <textarea
+                            ref={editTextareaRef}
+                            className="tg-edit-textarea"
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                if (editText.trim()) commitEdit();
+                              } else if (e.key === 'Escape') {
+                                abortEdit();
+                              }
+                            }}
+                            rows={3}
+                            maxLength={4096}
+                            aria-label="Edit pending Telegram message"
+                          />
+                          {editText.trim() === '' && (
+                            <p className="tg-edit-error">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                              Message cannot be empty.
+                            </p>
+                          )}
+                        </div>
+                        <div className="tg-approval-actions">
+                          <button className="tg-cancel-btn" onClick={abortEdit}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                            Back
+                          </button>
+                          <button
+                            className="tg-approve-btn tg-update-btn"
+                            onClick={commitEdit}
+                            disabled={!editText.trim()}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            Update
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      /* ── REVIEW MODE ── */
+                      <>
+                        <div className="tg-approval-header">
+                          <span className="tg-approval-icon">
+                            {/* Phone icon */}
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.65 3.47 2 2 0 0 1 3.62 1.27h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 8.91a16 16 0 0 0 6 6l.72-.72a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                          </span>
+                          <div className="tg-approval-text">
+                            <b>Review before sending via Telegram</b>
+                            <span>Message not delivered yet. Approve, edit, or discard.</span>
+                          </div>
+                        </div>
+                        <div className="tg-approval-actions">
+                          {/* Discard */}
+                          <button className="tg-cancel-btn" onClick={cancelTelegramPending} disabled={telegramSending}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            Discard
+                          </button>
+                          {/* Edit */}
+                          <button className="tg-edit-btn" onClick={startEditingPending} disabled={telegramSending}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            Edit
+                          </button>
+                          {/* Approve & Send */}
+                          <button className="tg-approve-btn" onClick={() => void confirmTelegramSend()} disabled={telegramSending}>
+                            {telegramSending
+                              ? <><span className="tg-spin" />Sending…</>
+                              : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Approve &amp; Send</>
+                            }
+                          </button>
+                        </div>
+                      </>
+                    )}
+
+                  </div>
+                </div>
+              )}
+
               {channel === 'whatsapp' && (() => {
                 let last = '';
                 return thread.map((m) => {
@@ -258,8 +419,39 @@ export function WhatsAppPage() {
                 <option value="">Insert template</option>
                 {TPL.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
-              <input className="inp" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (channel === 'telegram' ? requestTelegramSend() : void send())} placeholder={`Message ${c.contact.split(' ')[0]}`} disabled={channel === 'telegram' && telegramSending} />
-              <button className="btn pri" onClick={() => channel === 'telegram' ? requestTelegramSend() : void send()} disabled={channel === 'telegram' && (!telegramReady || !telegramLinked || telegramSending || telegramLoading)} aria-label="Send message">{telegramSending ? <span className="spin spin-light" /> : <Icon name="send" size={15} />}</button>
+              <input
+                className="inp"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    channel === 'telegram' ? requestTelegramSend() : void send();
+                  }
+                }}
+                placeholder={
+                  channel === 'telegram' && (pendingTelegramMsg || isEditingPending)
+                    ? isEditingPending
+                      ? 'Finish editing the message above first…'
+                      : 'Approve, edit, or discard the pending message first…'
+                    : `Message ${c.contact.split(' ')[0]}`
+                }
+                disabled={
+                  (channel === 'telegram' && telegramSending) ||
+                  (channel === 'telegram' && (!!pendingTelegramMsg || isEditingPending))
+                }
+                aria-label="Message input"
+              />
+              <button
+                className="btn pri"
+                onClick={() => channel === 'telegram' ? requestTelegramSend() : void send()}
+                disabled={
+                  channel === 'telegram' &&
+                  (!telegramReady || !telegramLinked || telegramSending || telegramLoading || !!pendingTelegramMsg || isEditingPending)
+                }
+                aria-label="Send message"
+              >
+                {telegramSending ? <span className="spin spin-light" /> : <Icon name="send" size={15} />}
+              </button>
             </div>
           </div>
         </div>
@@ -299,18 +491,7 @@ export function WhatsAppPage() {
       )}
 
       {showSchedule && <ScheduleModal onClose={() => setShowSchedule(false)} defaultClient={c.id} />}
-      {telegramDraft && <div className="modal telegram-approval" role="dialog" aria-modal="true" aria-labelledby="telegram-approval-title">
-        <div className="mbox telegram-approval-box">
-          <span className="eyebrow">TELEGRAM MESSAGE REVIEW</span>
-          <h2 id="telegram-approval-title">Send this message to {c.name}?</h2>
-          <p className="telegram-approval-copy">Review the exact text before it is delivered through the connected Telegram chat.</p>
-          <div className="telegram-approval-message">{telegramDraft}</div>
-          <div className="telegram-approval-actions">
-            <button className="btn gh" onClick={() => setTelegramDraft('')} disabled={telegramSending}>Cancel</button>
-            <button className="btn pri" onClick={() => void confirmTelegramSend()} disabled={telegramSending}>{telegramSending && <span className="spin spin-light" />}{telegramSending ? 'Sending…' : 'Approve and send'}</button>
-          </div>
-        </div>
-      </div>}
+
     </>
   );
 }

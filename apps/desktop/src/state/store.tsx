@@ -477,6 +477,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   React.useEffect(() => {
+    const onSessionExpired = () => {
+      dispatch({ type: 'SESSION_INVALID' });
+    };
+    window.addEventListener('taxflow:session-expired', onSessionExpired);
+    return () => {
+      window.removeEventListener('taxflow:session-expired', onSessionExpired);
+    };
+  }, []);
+
+  React.useEffect(() => {
     async function loadData() {
       try {
         const rawSession = localStorage.getItem('taxflow_session');

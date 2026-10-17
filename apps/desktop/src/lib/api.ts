@@ -7,33 +7,29 @@ const API_ORIGIN = String(
 ).replace(/\/$/, '');
 const API_BASE_URL = `${API_ORIGIN}/api/v1`;
 
-async function fetchTelegramJson(url: string, init: RequestInit, timeoutMs: number, operation: string): Promise<{ response: Response; json: any }> {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    let response: Response;
-    try {
-      response = await fetch(url, { ...init, signal: controller.signal });
-    } catch {
-      if (controller.signal.aborted) {
-        const timeoutMessage = operation === 'Telegram message delivery'
-          ? 'Delivery status is unknown. Check the conversation before retrying.'
-          : 'Check the backend connection and try again.';
-        throw new Error(`${operation} timed out after ${Math.round(timeoutMs / 1000)} seconds. ${timeoutMessage}`);
-      }
-      throw new Error(`${operation} could not reach the backend. Check your connection and try again.`);
-    }
+// ─── Types ─────────────────────────────────────────────────────
 
-    let json: any;
-    try {
-      json = await response.json();
-    } catch {
-      throw new Error(`${operation} returned an invalid response (HTTP ${response.status}).`);
-    }
-    return { response, json };
-  } finally {
-    window.clearTimeout(timeout);
-  }
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  practiceType: string;
+  membershipNo?: string | null;
+  role: string;
+  onboardingComplete: boolean;
+  vaultConfigured: boolean;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  message?: string;
+  token?: string;
+  refreshToken?: string;
+  user?: AuthUser;
+  needsEmailConfirmation?: boolean;
+  rateLimited?: boolean;
+  secondsLeft?: number;
+  remainingAttempts?: number;
 }
 
 // ─── Token helpers ─────────────────────────────────────────────
@@ -70,7 +66,7 @@ function saveSessionTokens(response: AuthResponse): void {
   }
 }
 
-async function refreshSession(): Promise<AuthResponse | null> {
+export async function refreshSession(): Promise<AuthResponse | null> {
   if (!refreshRequest) {
     let refreshToken: string | null = null;
     try {
@@ -103,29 +99,54 @@ async function refreshSession(): Promise<AuthResponse | null> {
   return refreshRequest;
 }
 
-// ─── Types ─────────────────────────────────────────────────────
+async function fetchTelegramJson(url: string, init: RequestInit, timeoutMs: number, operation: string): Promise<{ response: Response; json: any }> {
+  const doFetch = async (headers: HeadersInit): Promise<{ response: Response; json: any }> => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let response: Response;
+      try {
+        response = await fetch(url, { ...init, headers, signal: controller.signal });
+      } catch {
+        if (controller.signal.aborted) {
+          const timeoutMessage = operation === 'Telegram message delivery'
+            ? 'Delivery status is unknown. Check the conversation before retrying.'
+            : 'Check the backend connection and try again.';
+          throw new Error(`${operation} timed out after ${Math.round(timeoutMs / 1000)} seconds. ${timeoutMessage}`);
+        }
+        throw new Error(`${operation} could not reach the backend. Check your connection and try again.`);
+      }
 
-export interface AuthUser {
-  id: string;
-  name: string;
-  email: string;
-  practiceType: string;
-  membershipNo?: string | null;
-  role: string;
-  onboardingComplete: boolean;
-  vaultConfigured: boolean;
-}
+      let json: any;
+      try {
+        json = await response.json();
+      } catch {
+        throw new Error(`${operation} returned an invalid response (HTTP ${response.status}).`);
+      }
+      return { response, json };
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  };
 
-export interface AuthResponse {
-  success: boolean;
-  message?: string;
-  token?: string;
-  refreshToken?: string;
-  user?: AuthUser;
-  needsEmailConfirmation?: boolean;
-  rateLimited?: boolean;
-  secondsLeft?: number;
-  remainingAttempts?: number;
+  const initialHeaders = { ...authHeaders(), ...(init.headers as Record<string, string> || {}) };
+  let result = await doFetch(initialHeaders);
+
+  // If 401 Unauthorized or expired session message, try silent session refresh and retry once
+  const isAuthError = result.response.status === 401 ||
+    (!result.json.success && typeof result.json.message === 'string' && /session is invalid or has expired/i.test(result.json.message));
+
+  if (isAuthError) {
+    const refreshed = await refreshSession();
+    if (refreshed?.token) {
+      const retriedHeaders = { ...(init.headers as Record<string, string> || {}), ...authHeaders() };
+      result = await doFetch(retriedHeaders);
+    } else {
+      window.dispatchEvent(new CustomEvent('taxflow:session-expired'));
+    }
+  }
+
+  return result;
 }
 
 export interface NotificationItem {
