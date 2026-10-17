@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Icon } from '../components/Icon';
-import { createTelegramLink, fetchTelegramMessages, fetchTelegramStatus, sendTelegramMessage, fetchTelegramUnread, markTelegramClientRead, type TelegramMessage } from '../lib/api';
+import {
+  createTelegramLink,
+  fetchTelegramMessages,
+  fetchTelegramStatus,
+  sendTelegramMessage,
+  fetchTelegramUnread,
+  markTelegramClientRead,
+  fetchWhatsAppStatus,
+  sendWhatsAppManualMessage,
+  type TelegramMessage,
+} from '../lib/api';
 import { useAppState, useDispatch } from '../state/store';
 import { nextMsgId } from '../lib/messageIds';
 import { TPL } from '../data/seed';
@@ -20,7 +30,7 @@ function fillTpl(body: string, name: string) {
 export function WhatsAppPage() {
   const s = useAppState();
   const dispatch = useDispatch();
-  const [channel, setChannel] = useState<'whatsapp' | 'telegram'>('whatsapp');
+  const [channel, setChannel] = useState<'whatsapp' | 'telegram'>('telegram');
   const [input, setInput] = useState('');
   const [showSchedule, setShowSchedule] = useState(false);
   const [telegramMessages, setTelegramMessages] = useState<TelegramMessage[]>([]);
@@ -45,6 +55,11 @@ export function WhatsAppPage() {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   /** Total unread messages across all clients */
   const [totalUnreadAcrossClients, setTotalUnreadAcrossClients] = useState(0);
+  /** WhatsApp status state */
+  const [whatsAppReady, setWhatsAppReady] = useState(false);
+  const [whatsAppLoading, setWhatsAppLoading] = useState(false);
+  const [whatsAppError, setWhatsAppError] = useState('');
+  const [whatsAppSending, setWhatsAppSending] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const c = s.clients.find((x) => x.id === s.ui.wa.client) || s.clients[0];
@@ -96,6 +111,23 @@ export function WhatsAppPage() {
     };
     void load(true); const timer = window.setInterval(() => void load(), 4000); return () => { active = false; window.clearInterval(timer); };
   }, [channel, c?.id, telegramRetry]);
+
+  useEffect(() => {
+    if (channel !== 'whatsapp') return;
+    let active = true;
+    setWhatsAppLoading(true);
+    void fetchWhatsAppStatus().then((status) => {
+      if (!active) return;
+      setWhatsAppReady(status.connected);
+      if (!status.connected) {
+        setWhatsAppError(status.message || 'WhatsApp Cloud API is not configured on this server.');
+      } else {
+        setWhatsAppError('');
+      }
+      setWhatsAppLoading(false);
+    });
+    return () => { active = false; };
+  }, [channel]);
 
   async function connectTelegram() {
     if (telegramConnecting) return;
@@ -196,7 +228,7 @@ export function WhatsAppPage() {
   if (!c) {
     return (
       <>
-        <div className="ph"><div><h1>Client Inbox</h1><p>WhatsApp and Telegram client conversations in one place, with the reminders that will go out next.</p></div><div className="ph-a"><label className="f" htmlFor="inbox-channel-empty">Channel</label><select id="inbox-channel-empty" className="sel" style={{ width: 150 }} value={channel} onChange={(e) => setChannel(e.target.value as 'whatsapp' | 'telegram')}><option value="whatsapp">WhatsApp</option><option value="telegram">Telegram</option></select></div></div>
+        <div className="ph"><div><h1>Client Inbox</h1><p>WhatsApp and Telegram client conversations in one place, with the reminders that will go out next.</p></div><div className="ph-a"><label className="f" htmlFor="inbox-channel-empty">Channel</label><select id="inbox-channel-empty" className="sel" style={{ width: 160 }} value={channel} onChange={(e) => setChannel(e.target.value as 'whatsapp' | 'telegram')}><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option></select></div></div>
         <div className="card workspace-empty workspace-empty-inbox">
           <div className="workspace-empty-visual"><span className="workspace-empty-ring ring-one" /><span className="workspace-empty-ring ring-two" /><span className="workspace-empty-orb"><Icon name="chat" size={30} /></span><span className="workspace-empty-float float-one"><Icon name="send" size={14} /></span><span className="workspace-empty-float float-two"><Icon name="bell" size={14} /></span></div>
           <div className="workspace-empty-copy"><span className="eyebrow">A QUIET INBOX IS A CLEAN START</span><h2>Your client conversations will appear here</h2><p>Once a client is added, chats, reminders, and approved message templates will stay together in one focused workspace.</p><button className="btn pri" onClick={() => dispatch({ type: 'GO', page: 'clients' })}><Icon name="users" size={14} />Add your first client</button></div>
@@ -213,17 +245,24 @@ export function WhatsAppPage() {
       requestTelegramSend();
       return;
     }
-    const msg: ChatMsg = { id: nextMsgId(), f: 'me', t: text, at: vnow(), st: 'sent' };
-    dispatch({ type: 'WA_APPEND', client: c.id, msg });
-    setInput('');
-    setTimeout(() => {
-      const wantsDoc = /bank|invoice|bill|document|send|share|statement|receipt/i.test(text);
-      dispatch({
-        type: 'WA_APPEND',
-        client: c.id,
-        msg: { id: nextMsgId(), f: 'cl', t: wantsDoc ? 'Sending the files now.' : 'Ok sir, will send today.', at: vnow(), st: 'read' },
-      });
-    }, 1800);
+    if (channel === 'whatsapp') {
+      if (!whatsAppReady) {
+        setWhatsAppError('WhatsApp Cloud API is not configured on this server. Please use Telegram or configure WhatsApp credentials in backend .env.');
+        return;
+      }
+      setWhatsAppSending(true);
+      setWhatsAppError('');
+      try {
+        await sendWhatsAppManualMessage(c.id, c.phone, text);
+        const msg: ChatMsg = { id: nextMsgId(), f: 'me', t: text, at: vnow(), st: 'sent' };
+        dispatch({ type: 'WA_APPEND', client: c.id, msg });
+        setInput('');
+      } catch (err) {
+        setWhatsAppError(err instanceof Error ? err.message : 'Failed to send WhatsApp message.');
+      } finally {
+        setWhatsAppSending(false);
+      }
+    }
   }
 
   const scheduled = s.reminders.filter((r) => r.status === 'scheduled').sort((a, b) => a.at.getTime() - b.at.getTime());
@@ -237,9 +276,9 @@ export function WhatsAppPage() {
 
       <div className="card wa-top">
         <label className="f" htmlFor="inbox-channel">Channel</label>
-        <select id="inbox-channel" className="sel" style={{ width: 150 }} value={channel} onChange={(e) => setChannel(e.target.value as 'whatsapp' | 'telegram')}>
-          <option value="whatsapp">WhatsApp</option>
+        <select id="inbox-channel" className="sel" style={{ width: 160 }} value={channel} onChange={(e) => setChannel(e.target.value as 'whatsapp' | 'telegram')}>
           <option value="telegram">Telegram</option>
+          <option value="whatsapp">WhatsApp</option>
         </select>
         {channel === 'telegram' && (
           <>
@@ -262,7 +301,19 @@ export function WhatsAppPage() {
             </button>
           </>
         )}
-        {channel === 'whatsapp' && <><span className="chip green"><i className="sdot" style={{ margin: '0 2px 0 0' }} />Business API connected</span><span className="mut2">+91 99000 00000 · {TPL.length} templates approved</span></>}
+        {channel === 'whatsapp' && (
+          <>
+            <span className={'chip ' + (whatsAppLoading ? 'amber' : whatsAppReady ? 'green' : 'amber')}>
+              <i className="sdot" style={{ margin: '0 2px 0 0' }} />
+              {whatsAppLoading ? 'Checking WhatsApp…' : whatsAppReady ? 'WhatsApp Cloud API Connected' : 'WhatsApp API Not Configured'}
+            </span>
+            {!whatsAppReady && (
+              <span className="mut2" style={{ fontSize: 11.5 }}>
+                Missing Meta Cloud API credentials in backend
+              </span>
+            )}
+          </>
+        )}
       </div>
 
       <div className="tabs">
@@ -340,6 +391,16 @@ export function WhatsAppPage() {
               </div>
             </div>
             <div id="wa-thread" ref={threadRef}>
+              {channel === 'whatsapp' && (!whatsAppReady || whatsAppError) && (
+                <div className="empty whatsapp-state error">
+                  <b>WhatsApp API is not connected</b>
+                  <span>{whatsAppError || 'WhatsApp Business API requires WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID in the backend environment. Switch to Telegram to message clients with live two-way sync.'}</span>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                    <button className="btn sm pri" onClick={() => setChannel('telegram')}>Switch to Telegram (Connected)</button>
+                    {whatsAppError && <button className="btn sm" onClick={() => setWhatsAppError('')}>Dismiss</button>}
+                  </div>
+                </div>
+              )}
               {channel === 'telegram' && telegramError && (
                 <div className="empty telegram-state error">
                   <b>Telegram action needs attention</b>
@@ -519,15 +580,22 @@ export function WhatsAppPage() {
                   }
                 }}
                 placeholder={
-                  channel === 'telegram' && (pendingTelegramMsg || isEditingPending)
-                    ? isEditingPending
-                      ? 'Finish editing the message above first…'
-                      : 'Approve, edit, or discard the pending message first…'
-                    : `Message ${c.contact.split(' ')[0]}`
+                  channel === 'telegram'
+                    ? pendingTelegramMsg || isEditingPending
+                      ? isEditingPending
+                        ? 'Finish editing the message above first…'
+                        : 'Approve, edit, or discard the pending message first…'
+                      : `Message ${c.contact.split(' ')[0]} via Telegram`
+                    : whatsAppLoading
+                      ? 'Checking WhatsApp API status…'
+                      : !whatsAppReady
+                        ? 'WhatsApp API not configured (switch to Telegram or add env vars)'
+                        : `Message ${c.contact.split(' ')[0]} via WhatsApp`
                 }
                 disabled={
-                  (channel === 'telegram' && telegramSending) ||
-                  (channel === 'telegram' && (!!pendingTelegramMsg || isEditingPending))
+                  channel === 'telegram'
+                    ? telegramSending || !!pendingTelegramMsg || isEditingPending
+                    : whatsAppLoading || !whatsAppReady || whatsAppSending
                 }
                 aria-label="Message input"
               />
@@ -535,12 +603,18 @@ export function WhatsAppPage() {
                 className="btn pri"
                 onClick={() => channel === 'telegram' ? requestTelegramSend() : void send()}
                 disabled={
-                  channel === 'telegram' &&
-                  (!telegramReady || !telegramLinked || telegramSending || telegramLoading || !!pendingTelegramMsg || isEditingPending)
+                  !input.trim() ||
+                  (channel === 'telegram'
+                    ? !telegramReady || !telegramLinked || telegramSending || telegramLoading || !!pendingTelegramMsg || isEditingPending
+                    : whatsAppLoading || !whatsAppReady || whatsAppSending)
                 }
                 aria-label="Send message"
               >
-                {telegramSending ? <span className="spin spin-light" /> : <Icon name="send" size={15} />}
+                {(channel === 'telegram' && telegramSending) || (channel === 'whatsapp' && whatsAppSending) ? (
+                  <span className="spin spin-light" />
+                ) : (
+                  <Icon name="send" size={15} />
+                )}
               </button>
             </div>
           </div>

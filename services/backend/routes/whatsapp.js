@@ -58,6 +58,29 @@ let fallbackMessages = [
   }
 ];
 
+// GET /api/v1/whatsapp/status — Check WhatsApp Cloud API configuration
+router.get('/status', requireAuth, async (_req, res) => {
+  try {
+    const configured = Boolean(WA_ACCESS_TOKEN && WA_PHONE_NUMBER_ID && !WA_ACCESS_TOKEN.includes('your_'));
+    if (!configured) {
+      return res.json({
+        success: true,
+        connected: false,
+        configured: false,
+        message: 'WhatsApp Cloud API credentials (WHATSAPP_ACCESS_TOKEN & WHATSAPP_PHONE_NUMBER_ID) are not configured in your backend environment.'
+      });
+    }
+    return res.json({
+      success: true,
+      connected: true,
+      configured: true,
+      phoneNumberId: WA_PHONE_NUMBER_ID
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, connected: false, message: err.message });
+  }
+});
+
 // GET /api/v1/whatsapp/messages — List all WhatsApp messages
 router.get('/messages', requireAuth, async (req, res) => {
   try {
@@ -167,6 +190,14 @@ router.post('/send', requireAuth, async (req, res) => {
     const { toPhone, message, clientId } = req.body;
     if (!toPhone || !message) {
       return res.status(400).json({ success: false, message: 'toPhone and message are required' });
+    }
+
+    const configured = Boolean(WA_ACCESS_TOKEN && WA_PHONE_NUMBER_ID && !WA_ACCESS_TOKEN.includes('your_'));
+    if (!configured) {
+      return res.status(503).json({
+        success: false,
+        message: 'WhatsApp Business API is not configured on this server. Please configure WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID in backend .env to send real WhatsApp messages.'
+      });
     }
 
     if (isConnected && clientId && !(await assertOwnedClient(req.user.id, clientId))) {

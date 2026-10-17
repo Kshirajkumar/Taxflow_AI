@@ -669,6 +669,40 @@ export async function fetchWhatsAppMessages(): Promise<WhatsAppMessage[]> {
   }
 }
 
+export interface WhatsAppStatus {
+  connected: boolean;
+  configured: boolean;
+  message?: string;
+  phoneNumberId?: string;
+}
+
+export async function fetchWhatsAppStatus(): Promise<WhatsAppStatus> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/whatsapp/status`, { headers: authHeaders() });
+    const json = await res.json();
+    return {
+      connected: Boolean(json.connected),
+      configured: Boolean(json.configured),
+      message: json.message,
+      phoneNumberId: json.phoneNumberId,
+    };
+  } catch {
+    return { connected: false, configured: false, message: 'WhatsApp backend service is unreachable.' };
+  }
+}
+
+export async function sendWhatsAppManualMessage(clientId: string, toPhone: string, message: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/whatsapp/send`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientId, toPhone, message }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.message || `Failed to send WhatsApp message (HTTP ${res.status}).`);
+  }
+}
+
 export async function fetchTelegramStatus(): Promise<{ connected: boolean; bot?: { username?: string; name?: string }; message?: string }> {
   const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/status`, { headers: authHeaders() }, 20000, 'Telegram status check');
   if (!res.ok || !json.success) throw new Error(json.message || `Telegram status failed (HTTP ${res.status}).`);
