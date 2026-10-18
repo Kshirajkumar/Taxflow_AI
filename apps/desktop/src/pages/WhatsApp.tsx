@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Icon } from '../components/Icon';
+import { FileArtifactCard } from '../components/FileArtifactCard';
+import { DocumentPreviewDialog } from '../components/DocumentPreviewDialog';
 import {
   createTelegramLink,
   fetchTelegramMessages,
@@ -17,6 +19,7 @@ import {
   type TelegramPreview,
 } from '../lib/api';
 import { useAppState, useDispatch } from '../state/store';
+import { openWithDefaultApp, supportsNativeFileOpen } from '../lib/nativeFiles';
 import { nextMsgId } from '../lib/messageIds';
 import { TPL } from '../data/seed';
 import { missing } from '../lib/domain';
@@ -34,16 +37,28 @@ function fillTpl(body: string, name: string) {
 
 const MAX_TELEGRAM_OUTBOUND_FILE_BYTES = 25 * 1024 * 1024;
 
+function formatAttachmentSize(bytes?: number | null) {
+  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '';
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function sameTelegramMessages(a: TelegramMessage[], b: TelegramMessage[]) {
   return a.length === b.length && a.every((message, index) => {
     const next = b[index];
     return message.id === next.id
       && message.provider_message_id === next.provider_message_id
       && message.body === next.body
+      && message.message_type === next.message_type
       && message.delivery_status === next.delivery_status
+      && message.telegram_file_name === next.telegram_file_name
+      && message.mime_type === next.mime_type
+      && message.file_size === next.file_size
       && message.vault_file_ref === next.vault_file_ref
+      && message.file_download_pending === next.file_download_pending
       && message.attachment_download_status === next.attachment_download_status
-      && message.file_download_error === next.file_download_error;
+      && message.file_download_error === next.file_download_error
+      && message.file_download_retryable === next.file_download_retryable;
   });
 }
 
@@ -124,94 +139,31 @@ function TelegramInlineImage({
   );
 }
 
-function TelegramAttachmentPreview({
-  message,
-  file,
-  onClose,
-}: {
-  message: TelegramMessage;
-  file: Blob;
-  onClose: () => void;
-}) {
-  const [url, setUrl] = useState('');
-  const fileName = message.telegram_file_name || message.body || 'telegram-attachment';
-  const declaredMimeType = [file.type, message.mime_type].find((type) => type && type !== 'application/octet-stream');
-  const mimeType = declaredMimeType
-    || (['image', 'photo'].includes(message.message_type) ? 'image/jpeg' : '')
-    || (/\.pdf$/i.test(fileName) ? 'application/pdf' : 'application/octet-stream');
-
-  useEffect(() => {
-    const objectUrl = URL.createObjectURL(file);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [file]);
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
-  return (
-    <div
-      className="tg-file-preview-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Preview ${fileName}`}
-      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
-    >
-      <section className="tg-file-preview">
-        <header className="tg-file-preview-header">
-          <div><Icon name="file" size={17} /><b title={fileName}>{fileName}</b></div>
-          <div>
-            <a className="btn sm" href={url || undefined} download={fileName}><Icon name="download" size={13} />Download</a>
-            <button type="button" className="btn sm gh" onClick={onClose} aria-label="Close attachment preview"><Icon name="x" size={16} /></button>
-          </div>
-        </header>
-        <div className="tg-file-preview-content">
-          {!url ? (
-            <div className="tg-file-preview-loading"><span className="spin" />Preparing preview…</div>
-          ) : mimeType.startsWith('image/') ? (
-            <img src={url} alt={fileName} />
-          ) : mimeType === 'application/pdf' ? (
-            <iframe src={url} title={`PDF preview: ${fileName}`} />
-          ) : mimeType.startsWith('video/') ? (
-            <video src={url} controls aria-label={fileName} />
-          ) : mimeType.startsWith('audio/') ? (
-            <audio src={url} controls aria-label={fileName} />
-          ) : (
-            <div className="tg-file-preview-fallback">
-              <span><Icon name="file" size={26} /></span>
-              <b>Preview is not available for this file type</b>
-              <small>Download the original file to open it on this device.</small>
-              <a className="btn pri sm" href={url || undefined} download={fileName}><Icon name="download" size={13} />Download file</a>
-            </div>
-          )}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function mergeTelegramMessages(serverMessages: TelegramMessage[], currentMessages: TelegramMessage[], clientId: string): TelegramMessage[] {
   const merged = new Map<string, TelegramMessage>();
   const statusRank: Record<string, number> = { received: 0, queued: 1, sending: 2, failed: 3, sent: 4 };
+  const keyFor = (message: TelegramMessage) => message.provider_message_id || message.id;
   for (const message of serverMessages) {
-    merged.set(message.provider_message_id || message.id, message);
+    merged.set(keyFor(message), message);
   }
   for (const message of currentMessages) {
-    if (message.client_id !== clientId || !message.provider_message_id?.startsWith('taxflow:')) continue;
-    const key = message.provider_message_id;
+    if (message.client_id !== clientId) continue;
+    const key = keyFor(message);
     const serverMessage = merged.get(key);
     if (!serverMessage) {
       merged.set(key, message);
-    } else if ((statusRank[message.delivery_status] || 0) > (statusRank[serverMessage.delivery_status] || 0)) {
-      merged.set(key, { ...message, ...serverMessage, delivery_status: message.delivery_status });
+    } else {
+      const preferredStatus = (statusRank[message.delivery_status] || 0) > (statusRank[serverMessage.delivery_status] || 0)
+        ? message.delivery_status
+        : serverMessage.delivery_status;
+      merged.set(key, { ...message, ...serverMessage, delivery_status: preferredStatus });
     }
   }
   return Array.from(merged.values())
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .sort((a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      || keyFor(a).localeCompare(keyFor(b))
+    )
     .slice(-200);
 }
 
@@ -232,6 +184,7 @@ export function WhatsAppPage() {
   const [telegramStatusError, setTelegramStatusError] = useState('');
   const [telegramDiagnostics, setTelegramDiagnostics] = useState<string[]>([]);
   const [telegramError, setTelegramError] = useState('');
+  const [telegramRefreshWarning, setTelegramRefreshWarning] = useState('');
   const [telegramInfo, setTelegramInfo] = useState('');
   const [telegramLoading, setTelegramLoading] = useState(false);
   const [telegramConnecting, setTelegramConnecting] = useState(false);
@@ -240,6 +193,8 @@ export function WhatsAppPage() {
   const [retryingTelegramFileId, setRetryingTelegramFileId] = useState('');
   const [activeTelegramPreview, setActiveTelegramPreview] = useState<{ message: TelegramMessage; file: Blob } | null>(null);
   const [telegramFileOpenError, setTelegramFileOpenError] = useState<{ messageId: string; message: string } | null>(null);
+  const [telegramNativeOpenError, setTelegramNativeOpenError] = useState('');
+  const [openingTelegramNativePreview, setOpeningTelegramNativePreview] = useState(false);
   const [telegramTemplatesOpen, setTelegramTemplatesOpen] = useState(false);
   const [telegramDraft, setTelegramDraft] = useState('');
   const [telegramRequestId, setTelegramRequestId] = useState('');
@@ -284,6 +239,7 @@ export function WhatsAppPage() {
     setTelegramTemplatesOpen(false);
     setActiveTelegramPreview(null);
     setTelegramFileOpenError(null);
+    setTelegramNativeOpenError('');
   }, [channel, c?.id]);
 
   const loadUnreadCounts = useCallback(async () => {
@@ -406,18 +362,20 @@ export function WhatsAppPage() {
     }
     let active = true;
     let loadingConversation = false;
-    shouldFollowThreadRef.current = true;
-    setTelegramMessages([]);
-    setTelegramLinked(false);
+    let hasLoadedConversation = telegramConversationClientId === c.id;
+    if (!hasLoadedConversation) {
+      shouldFollowThreadRef.current = true;
+      setTelegramLinked(false);
+    }
     setTelegramError('');
-    setTelegramInfo('');
-    setTelegramConversationClientId('');
+    setTelegramRefreshWarning('');
     const load = async () => {
       if (loadingConversation) return;
       loadingConversation = true;
       try {
         const conversation = await fetchTelegramMessages(c.id);
         if (active) {
+          hasLoadedConversation = true;
           setTelegramLinked(conversation.linked);
           setTelegramMessages((current) => {
             const merged = mergeTelegramMessages(conversation.messages, current, c.id);
@@ -425,13 +383,20 @@ export function WhatsAppPage() {
           });
           setTelegramConversationClientId(c.id);
           setTelegramError('');
+          setTelegramRefreshWarning('');
         }
       }
       catch (error) {
         if (active) {
-          setTelegramLinked(false);
-          setTelegramConversationClientId(c.id);
-          setTelegramError(error instanceof Error ? error.message : 'Telegram is unavailable.');
+          const message = error instanceof Error ? error.message : 'Telegram is unavailable.';
+          if (!hasLoadedConversation) {
+            setTelegramLinked(false);
+            setTelegramConversationClientId(c.id);
+            setTelegramError(message);
+          } else {
+            setTelegramRefreshWarning('Live refresh is temporarily unavailable. Previously loaded messages remain visible.');
+            console.warn('Telegram conversation refresh failed; keeping the current conversation visible.', error);
+          }
         }
       }
       finally { loadingConversation = false; }
@@ -472,10 +437,11 @@ export function WhatsAppPage() {
     }
   }
 
-  async function openTelegramFile(message: TelegramMessage, inlineFile?: Blob) {
+  async function openTelegramFile(message: TelegramMessage, inlineFile?: Blob, preferNative = true) {
     if (!message.vault_file_ref || openingTelegramFileId) return;
     if (inlineFile) {
       setTelegramFileOpenError(null);
+      setTelegramNativeOpenError('');
       setActiveTelegramPreview({ message, file: inlineFile });
       return;
     }
@@ -484,10 +450,21 @@ export function WhatsAppPage() {
     try {
       const file = await fetchDocumentPreview(message.vault_file_ref);
       if (activeChatRef.current.clientId !== message.client_id || activeChatRef.current.channel !== 'telegram') return;
+      if (preferNative) {
+        try {
+          if (await openWithDefaultApp(file, message.telegram_file_name || message.body || 'telegram-attachment')) {
+            setTelegramInfo(`Opened ${message.telegram_file_name || 'the attachment'} with the default app on this computer.`);
+            return;
+          }
+        } catch (nativeError) {
+          setTelegramNativeOpenError(nativeError instanceof Error ? nativeError.message : 'A default app could not open this file. You can still preview or download it here.');
+        }
+      }
       setActiveTelegramPreview({
         message,
         file: new Blob([file], { type: message.mime_type || file.type || 'application/octet-stream' }),
       });
+      if (!preferNative || !supportsNativeFileOpen()) setTelegramNativeOpenError('');
     } catch (error) {
       if (activeChatRef.current.clientId === message.client_id && activeChatRef.current.channel === 'telegram') {
         setTelegramFileOpenError({
@@ -497,6 +474,22 @@ export function WhatsAppPage() {
       }
     } finally {
       setOpeningTelegramFileId('');
+    }
+  }
+
+  async function openTelegramPreviewNative() {
+    if (!activeTelegramPreview) return;
+    setOpeningTelegramNativePreview(true);
+    setTelegramNativeOpenError('');
+    try {
+      await openWithDefaultApp(
+        activeTelegramPreview.file,
+        activeTelegramPreview.message.telegram_file_name || activeTelegramPreview.message.body || 'telegram-attachment',
+      );
+    } catch (error) {
+      setTelegramNativeOpenError(error instanceof Error ? error.message : 'The file could not be opened by a default application.');
+    } finally {
+      setOpeningTelegramNativePreview(false);
     }
   }
 
@@ -964,6 +957,9 @@ export function WhatsAppPage() {
                 </div>
               )}
               {channel === 'telegram' && telegramConversationClientId === c.id && !isTelegramConversationLoading && telegramInfo && <div className="telegram-notice">{telegramInfo}</div>}
+              {channel === 'telegram' && telegramRefreshWarning && (
+                <div className="telegram-notice telegram-refresh-warning" role="status">{telegramRefreshWarning}</div>
+              )}
               {channel === 'telegram' && isTelegramLinkedForCurrentClient && !isTelegramConversationLoading && telegramMessages.map((m) => {
                 const hasAttachment = Boolean(m.telegram_file_name || m.vault_file_ref || m.file_download_pending || m.file_download_error);
                 const attachmentName = m.telegram_file_name || m.body;
@@ -978,41 +974,38 @@ export function WhatsAppPage() {
                         {isInlineImage && (
                           <TelegramInlineImage
                             message={m}
-                            onOpen={(message, file) => void openTelegramFile(message, file)}
+                            onOpen={(message, file) => void openTelegramFile(message, file, false)}
                             onLoaded={() => { if (shouldFollowThreadRef.current) scrollThreadToLatest('auto'); }}
                           />
                         )}
-                        <div className="tg-file-attachment">
-                          <Icon name="file" size={17} />
-                          <span className="tg-file-attachment-name">
-                            <b>{attachmentName}</b>
-                            <small>{m.message_type.replace(/_/g, ' ')} attachment</small>
-                          </span>
-                          {m.vault_file_ref ? (
-                            <button className="btn sm tg-file-open" onClick={() => void openTelegramFile(m)} disabled={openingTelegramFileId === m.id}>
-                              {openingTelegramFileId === m.id ? 'Opening…' : 'Open'}
-                            </button>
-                          ) : m.direction === 'outbound' ? (
-                            <small className="tg-file-pending">
-                              {m.delivery_status === 'sent'
-                                ? 'Sent to client through Telegram'
-                                : m.delivery_status === 'failed'
-                                  ? 'Delivery failed; check Telegram before retrying'
-                                  : 'Sending…'}
-                            </small>
-                          ) : m.file_download_error ? (
-                            m.file_download_retryable === false
-                              ? <small className="tg-file-pending">Cannot save this format</small>
-                              : <button className="btn sm tg-file-open" onClick={() => void retryTelegramFile(m)} disabled={retryingTelegramFileId === m.id}>
-                                  {retryingTelegramFileId === m.id ? 'Retrying…' : 'Retry'}
-                                </button>
-                          ) : (
-                            <small className="tg-file-pending">
-                              {m.attachment_download_status === 'downloading' ? 'Saving…' : m.file_download_pending ? 'Queued for saving…' : 'Waiting to download…'}
-                            </small>
-                          )}
-                        </div>
-                        {m.direction === 'inbound' && m.file_download_error && <small className="tg-file-error">{m.file_download_error}</small>}
+                        <FileArtifactCard
+                          fileName={attachmentName}
+                          mimeType={m.mime_type}
+                          detailText={`${m.message_type.replace(/_/g, ' ')} attachment`}
+                          sizeText={formatAttachmentSize(m.file_size)}
+                          statusText={m.direction === 'outbound'
+                            ? m.delivery_status === 'sent'
+                              ? 'Sent to client through Telegram'
+                              : m.delivery_status === 'failed'
+                                ? 'Delivery failed; check Telegram before retrying'
+                                : 'Sending through Telegram…'
+                            : m.vault_file_ref
+                              ? 'Saved securely in the client vault'
+                              : m.file_download_error || (
+                                m.attachment_download_status === 'downloading'
+                                  ? 'Saving to the client vault…'
+                                  : m.file_download_pending
+                                    ? 'Queued for secure saving…'
+                                    : 'Waiting to download…'
+                              )}
+                          onOpen={m.vault_file_ref ? () => void openTelegramFile(m) : undefined}
+                          openLabel={supportsNativeFileOpen() ? 'Open with default app' : 'Preview file'}
+                          opening={openingTelegramFileId === m.id}
+                          onRetry={m.direction === 'inbound' && m.file_download_error && m.file_download_retryable !== false
+                            ? () => void retryTelegramFile(m)
+                            : undefined}
+                          retrying={retryingTelegramFileId === m.id}
+                        />
                         {telegramFileOpenError?.messageId === m.id && <small className="tg-file-error">{telegramFileOpenError.message}</small>}
                       </>
                     ) : <div>{m.body}</div>}
@@ -1411,10 +1404,14 @@ export function WhatsAppPage() {
       )}
 
       {activeTelegramPreview && (
-        <TelegramAttachmentPreview
-          message={activeTelegramPreview.message}
+        <DocumentPreviewDialog
           file={activeTelegramPreview.file}
+          fileName={activeTelegramPreview.message.telegram_file_name || activeTelegramPreview.message.body || 'telegram-attachment'}
+          mimeType={activeTelegramPreview.message.mime_type}
           onClose={() => setActiveTelegramPreview(null)}
+          onOpenNative={supportsNativeFileOpen() ? () => void openTelegramPreviewNative() : undefined}
+          openingNative={openingTelegramNativePreview}
+          nativeError={telegramNativeOpenError}
         />
       )}
 

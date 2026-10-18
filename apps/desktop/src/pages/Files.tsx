@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Icon } from '../components/Icon';
+import { FileArtifactCard } from '../components/FileArtifactCard';
+import { DocumentPreviewDialog } from '../components/DocumentPreviewDialog';
 import { useAppState, useDispatch } from '../state/store';
 import { deleteVaultFile, fetchVaultFile, fetchVaultTree, uploadToLocalVault, type VaultTreeEntry } from '../lib/api';
+import { openWithDefaultApp, supportsNativeFileOpen } from '../lib/nativeFiles';
 import { fDT } from '../lib/format';
 
 function formatBytes(bytes = 0) {
@@ -68,14 +71,17 @@ function countChildren(entry: VaultTreeEntry) {
 }
 
 function FileCard({ item, onOpen, onDelete }: { item: VaultTreeEntry; onOpen: () => void; onDelete: () => void }) {
-  return <div className="vault-file-card">
-    <button className="vault-file-card-main" onClick={onOpen} title={`Open ${item.name}`}>
-      <span className={fileClass(item.name) + ' vault-file-card-icon'}><Icon name={extension(item.name) === 'xlsx' || extension(item.name) === 'csv' ? 'table' : 'file'} size={22} /></span>
-      <span className="vault-file-card-body"><b>{item.name}</b><small>{fileTypeLabel(item.name)}{item.cloudRetained ? ' · private cloud recovery copy' : ''}</small></span>
-      <span className="vault-file-card-meta"><span>{formatBytes(item.size)}</span><span>{fDT(new Date(item.modifiedAt))}</span></span>
-    </button>
-    {!item.cloudRetained && <button className="vault-file-delete" onClick={onDelete} title={`Delete ${item.name}`} aria-label={`Delete ${item.name}`}><Icon name="trash" size={15} /></button>}
-  </div>;
+  return (
+    <FileArtifactCard
+      fileName={item.name}
+      detailText={`${fileTypeLabel(item.name)}${item.cloudRetained ? ' · private cloud recovery copy' : ''}`}
+      sizeText={formatBytes(item.size)}
+      modifiedText={fDT(new Date(item.modifiedAt))}
+      onOpen={onOpen}
+      onDelete={item.cloudRetained ? undefined : onDelete}
+      className="vault-file-card"
+    />
+  );
 }
 
 function TreeNode({ entry, depth, path, expanded, selectedPath, toggle, select }: {
@@ -118,6 +124,9 @@ export function FilesPage() {
   const [pendingDelete, setPendingDelete] = useState<{ entry: VaultTreeEntry; path: string } | null>(null);
   const [deletingFile, setDeletingFile] = useState(false);
   const [openingFile, setOpeningFile] = useState(false);
+  const [activeVaultPreview, setActiveVaultPreview] = useState<{ fileName: string; file: Blob } | null>(null);
+  const [openingNativePreview, setOpeningNativePreview] = useState(false);
+  const [nativePreviewError, setNativePreviewError] = useState('');
   const [loadedClientId, setLoadedClientId] = useState('');
   const [pendingOpenFile, setPendingOpenFile] = useState<{ clientId: string; fileName: string; relativePath?: string } | null>(null);
   const [deleteError, setDeleteError] = useState('');
@@ -339,25 +348,39 @@ export function FilesPage() {
       return;
     }
 
-    const preview = window.open('about:blank', '_blank');
-    if (!preview) {
-      setUploadMessageKind('error');
-      setUploadMessage('Allow pop-ups for TaxFlow.AI to open this file.');
-      return;
-    }
-
     setOpeningFile(true);
+    setUploadMessage('');
+    setNativePreviewError('');
     try {
       const file = await fetchVaultFile(client.id, relativePath);
-      const url = URL.createObjectURL(file);
-      preview.location.href = url;
-      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      try {
+        if (await openWithDefaultApp(file, selected.entry.name)) {
+          setUploadMessageKind('success');
+          setUploadMessage(`Opened ${selected.entry.name} with the default app on this computer.`);
+          return;
+        }
+      } catch (nativeError) {
+        setNativePreviewError(nativeError instanceof Error ? nativeError.message : 'A default app could not open this file. You can still preview or download it here.');
+      }
+      setActiveVaultPreview({ fileName: selected.entry.name, file });
     } catch (error) {
-      preview.close();
       setUploadMessageKind('error');
       setUploadMessage(error instanceof Error ? error.message : 'The vault file could not be opened.');
     } finally {
       setOpeningFile(false);
+    }
+  }
+
+  async function openVaultPreviewNative() {
+    if (!activeVaultPreview) return;
+    setOpeningNativePreview(true);
+    setNativePreviewError('');
+    try {
+      await openWithDefaultApp(activeVaultPreview.file, activeVaultPreview.fileName);
+    } catch (error) {
+      setNativePreviewError(error instanceof Error ? error.message : 'The file could not be opened by a default application.');
+    } finally {
+      setOpeningNativePreview(false);
     }
   }
 
@@ -375,11 +398,22 @@ export function FilesPage() {
   return <div className="vault-page">
     <div className="ph vault-page-head"><div><div className="eyebrow">LOCAL VAULT</div><h1>Client folders</h1><p>Browse the selected client folder and inspect its local documents.</p></div><div className="vault-health"><span className={`health-dot ${error ? 'warn' : 'ok'}`} /><span>{error ? 'Limited access' : 'Vault ready'}</span></div></div>
     <div className="vault-toolbar"><div className={`vault-client-select ${clientMenuOpen ? 'menu-open' : ''}`} title="Select client" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setClientMenuOpen(false); }}><button className="vault-client-name" onClick={() => s.clients.length && setClientMenuOpen(value => !value)} disabled={!s.clients.length} aria-haspopup="listbox" aria-expanded={clientMenuOpen}>{client?.name || 'No clients'}</button><span className="vault-client-arrow" aria-hidden="true" />{clientMenuOpen && s.clients.length > 0 && <div className="vault-client-menu" role="listbox">{s.clients.map(item => <button key={item.id} className={`vault-client-option ${item.id === client?.id ? 'active' : ''}`} role="option" aria-selected={item.id === client?.id} onClick={() => { setClientId(item.id); setSelected(null); setUploadMessage(''); setClientMenuOpen(false); }}>{item.name}{item.id === client?.id && <Icon name="check" size={13} />}</button>)}</div>}</div><div className="vault-path-label"><Icon name="folder" size={15} /><span>{pathLabel}</span></div><label className="vault-search"><Icon name="search" size={15} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search this vault" aria-label="Search this vault" />{query && <button onClick={() => setQuery('')} aria-label="Clear search"><Icon name="x" size={13} /></button>}</label></div>
-    {selected?.entry.type === 'file' && <div className="vault-global-open"><span className="mut">Selected file: <b>{selected.entry.name}</b></span><button className="btn pri" onClick={() => void openSelectedFile()} disabled={openingFile}><Icon name="file" size={14} />{openingFile ? 'Opening…' : 'Open file'}</button></div>}
+    {selected?.entry.type === 'file' && <div className="vault-global-open"><span className="mut">Selected file: <b>{selected.entry.name}</b></span><button className="btn pri" onClick={() => void openSelectedFile()} disabled={openingFile}><Icon name="open" size={14} />{openingFile ? 'Opening…' : supportsNativeFileOpen() ? 'Open with default app' : 'Preview file'}</button></div>}
     <div className="vault-two-pane">
       <section className="vault-tree-panel card"><div className="vault-panel-head"><div><span className="eyebrow">FOLDER TREE</span><h2>{client?.name || 'No client selected'}</h2></div><button className="btn ghost" onClick={() => setRefresh(value => value + 1)} disabled={loading || !clientId}><Icon name="refresh" size={14} />Refresh</button></div>{error && <div className="vault-notice"><Icon name="bell" size={15} /><span>{error}</span></div>}<div className="vault-tree-scroll">{loading ? <div className="vault-loading"><span className="spin" /><span>Reading vault…</span></div> : visibleEntries.length ? visibleEntries.map(entry => <TreeNode key={entry.name} entry={entry} depth={0} path={`/${entry.name}`} expanded={expanded} selectedPath={selected?.path || ''} toggle={toggle} select={(entry, path) => setSelected({ entry, path })} />) : <div className="vault-empty"><span className="vault-empty-icon"><Icon name="folder" size={22} /></span><b>{query ? 'No matching items' : 'This vault is empty'}</b><span>{query ? 'Try a different search.' : 'Files will appear here when added.'}</span></div>}</div></section>
-      <section className="vault-contents-panel card"><div className="vault-panel-head"><div><span className="eyebrow">SELECTED FOLDER</span><h2>{selected?.entry.name || client?.name || 'Folder contents'}</h2><small>{selected?.entry.type === 'folder' ? `${folderCount} folder${folderCount === 1 ? '' : 's'} · ${fileCount} file${fileCount === 1 ? '' : 's'}` : 'Select a folder in the tree'}</small></div><div className="vault-upload-action"><input ref={fileInputRef} type="file" className="vault-file-input" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.csv" onChange={uploadSelectedFile} /><button className="btn pri" onClick={() => fileInputRef.current?.click()} disabled={!canUpload} title={uploadCategory ? `Upload to ${selectedFolderName}` : 'Select the Raw or Extracted folder first'}><Icon name="upload" size={14} />{uploading ? 'Uploading…' : 'Upload file'}</button></div></div>{uploading && <div className="vault-uploading-state"><span className="vault-upload-orbit"><Icon name="upload" size={17} /></span><div><b>Uploading securely to {selectedFolderName}</b><small>Saving the file to the Local Vault and refreshing this folder…</small></div></div>}{uploadMessage && <div className={`vault-upload-message ${uploadMessageKind}`}><Icon name={uploadMessageKind === 'success' ? 'check' : uploadMessageKind === 'error' ? 'x' : 'bell'} size={14} /><span>{uploadMessage}</span></div>}{selected?.entry.type === 'file' ? <div className="vault-file-preview"><div className={fileClass(selected.entry.name)}><Icon name="file" size={28} /></div><h3>{selected.entry.name}</h3><div className="vault-detail-path">{selected.path}</div><div className="kv"><span>Type</span><b>{extension(selected.entry.name).toUpperCase()} file</b><span>Size</span><b>{formatBytes(selected.entry.size)}</b><span>Modified</span><b>{fDT(new Date(selected.entry.modifiedAt))}</b></div></div> : selected ? <div className="vault-contents"><div className="vault-current-path"><Icon name="folder" size={15} /><span>{selected.path}</span></div>{selectedChildren.length ? <div className="vault-file-grid">{selectedChildren.map(item => item.type === 'folder' ? <button className="vault-folder-card" key={item.name} onClick={() => setSelected({ entry: item, path: `${selected.path}/${item.name}` })}><span className="vault-folder-card-icon"><Icon name="folder" size={22} /></span><span><b>{item.name}</b><small>{item.children?.length || 0} items</small></span><Icon name="chev" size={14} /></button> : <FileCard key={item.name} item={item} onOpen={() => setSelected({ entry: item, path: `${selected.path}/${item.name}` })} onDelete={() => { setDeleteError(''); setPendingDelete({ entry: item, path: `${selected.path}/${item.name}` }); }} />)}</div> : <div className="vault-empty"><span className="vault-empty-icon"><Icon name="folder" size={22} /></span><b>This folder is empty</b><span>Files added to this folder will appear here.</span></div>}</div> : <div className="vault-overview"><div className="vault-overview-icon"><Icon name="folder" size={28}></Icon></div><b>Select a folder</b><span>Choose a folder from the tree to view everything inside it.</span></div>}</section>
+      <section className="vault-contents-panel card"><div className="vault-panel-head"><div><span className="eyebrow">SELECTED FOLDER</span><h2>{selected?.entry.name || client?.name || 'Folder contents'}</h2><small>{selected?.entry.type === 'folder' ? `${folderCount} folder${folderCount === 1 ? '' : 's'} · ${fileCount} file${fileCount === 1 ? '' : 's'}` : 'Select a folder in the tree'}</small></div><div className="vault-upload-action"><input ref={fileInputRef} type="file" className="vault-file-input" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.csv" onChange={uploadSelectedFile} /><button className="btn pri" onClick={() => fileInputRef.current?.click()} disabled={!canUpload} title={uploadCategory ? `Upload to ${selectedFolderName}` : 'Select the Raw or Extracted folder first'}><Icon name="upload" size={14} />{uploading ? 'Uploading…' : 'Upload file'}</button></div></div>{uploading && <div className="vault-uploading-state"><span className="vault-upload-orbit"><Icon name="upload" size={17} /></span><div><b>Uploading securely to {selectedFolderName}</b><small>Saving the file to the Local Vault and refreshing this folder…</small></div></div>}{uploadMessage && <div className={`vault-upload-message ${uploadMessageKind}`}><Icon name={uploadMessageKind === 'success' ? 'check' : uploadMessageKind === 'error' ? 'x' : 'bell'} size={14} /><span>{uploadMessage}</span></div>}{selected?.entry.type === 'file' ? <div className="vault-file-preview"><FileArtifactCard fileName={selected.entry.name} detailText={fileTypeLabel(selected.entry.name)} sizeText={formatBytes(selected.entry.size)} modifiedText={fDT(new Date(selected.entry.modifiedAt))} statusText="Stored in this client’s local vault" onOpen={() => void openSelectedFile()} openLabel={supportsNativeFileOpen() ? 'Open with default app' : 'Preview file'} opening={openingFile} /><div className="vault-detail-path">{selected.path}</div><div className="kv"><span>Type</span><b>{extension(selected.entry.name).toUpperCase()} file</b><span>Size</span><b>{formatBytes(selected.entry.size)}</b><span>Modified</span><b>{fDT(new Date(selected.entry.modifiedAt))}</b></div></div> : selected ? <div className="vault-contents"><div className="vault-current-path"><Icon name="folder" size={15} /><span>{selected.path}</span></div>{selectedChildren.length ? <div className="vault-file-grid">{selectedChildren.map(item => item.type === 'folder' ? <button className="vault-folder-card" key={item.name} onClick={() => setSelected({ entry: item, path: `${selected.path}/${item.name}` })}><span className="vault-folder-card-icon"><Icon name="folder" size={22} /></span><span><b>{item.name}</b><small>{item.children?.length || 0} items</small></span><Icon name="chev" size={14} /></button> : <FileCard key={item.name} item={item} onOpen={() => setSelected({ entry: item, path: `${selected.path}/${item.name}` })} onDelete={() => { setDeleteError(''); setPendingDelete({ entry: item, path: `${selected.path}/${item.name}` }); }} />)}</div> : <div className="vault-empty"><span className="vault-empty-icon"><Icon name="folder" size={22} /></span><b>This folder is empty</b><span>Files added to this folder will appear here.</span></div>}</div> : <div className="vault-overview"><div className="vault-overview-icon"><Icon name="folder" size={28}></Icon></div><b>Select a folder</b><span>Choose a folder from the tree to view everything inside it.</span></div>}</section>
     </div>
+    {activeVaultPreview && (
+      <DocumentPreviewDialog
+        file={activeVaultPreview.file}
+        fileName={activeVaultPreview.fileName}
+        mimeType={activeVaultPreview.file.type}
+        onClose={() => setActiveVaultPreview(null)}
+        onOpenNative={supportsNativeFileOpen() ? () => void openVaultPreviewNative() : undefined}
+        openingNative={openingNativePreview}
+        nativeError={nativePreviewError}
+      />
+    )}
     {pendingDelete && <div className="modal delete-confirm-modal vault-delete-modal" onMouseDown={event => { if (event.target === event.currentTarget && !deletingFile) setPendingDelete(null); }}><div className="card delete-confirm-card vault-delete-card" role="alertdialog" aria-modal="true" aria-labelledby="delete-vault-file-title"><div className="delete-confirm-icon"><Icon name="trash" size={22} /></div><span className="eyebrow">Permanent deletion</span><h2 id="delete-vault-file-title">Delete this file?</h2><p><strong>{pendingDelete.entry.name}</strong> will be permanently removed from your local vault folder. This cannot be undone.</p>{deleteError && <div className="ob-error">{deleteError}</div>}<div className="delete-confirm-actions"><button className="btn gh" disabled={deletingFile} onClick={() => setPendingDelete(null)}>Keep file</button><button className="btn danger" disabled={deletingFile} onClick={permanentlyDeleteFile}>{deletingFile ? <><i className="spin" />Deleting</> : <><Icon name="trash" size={14} />Delete permanently</>}</button></div></div></div>}
   </div>;
 }

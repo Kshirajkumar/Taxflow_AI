@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
+use std::time::{Duration, SystemTime};
 use tauri::Manager;
 use uuid::Uuid;
 
@@ -85,6 +86,84 @@ fn configure_local_vault(
 #[tauri::command]
 fn get_local_vault_status(app: tauri::AppHandle) -> Result<Option<LocalVaultSettings>, String> {
     load_settings(&app)
+}
+
+#[tauri::command]
+fn open_file_with_default_app(
+    app: tauri::AppHandle,
+    file_name: String,
+    bytes: Vec<u8>,
+) -> Result<(), String> {
+    const MAX_OPEN_FILE_BYTES: usize = 100 * 1024 * 1024;
+    if bytes.is_empty() {
+        return Err("The file is empty and cannot be opened.".into());
+    }
+    if bytes.len() > MAX_OPEN_FILE_BYTES {
+        return Err("Files larger than 100 MB cannot be opened through TaxFlow.".into());
+    }
+
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("Could not resolve the temporary document folder: {error}"))?;
+    let open_dir = cache_root.join("opened-documents");
+    fs::create_dir_all(&open_dir)
+        .map_err(|error| format!("Could not prepare the temporary document folder: {error}"))?;
+    let canonical_open_dir = fs::canonicalize(&open_dir)
+        .map_err(|error| format!("Could not verify the temporary document folder: {error}"))?;
+    let safe_name = safe_file_name(&file_name)?;
+    let destination = canonical_open_dir.join(format!("{}-{safe_name}", Uuid::new_v4()));
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&destination)
+        .map_err(|error| format!("Could not prepare this file for the default app: {error}"))?;
+    if let Err(error) = file.write_all(&bytes).and_then(|_| file.sync_all()) {
+        drop(file);
+        if let Err(cleanup_error) = fs::remove_file(&destination) {
+            log::warn!("Could not remove an incomplete temporary open file: {cleanup_error}");
+        }
+        return Err(format!("Could not save a temporary copy of this file: {error}"));
+    }
+    drop(file);
+
+    if let Err(error) = open::that_detached(&destination) {
+        if let Err(cleanup_error) = fs::remove_file(&destination) {
+            log::warn!("Could not remove a temporary file after the default app failed: {cleanup_error}");
+        }
+        return Err(format!("No default application could open this file: {error}"));
+    }
+
+    let cleanup_before = SystemTime::now()
+        .checked_sub(Duration::from_secs(7 * 24 * 60 * 60));
+    if let Some(cleanup_before) = cleanup_before {
+        match fs::read_dir(&canonical_open_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    match entry {
+                        Ok(entry) => match entry.metadata() {
+                            Ok(metadata) if metadata.is_file() => {
+                                if metadata.modified().is_ok_and(|modified| modified < cleanup_before)
+                                    && entry.file_name() != destination.file_name().unwrap_or_default()
+                                {
+                                    if let Err(error) = fs::remove_file(entry.path()) {
+                                        log::warn!("Could not remove an expired temporary open file: {error}");
+                                    }
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(error) => log::warn!("Could not inspect a temporary open file: {error}"),
+                        },
+                        Err(error) => log::warn!("Could not inspect the temporary open-file cache: {error}"),
+                    }
+                }
+            }
+            Err(error) => log::warn!("Could not inspect the temporary open-file cache: {error}"),
+        }
+    }
+
+    Ok(())
 }
 
 fn safe_component(value: &str, fallback: &str) -> String {
@@ -350,7 +429,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             configure_local_vault,
             get_local_vault_status,
-            save_synced_document_chunk
+            save_synced_document_chunk,
+            open_file_with_default_app
         ])
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
