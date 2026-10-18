@@ -85,6 +85,8 @@ Before enabling Telegram on an existing database, ensure `clients`, `user_profil
 
 If inbound attachments show a Row Level Security error, run `db/fix_telegram_attachment_rls.sql` in the Supabase project configured by this backend, verify that `SUPABASE_SERVICE_ROLE_KEY` is that same project's service-role key (not its anon/publishable key), then restart or redeploy the backend. The repair grants only `service_role` access to the private Telegram bucket and document metadata; never work around the error by granting access to `anon` or `authenticated`.
 
+If an existing Telegram document path begins with `undefined/`, do not edit `storage.objects` or change the metadata path manually. Set the backend's project credentials and bucket in `services/backend/.env`, then run `npm run repair:telegram-storage-reference -- <document-uuid>` from `services/backend`. The one-document repair verifies the linked client owner and SHA-256, copies the private object to its canonical owner-scoped key, verifies the copy, and only then updates that document's metadata. The old object is retained as a recovery copy.
+
 #### Sync Logic:
 - **Creation**: When a client is created in Supabase $\rightarrow$ Create their root vault directory.
 - **Upload**: Save file to Vault $\rightarrow$ Save the resulting `vault_path` to Supabase `documents_metadata`.

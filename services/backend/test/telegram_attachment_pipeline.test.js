@@ -9,6 +9,7 @@ const express = require('express');
 process.env.SUPABASE_URL = 'https://example.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only-placeholder';
 const database = require('../db/supabase');
+const { getStorageObjectKey } = require('../lib/documentStorage');
 const telegramRouter = require('../routes/telegram');
 const { getCurrentVaultPeriod } = require('../vault/vaultManager');
 
@@ -323,6 +324,17 @@ test('outbound Telegram attachment limit includes the approved size buffer', () 
   assert.equal(telegramRouter._test.TELEGRAM_PHOTO_LIMIT_BYTES, 9 * 1024 * 1024);
 });
 
+test('private Telegram object keys require UUID ownership identifiers', () => {
+  assert.throws(() => getStorageObjectKey({
+    userId: undefined,
+    clientId: '20314145-9020-45f0-85a0-68bc63eb359e',
+    year: '2026',
+    month: 'October',
+    documentId: crypto.randomUUID(),
+    fileName: 'photo.jpg'
+  }), /valid user UUID/i);
+});
+
 test('Telegram diagnostics expect the separate relay when direct webhook registration is disabled', () => {
   const oldRelayUrl = process.env.TELEGRAM_WEBHOOK_RELAY_URL;
   const oldAutoConfigure = process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE;
@@ -354,8 +366,8 @@ test('Production Telegram attachments upload to private object storage with a ve
   let uploadAttempts = 0;
   Object.values(tables).forEach((rows) => { rows.length = 0; });
   tables.clients.push({
-    id: 'client-cloud',
-    user_id: 'user-cloud',
+    id: '20314145-9020-45f0-85a0-68bc63eb359e',
+    user_id: '11752602-62fa-4252-ae1d-23c4fb3b7312',
     name: 'Cloud Client',
     telegram_chat_id: 'cloud-chat'
   });
@@ -426,7 +438,7 @@ test('Production Telegram attachments upload to private object storage with a ve
   assert.equal(uploads.length, 1);
   assert.equal(uploads[0].bucket, 'taxflow-intake');
   assert.equal(uploads[0].bytes.toString(), fileBytes.toString());
-  assert.match(uploads[0].key, /^user-cloud\/client-cloud\/\d{4}\/[A-Za-z]+\/.+_telegram-photo-92\.jpg$/);
+  assert.match(uploads[0].key, /^11752602-62fa-4252-ae1d-23c4fb3b7312\/20314145-9020-45f0-85a0-68bc63eb359e\/\d{4}\/[A-Za-z]+\/.+_telegram-photo-92\.jpg$/);
   assert.equal(document.storage_bucket, 'taxflow-intake');
   assert.equal(document.storage_object_path, uploads[0].key);
   assert.equal(document.file_sha256, crypto.createHash('sha256').update(fileBytes).digest('hex'));

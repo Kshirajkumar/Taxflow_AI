@@ -7,6 +7,7 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "migrate:telegram": "node db/apply_telegram_migration.js",
+    "repair:telegram-storage-reference": "node scripts/repair_telegram_storage_reference.js",
     "test": "node --test test/*.test.js"
   },
   "keywords": [],

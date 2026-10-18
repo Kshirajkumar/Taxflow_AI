@@ -172,7 +172,7 @@ function getAssessmentYear(date) {
 
 function isPermanentAttachmentError(error) {
   const text = error instanceof Error ? error.message : String(error || '');
-  return /not supported|does not match its declared|larger than 20 MB|invalid timestamp|empty file/i.test(text);
+  return /not supported|does not match its declared|larger than 20 MB|invalid timestamp|empty file|valid (?:user|client|document) uuid/i.test(text);
 }
 
 function getAttachmentErrorMessage(error, stage) {
@@ -229,8 +229,8 @@ async function processTelegramAttachmentDownload(message, client) {
     if (!buffer.length) throw new Error('Telegram returned an empty file.');
 
     const receivedAt = getTelegramMessageDate(current);
-    const periodYear = String(receivedAt.getFullYear());
-    const periodMonth = new Intl.DateTimeFormat('en-US', { month: 'long' }).format(receivedAt);
+    const periodYear = String(receivedAt.getUTCFullYear());
+    const periodMonth = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(receivedAt);
     const storedFileName = `${current.id}_${normalized.fileName}`;
     const cloudStorageEnabled = isCloudDocumentStorageEnabled();
     if (!cloudStorageEnabled && isCloudDocumentStorageRequired()) {

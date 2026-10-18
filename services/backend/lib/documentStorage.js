@@ -1,6 +1,8 @@
 const crypto = require('node:crypto');
 const { supabase } = require('../db/supabase');
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function getStorageBucket() {
   return String(process.env.SUPABASE_STORAGE_BUCKET || '').trim();
 }
@@ -10,6 +12,11 @@ function isCloudDocumentStorageEnabled() {
 }
 
 function getStorageObjectKey({ userId, clientId, year, month, documentId, fileName }) {
+  for (const [label, value] of [['user', userId], ['client', clientId], ['document', documentId]]) {
+    if (!UUID_PATTERN.test(String(value || ''))) {
+      throw new Error(`A valid ${label} UUID is required to create a private document storage path.`);
+    }
+  }
   const safeName = sanitizeStorageFileName(fileName);
   return `${userId}/${clientId}/${year}/${month}/${documentId}_${safeName}`;
 }
@@ -19,8 +26,8 @@ function getMetadataStorageObjectKey({ userId, clientId, createdAt, fileName }) 
   if (!userId || !clientId || Number.isNaN(date.getTime())) {
     throw new Error('The cloud document ownership or date metadata is invalid.');
   }
-  const year = String(date.getFullYear());
-  const month = new Intl.DateTimeFormat('en-US', { month: 'long' }).format(date);
+  const year = String(date.getUTCFullYear());
+  const month = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(date);
   return `${userId}/${clientId}/${year}/${month}/${sanitizeStorageFileName(fileName)}`;
 }
 
