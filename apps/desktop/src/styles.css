@@ -3436,3 +3436,81 @@ body.sidebar-collapsed.chat-hidden .shell {
 @media(max-width:560px){.wa-f.telegram-composer{padding:8px 8px 6px}.telegram-composer-pill{gap:2px;padding:4px}.telegram-composer-action{width:32px;height:32px}.telegram-composer-send{width:34px;height:34px}.telegram-composer-input.inp{padding-inline:3px;font-size:11px}.telegram-template-menu{left:-34px;max-height:calc(100vh - 140px)}.tg-file-preview-overlay{padding:8px}.tg-file-preview{height:calc(100vh - 16px);border-radius:12px}.tg-file-preview-header{min-height:50px;padding:7px 9px}.tg-file-preview-header .btn{padding-inline:8px}.tg-inline-image{width:min(320px,80vw)}}
 @media(prefers-reduced-motion:reduce){.tg-inline-image,.tg-inline-image>span,.telegram-composer-pill,.telegram-composer-action,.telegram-composer-send,.telegram-template-option{transition:none!important}.tg-file-preview-overlay,.tg-file-preview,.telegram-template-menu{animation:none!important}}
 @media(prefers-reduced-motion:reduce){.file-artifact-card,.file-artifact-card .file-artifact-icon{animation:none!important}.file-artifact-card,.file-artifact-action{transition:none!important}}
+
+/* Messenger styling stays inside the existing main-content pane. */
+.main-inbox{overflow:hidden;padding:12px 14px 14px}
+.main-inbox .inbox-page{display:flex;height:100%;min-height:0;flex-direction:column;overflow:hidden;zoom:1}
+.main-inbox .inbox-page-head{display:none}
+.main-inbox .wa-top{z-index:2;display:flex;min-height:40px;flex:none;flex-wrap:nowrap;gap:7px;overflow-x:auto;margin:0 0 8px;padding:5px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg2);box-shadow:none}
+.main-inbox .wa-top::-webkit-scrollbar{height:0}
+.main-inbox .wa-channel-control{display:flex;flex:none;align-items:center;gap:6px;color:var(--tx3);font-size:10px}
+.main-inbox .wa-channel-control .sel{height:29px;min-width:100px;padding:0 25px 0 8px;border-radius:7px;background:var(--panel);font-size:10px}
+.main-inbox .wa-top>.chip{flex:none;font-size:9px}
+.main-inbox .wa-top .tabs{flex:none;margin-left:auto}
+.main-inbox .wa-top .tabs button{padding:5px 7px;font-size:9px}
+.main-inbox .inbox-schedule-btn,.main-inbox .wa-connect-btn{flex:none}
+.main-inbox .wa{display:grid;min-height:0;height:auto;flex:1;grid-template-columns:minmax(165px,29%) minmax(0,1fr);overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--bg);box-shadow:var(--shadow)}
+.main-inbox .wa-l{display:flex;min-height:0;flex-direction:column;overflow-y:auto;background:var(--panel);border-right:1px solid var(--line)}
+.main-inbox .wa-list-head{position:sticky;z-index:1;top:0;padding:11px 12px 9px;background:var(--panel);border-bottom:1px solid var(--line)}
+.main-inbox .wa-list-head>div:first-child b{font-size:12px;letter-spacing:-.2px}
+.main-inbox .wa-list-head>div:first-child span{font-size:9px}
+.main-inbox .wa-client-search{height:29px;margin-top:8px;border-radius:7px;background:var(--bg2)}
+.main-inbox .wa-c{width:100%;min-height:58px;padding:8px 10px;gap:8px;border:0;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);background:transparent;color:var(--tx);font:inherit;text-align:left;transition:background .16s ease}
+.main-inbox .wa-c .av{width:32px;height:32px;flex:none}
+.main-inbox .wa-c .nm{font-size:10px}
+.main-inbox .wa-c .pv{max-width:160px;font-size:9px}
+.main-inbox .wa-c .tm{font-size:8px;white-space:nowrap}
+.main-inbox .wa-c.on{background:color-mix(in srgb,var(--blue) 10%,var(--panel))}
+.main-inbox .wa-r{min-height:0;background:var(--bg)}
+.main-inbox .wa-h{flex:none;padding:8px 12px 7px;border-bottom:1px solid var(--line);background:var(--bg2)}
+.main-inbox .wa-h .av.lg{width:32px;height:32px}
+.main-inbox .wa-h .row b{font-size:11px}
+.main-inbox .wa-h .mut{font-size:9px!important}
+.main-inbox .ckl{gap:4px;margin-top:5px}
+.main-inbox .ckl .chip{font-size:8px}
+.main-inbox #wa-thread{min-height:0;padding:14px clamp(10px,2vw,24px);gap:8px;background:linear-gradient(180deg,var(--bg),color-mix(in srgb,var(--panel) 72%,var(--bg)))}
+.main-inbox #wa-thread .msg{max-width:min(82%,620px);padding:8px 10px 6px;border-radius:11px}
+.main-inbox #wa-thread .msg.me{border-bottom-right-radius:4px}
+.main-inbox #wa-thread .msg.cl{border-bottom-left-radius:4px}
+.main-inbox .wa-f.telegram-composer{flex:none;gap:5px;padding:7px 10px 5px;border-top:1px solid var(--line);background:var(--bg2)}
+.main-inbox .wa-shortcuts{display:flex;min-width:0;align-items:center;gap:5px;overflow-x:auto;padding:0 1px 2px}
+.main-inbox .wa-shortcuts::-webkit-scrollbar{height:0}
+.main-inbox .wa-shortcuts-label{display:flex;flex:none;align-items:center;gap:4px;margin-right:1px;color:var(--tx3);font-size:8px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.main-inbox .wa-shortcuts-label .ic{color:var(--cyan)}
+.main-inbox .wa-shortcut{flex:none;max-width:120px;overflow:hidden;padding:3px 7px;border:1px solid var(--line);border-radius:99px;background:var(--panel);color:var(--tx2);font-size:8px;text-overflow:ellipsis;white-space:nowrap;transition:border-color .16s ease,background .16s ease,color .16s ease}
+.main-inbox .wa-shortcut:hover:not(:disabled){border-color:color-mix(in srgb,var(--blue) 55%,var(--line));background:color-mix(in srgb,var(--blue) 9%,var(--panel));color:var(--tx)}
+.main-inbox .wa-shortcut:disabled{cursor:not-allowed;opacity:.5}
+.main-inbox .telegram-composer-pill{min-height:40px;background:var(--panel)}
+.main-inbox .wa-footer-note{display:flex;min-height:18px;align-items:center;gap:5px;padding:0 4px;color:var(--tx3);font-size:8px}
+.main-inbox .wa-footer-note>.ic{flex:none;color:var(--green)}
+.main-inbox .wa-footer-channel{margin-left:auto;font-family:var(--mono);font-size:7px;white-space:nowrap}
+.main-inbox .wa-f:not(.telegram-composer){flex:none;padding:8px 10px;background:var(--bg2)}
+.main-inbox .wa-reminders,.main-inbox .wa-template-grid{min-height:0;flex:1;overflow:auto;padding:14px}
+@media(max-width:1150px){
+  .main-inbox .wa{grid-template-columns:minmax(150px,32%) minmax(0,1fr)}
+  .main-inbox .wa-top .wa-total-unread-pill,.main-inbox .wa-top .wa-config-note{display:none}
+}
+@media(max-width:980px){
+  .main-inbox .wa{grid-template-columns:58px minmax(0,1fr)}
+  .main-inbox .wa-list-head{padding:9px 5px}
+  .main-inbox .wa-list-head>div:first-child{justify-content:center}
+  .main-inbox .wa-list-head>div:first-child b{font-size:0}
+  .main-inbox .wa-list-head>div:first-child b::after{content:"Chats";font-size:10px}
+  .main-inbox .wa-list-head>div:first-child span,.main-inbox .wa-client-search{display:none}
+  .main-inbox .wa-c{justify-content:center;padding:8px 4px}
+  .main-inbox .wa-c>div{display:none}
+}
+@media(max-width:700px){
+  .main-inbox{padding:8px}
+  .main-inbox .wa-top{gap:5px;padding:4px}
+  .main-inbox .wa-top .wa-linked-status,.main-inbox .wa-top>.chip{display:none}
+  .main-inbox .wa-channel-control>span{display:none}
+  .main-inbox .wa-top .tabs{margin-left:auto}
+  .main-inbox .wa-top .tabs button{padding:4px;font-size:8px}
+  .main-inbox .wa-top .inbox-schedule-btn,.main-inbox .wa-top .wa-connect-btn{padding:4px 6px;font-size:8px}
+  .main-inbox .wa-shortcuts-label{font-size:0}
+  .main-inbox .wa-shortcut{max-width:90px;padding:3px 5px;font-size:7px}
+  .main-inbox .wa-footer-note{font-size:7px}
+  .main-inbox .wa-footer-channel{display:none}
+}
+@media(prefers-reduced-motion:reduce){.main-inbox .wa-c,.main-inbox .wa-shortcut{transition:none!important}}

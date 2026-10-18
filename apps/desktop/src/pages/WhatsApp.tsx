@@ -793,6 +793,9 @@ export function WhatsAppPage() {
           ))}
         </div>
         <span className="sp" />
+        <button type="button" className="btn sm inbox-schedule-btn" onClick={() => setShowSchedule(true)}>
+          <Icon name="plus" size={13} />Schedule
+        </button>
         {channel === 'telegram' && <button className="btn sm wa-connect-btn" onClick={() => void connectTelegram()} disabled={telegramLoading || isTelegramConversationLoading || telegramConnecting || !telegramReady}>
           {telegramConnecting && <span className="spin" />}
           {telegramConnecting ? 'Connecting…' : isTelegramLinkedForCurrentClient ? 'Reconnect client' : 'Connect client'}
@@ -827,9 +830,13 @@ export function WhatsAppPage() {
                 : previewText || 'No messages yet';
               const isSelected = s.ui.wa.client === cl.id;
               return (
-                <div
+                <button
+                  type="button"
                   key={cl.id}
                   className={'wa-c' + (isSelected ? ' on' : '') + (clUnread > 0 ? ' has-unread' : '')}
+                  aria-label={`${cl.name}${clUnread ? `, ${clUnread} unread messages` : ''}`}
+                  aria-pressed={isSelected}
+                  title={cl.name}
                   onClick={() => {
                     dispatch({ type: 'WA_CLIENT', id: cl.id });
                   }}
@@ -857,7 +864,7 @@ export function WhatsAppPage() {
                       ) : null}
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -1180,8 +1187,26 @@ export function WhatsAppPage() {
             </div>
             {channel === 'telegram' ? (
               <div className="wa-f telegram-composer">
-                <input
-                  ref={telegramFileInputRef}
+                  <div className="wa-shortcuts" aria-label="Message shortcuts">
+                    <span className="wa-shortcuts-label"><Icon name="bolt" size={11} />Shortcuts</span>
+                    {TPL.slice(0, 4).map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        className="wa-shortcut"
+                        onClick={() => {
+                          setInput(fillTpl(template.body, c.contact.split(' ')[0]));
+                          requestAnimationFrame(() => telegramMessageInputRef.current?.focus());
+                        }}
+                        disabled={telegramSending || !!pendingTelegramMsg || isEditingPending}
+                        title={`Insert ${template.name}`}
+                      >
+                        {template.name}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    ref={telegramFileInputRef}
                   type="file"
                   hidden
                   onChange={(event) => {
@@ -1324,6 +1349,11 @@ export function WhatsAppPage() {
                 </button>
               </div>
             )}
+            <div className="wa-footer-note" role="status">
+              <Icon name="lock" size={11} />
+              <span>Messages are sent through the selected channel. Delivery status appears in each message.</span>
+              <span className="wa-footer-channel">{channel === 'telegram' ? 'Telegram gateway' : 'WhatsApp Business'}</span>
+            </div>
           </div>
         </div>}
 
