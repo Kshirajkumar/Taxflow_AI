@@ -34,6 +34,166 @@ function fillTpl(body: string, name: string) {
 
 const MAX_TELEGRAM_OUTBOUND_FILE_BYTES = 25 * 1024 * 1024;
 
+function sameTelegramMessages(a: TelegramMessage[], b: TelegramMessage[]) {
+  return a.length === b.length && a.every((message, index) => {
+    const next = b[index];
+    return message.id === next.id
+      && message.provider_message_id === next.provider_message_id
+      && message.body === next.body
+      && message.delivery_status === next.delivery_status
+      && message.vault_file_ref === next.vault_file_ref
+      && message.attachment_download_status === next.attachment_download_status
+      && message.file_download_error === next.file_download_error;
+  });
+}
+
+function TelegramInlineImage({
+  message,
+  onOpen,
+  onLoaded,
+}: {
+  message: TelegramMessage;
+  onOpen: (message: TelegramMessage, file: Blob) => void;
+  onLoaded: () => void;
+}) {
+  const previewRef = useRef<HTMLDivElement>(null);
+  const [file, setFile] = useState<Blob | null>(null);
+  const [imageUrl, setImageUrl] = useState('');
+  const [error, setError] = useState('');
+  const [shouldLoad, setShouldLoad] = useState(false);
+
+  useEffect(() => {
+    const element = previewRef.current;
+    if (!element || !('IntersectionObserver' in window)) {
+      setShouldLoad(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setShouldLoad(true);
+        observer.disconnect();
+      }
+    }, { root: element.closest('#wa-thread'), rootMargin: '180px' });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [message.vault_file_ref]);
+
+  useEffect(() => {
+    if (!message.vault_file_ref || !shouldLoad) return undefined;
+    const controller = new AbortController();
+    setFile(null);
+    setError('');
+    void fetchDocumentPreview(message.vault_file_ref, controller.signal)
+      .then((downloaded) => {
+        if (!controller.signal.aborted) {
+          setFile(new Blob([downloaded], { type: message.mime_type || downloaded.type || 'application/octet-stream' }));
+        }
+      })
+      .catch((downloadError) => {
+        if (!controller.signal.aborted) {
+          setError(downloadError instanceof Error ? downloadError.message : 'Image preview could not be loaded.');
+        }
+      });
+    return () => controller.abort();
+  }, [message.vault_file_ref, message.mime_type, shouldLoad]);
+
+  useEffect(() => {
+    if (!file) {
+      setImageUrl('');
+      return undefined;
+    }
+    const url = URL.createObjectURL(file);
+    setImageUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  if (error) return <div className="tg-inline-image-error" ref={previewRef} role="status">Image preview unavailable. Use Open to retry.</div>;
+  if (!imageUrl) return <div className="tg-inline-image-loading" ref={previewRef} role="status"><span className="spin" />{shouldLoad ? 'Loading image…' : 'Image preview will load when visible…'}</div>;
+  return (
+    <div ref={previewRef}>
+      <button
+        type="button"
+        className="tg-inline-image"
+        onClick={() => file && onOpen(message, file)}
+        aria-label={`View image ${message.telegram_file_name || 'sent in Telegram'}`}
+      >
+        <img src={imageUrl} alt={message.telegram_file_name || 'Image sent in Telegram'} loading="lazy" onLoad={onLoaded} />
+        <span><Icon name="scan" size={12} />View image</span>
+      </button>
+    </div>
+  );
+}
+
+function TelegramAttachmentPreview({
+  message,
+  file,
+  onClose,
+}: {
+  message: TelegramMessage;
+  file: Blob;
+  onClose: () => void;
+}) {
+  const [url, setUrl] = useState('');
+  const fileName = message.telegram_file_name || message.body || 'telegram-attachment';
+  const declaredMimeType = [file.type, message.mime_type].find((type) => type && type !== 'application/octet-stream');
+  const mimeType = declaredMimeType
+    || (['image', 'photo'].includes(message.message_type) ? 'image/jpeg' : '')
+    || (/\.pdf$/i.test(fileName) ? 'application/pdf' : 'application/octet-stream');
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="tg-file-preview-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Preview ${fileName}`}
+      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
+      <section className="tg-file-preview">
+        <header className="tg-file-preview-header">
+          <div><Icon name="file" size={17} /><b title={fileName}>{fileName}</b></div>
+          <div>
+            <a className="btn sm" href={url || undefined} download={fileName}><Icon name="download" size={13} />Download</a>
+            <button type="button" className="btn sm gh" onClick={onClose} aria-label="Close attachment preview"><Icon name="x" size={16} /></button>
+          </div>
+        </header>
+        <div className="tg-file-preview-content">
+          {!url ? (
+            <div className="tg-file-preview-loading"><span className="spin" />Preparing preview…</div>
+          ) : mimeType.startsWith('image/') ? (
+            <img src={url} alt={fileName} />
+          ) : mimeType === 'application/pdf' ? (
+            <iframe src={url} title={`PDF preview: ${fileName}`} />
+          ) : mimeType.startsWith('video/') ? (
+            <video src={url} controls aria-label={fileName} />
+          ) : mimeType.startsWith('audio/') ? (
+            <audio src={url} controls aria-label={fileName} />
+          ) : (
+            <div className="tg-file-preview-fallback">
+              <span><Icon name="file" size={26} /></span>
+              <b>Preview is not available for this file type</b>
+              <small>Download the original file to open it on this device.</small>
+              <a className="btn pri sm" href={url || undefined} download={fileName}><Icon name="download" size={13} />Download file</a>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function mergeTelegramMessages(serverMessages: TelegramMessage[], currentMessages: TelegramMessage[], clientId: string): TelegramMessage[] {
   const merged = new Map<string, TelegramMessage>();
   const statusRank: Record<string, number> = { received: 0, queued: 1, sending: 2, failed: 3, sent: 4 };
@@ -78,6 +238,9 @@ export function WhatsAppPage() {
   const [telegramSending, setTelegramSending] = useState(false);
   const [openingTelegramFileId, setOpeningTelegramFileId] = useState('');
   const [retryingTelegramFileId, setRetryingTelegramFileId] = useState('');
+  const [activeTelegramPreview, setActiveTelegramPreview] = useState<{ message: TelegramMessage; file: Blob } | null>(null);
+  const [telegramFileOpenError, setTelegramFileOpenError] = useState<{ messageId: string; message: string } | null>(null);
+  const [telegramTemplatesOpen, setTelegramTemplatesOpen] = useState(false);
   const [telegramDraft, setTelegramDraft] = useState('');
   const [telegramRequestId, setTelegramRequestId] = useState('');
   const [pendingTelegramFile, setPendingTelegramFile] = useState<File | null>(null);
@@ -102,7 +265,12 @@ export function WhatsAppPage() {
   const threadRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const telegramFileInputRef = useRef<HTMLInputElement>(null);
+  const telegramMessageInputRef = useRef<HTMLInputElement>(null);
+  const telegramTemplateMenuRef = useRef<HTMLDivElement>(null);
+  const shouldFollowThreadRef = useRef(true);
+  const activeChatRef = useRef({ clientId: '', channel });
   const c = s.clients.find((x) => x.id === s.ui.wa.client) || s.clients[0];
+  activeChatRef.current = { clientId: c?.id || '', channel };
   const pendingTelegramClient = s.clients.find((client) => client.id === pendingTelegramClientId);
   const pendingTelegramForCurrentClient = !!pendingTelegramMsg && pendingTelegramClientId === c?.id;
   const pendingTelegramForOtherClient = !!pendingTelegramMsg && !!pendingTelegramClientId && pendingTelegramClientId !== c?.id;
@@ -111,6 +279,12 @@ export function WhatsAppPage() {
   const isTelegramConversationLoading = channel === 'telegram' && !!c && telegramConversationClientId !== c.id;
   const isTelegramLinkedForCurrentClient = !!c && telegramConversationClientId === c.id && telegramLinked;
   const clientIds = s.clients.map((client) => client.id).join(',');
+
+  useEffect(() => {
+    setTelegramTemplatesOpen(false);
+    setActiveTelegramPreview(null);
+    setTelegramFileOpenError(null);
+  }, [channel, c?.id]);
 
   const loadUnreadCounts = useCallback(async () => {
     try {
@@ -164,9 +338,34 @@ export function WhatsAppPage() {
     };
   }, [channel, clientIds]);
 
+  const scrollThreadToLatest = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    shouldFollowThreadRef.current = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const threadElement = threadRef.current;
+      if (threadElement) threadElement.scrollTo({ top: threadElement.scrollHeight, behavior });
+    }));
+  }, []);
+
   useEffect(() => {
-    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
-  }, [thread.length, telegramMessages.length, s.ui.wa.tab]);
+    if (!shouldFollowThreadRef.current) return;
+    scrollThreadToLatest('auto');
+  }, [thread.length, telegramMessages, pendingTelegramMsg, isEditingPending, telegramConversationClientId, s.ui.wa.tab, scrollThreadToLatest]);
+
+  useEffect(() => {
+    if (!telegramTemplatesOpen) return undefined;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!telegramTemplateMenuRef.current?.contains(event.target as Node)) setTelegramTemplatesOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTelegramTemplatesOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [telegramTemplatesOpen]);
 
   useEffect(() => {
     if (channel !== 'telegram') return undefined;
@@ -207,6 +406,7 @@ export function WhatsAppPage() {
     }
     let active = true;
     let loadingConversation = false;
+    shouldFollowThreadRef.current = true;
     setTelegramMessages([]);
     setTelegramLinked(false);
     setTelegramError('');
@@ -219,7 +419,10 @@ export function WhatsAppPage() {
         const conversation = await fetchTelegramMessages(c.id);
         if (active) {
           setTelegramLinked(conversation.linked);
-          setTelegramMessages((current) => mergeTelegramMessages(conversation.messages, current, c.id));
+          setTelegramMessages((current) => {
+            const merged = mergeTelegramMessages(conversation.messages, current, c.id);
+            return sameTelegramMessages(current, merged) ? current : merged;
+          });
           setTelegramConversationClientId(c.id);
           setTelegramError('');
         }
@@ -269,23 +472,29 @@ export function WhatsAppPage() {
     }
   }
 
-  async function openTelegramFile(message: TelegramMessage) {
+  async function openTelegramFile(message: TelegramMessage, inlineFile?: Blob) {
     if (!message.vault_file_ref || openingTelegramFileId) return;
-    const preview = window.open('', '_blank');
-    if (!preview) {
-      setTelegramError('Allow pop-ups for TaxFlow.AI to open this attachment.');
+    if (inlineFile) {
+      setTelegramFileOpenError(null);
+      setActiveTelegramPreview({ message, file: inlineFile });
       return;
     }
     setOpeningTelegramFileId(message.id);
-    setTelegramError('');
+    setTelegramFileOpenError(null);
     try {
       const file = await fetchDocumentPreview(message.vault_file_ref);
-      const url = URL.createObjectURL(file);
-      preview.location.href = url;
-      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      if (activeChatRef.current.clientId !== message.client_id || activeChatRef.current.channel !== 'telegram') return;
+      setActiveTelegramPreview({
+        message,
+        file: new Blob([file], { type: message.mime_type || file.type || 'application/octet-stream' }),
+      });
     } catch (error) {
-      preview.close();
-      setTelegramError(error instanceof Error ? error.message : 'Could not open this Telegram attachment.');
+      if (activeChatRef.current.clientId === message.client_id && activeChatRef.current.channel === 'telegram') {
+        setTelegramFileOpenError({
+          messageId: message.id,
+          message: error instanceof Error ? error.message : 'Could not open this Telegram attachment.',
+        });
+      }
     } finally {
       setOpeningTelegramFileId('');
     }
@@ -319,6 +528,7 @@ export function WhatsAppPage() {
     setPendingTelegramMsg(text);
     setPendingTelegramClientId(c.id);
     setInput('');
+    scrollThreadToLatest();
   }
 
   function requestTelegramAttachment(file: File) {
@@ -344,6 +554,7 @@ export function WhatsAppPage() {
     setPendingTelegramClientId(c.id);
     setIsEditingPending(false);
     setInput('');
+    scrollThreadToLatest();
   }
 
   async function confirmTelegramSend() {
@@ -377,6 +588,7 @@ export function WhatsAppPage() {
         current,
         targetClientId,
       ));
+      scrollThreadToLatest();
       setPendingTelegramMsg('');
       setPendingTelegramClientId('');
       setTelegramDraft('');
@@ -669,7 +881,14 @@ export function WhatsAppPage() {
                 ))}
               </div>
             </div>
-            <div id="wa-thread" ref={threadRef}>
+            <div
+              id="wa-thread"
+              ref={threadRef}
+              onScroll={(event) => {
+                const element = event.currentTarget;
+                shouldFollowThreadRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96;
+              }}
+            >
               {channel === 'telegram' && isTelegramConversationLoading && (
                 <div className="tg-conversation-skeleton" role="status" aria-live="polite" aria-label={`Loading Telegram conversation with ${c.name}`}>
                   <div className="tg-skeleton-heading"><span className="tg-skeleton-dot" /><span>Loading conversation history</span></div>
@@ -748,11 +967,21 @@ export function WhatsAppPage() {
               {channel === 'telegram' && isTelegramLinkedForCurrentClient && !isTelegramConversationLoading && telegramMessages.map((m) => {
                 const hasAttachment = Boolean(m.telegram_file_name || m.vault_file_ref || m.file_download_pending || m.file_download_error);
                 const attachmentName = m.telegram_file_name || m.body;
+                const isInlineImage = m.direction === 'inbound'
+                  && Boolean(m.vault_file_ref)
+                  && (m.mime_type?.startsWith('image/') || ['image', 'photo'].includes(m.message_type));
                 return (
                   <div key={m.provider_message_id || m.id} className={'msg ' + (m.direction === 'outbound' ? 'me' : 'cl')}>
                     {hasAttachment ? (
                       <>
                         {m.body && m.body !== attachmentName && <div className="tg-file-caption">{m.body}</div>}
+                        {isInlineImage && (
+                          <TelegramInlineImage
+                            message={m}
+                            onOpen={(message, file) => void openTelegramFile(message, file)}
+                            onLoaded={() => { if (shouldFollowThreadRef.current) scrollThreadToLatest('auto'); }}
+                          />
+                        )}
                         <div className="tg-file-attachment">
                           <Icon name="file" size={17} />
                           <span className="tg-file-attachment-name">
@@ -784,6 +1013,7 @@ export function WhatsAppPage() {
                           )}
                         </div>
                         {m.direction === 'inbound' && m.file_download_error && <small className="tg-file-error">{m.file_download_error}</small>}
+                        {telegramFileOpenError?.messageId === m.id && <small className="tg-file-error">{telegramFileOpenError.message}</small>}
                       </>
                     ) : <div>{m.body}</div>}
                     <span className="mt">
@@ -955,93 +1185,152 @@ export function WhatsAppPage() {
                 </div>
               ))}
             </div>
-            <div className="wa-f">
-              {channel === 'telegram' && (
-                <>
+            {channel === 'telegram' ? (
+              <div className="wa-f telegram-composer">
+                <input
+                  ref={telegramFileInputRef}
+                  type="file"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = '';
+                    if (file) requestTelegramAttachment(file);
+                  }}
+                  aria-label="Select a file to send through Telegram"
+                />
+                <div className="telegram-composer-pill">
+                  <button
+                    type="button"
+                    className="telegram-composer-action telegram-composer-attach"
+                    onClick={() => telegramFileInputRef.current?.click()}
+                    disabled={!telegramReady || !isTelegramLinkedForCurrentClient || isTelegramConversationLoading || telegramSending || !!pendingTelegramMsg || isEditingPending}
+                    aria-label="Attach a file for Telegram"
+                    title="Attach a file (up to 25 MB)"
+                  >
+                    <Icon name="plus" size={19} />
+                  </button>
+                  <div className="telegram-template-anchor" ref={telegramTemplateMenuRef}>
+                    <button
+                      type="button"
+                      className="telegram-composer-action telegram-template-trigger"
+                      aria-label="Insert a message template"
+                      aria-expanded={telegramTemplatesOpen}
+                      aria-controls="telegram-template-menu"
+                      title="Choose a message template"
+                      onClick={() => setTelegramTemplatesOpen((open) => !open)}
+                      disabled={telegramSending || !!pendingTelegramMsg || isEditingPending}
+                    >
+                      <Icon name="file" size={17} />
+                    </button>
+                    {telegramTemplatesOpen && (
+                      <div className="telegram-template-menu" id="telegram-template-menu" role="menu" aria-label="Telegram message templates">
+                        <div className="telegram-template-menu-heading">
+                          <b>Message templates</b>
+                          <small>Choose a prepared message to edit</small>
+                        </div>
+                        {TPL.map((template) => (
+                          <button
+                            key={template.id}
+                            type="button"
+                            role="menuitem"
+                            className="telegram-template-option"
+                            onClick={() => {
+                              setInput(fillTpl(template.body, c.contact.split(' ')[0]));
+                              setTelegramTemplatesOpen(false);
+                              requestAnimationFrame(() => telegramMessageInputRef.current?.focus());
+                            }}
+                          >
+                            <span className="telegram-template-option-icon"><Icon name="file" size={14} /></span>
+                            <span><b>{template.name}</b><small>{fillTpl(template.body, c.contact.split(' ')[0])}</small></span>
+                            <span className="chip blue">{template.cat}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <input
-                    ref={telegramFileInputRef}
-                    type="file"
-                    hidden
-                    onChange={(event) => {
-                      const file = event.currentTarget.files?.[0];
-                      event.currentTarget.value = '';
-                      if (file) requestTelegramAttachment(file);
+                    ref={telegramMessageInputRef}
+                    className="inp telegram-composer-input"
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') setTelegramTemplatesOpen(false);
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        requestTelegramSend();
+                      }
                     }}
-                    aria-label="Select a file to send through Telegram"
+                    placeholder={
+                      pendingTelegramForOtherClient
+                        ? `Review the pending message for ${pendingTelegramClient?.short || 'another client'} first…`
+                        : pendingTelegramForCurrentClient || isEditingPending
+                          ? isEditingPending
+                            ? 'Finish editing the message above first…'
+                            : 'Approve, edit, or discard the pending message first…'
+                          : `Message ${c.contact.split(' ')[0]} via Telegram`
+                    }
+                    disabled={telegramSending || telegramLoading || isTelegramConversationLoading || !!pendingTelegramMsg || isEditingPending}
+                    aria-label="Message input"
                   />
                   <button
                     type="button"
-                    className="btn sm gh"
-                    onClick={() => telegramFileInputRef.current?.click()}
-                    disabled={!telegramReady || !isTelegramLinkedForCurrentClient || isTelegramConversationLoading || telegramSending || !!pendingTelegramMsg || isEditingPending}
-                    aria-label="Attach file for Telegram"
-                    title="Attach a file (up to 25 MB)"
+                    className="telegram-composer-send"
+                    onClick={requestTelegramSend}
+                    disabled={!input.trim() || !telegramReady || !isTelegramLinkedForCurrentClient || isTelegramConversationLoading || telegramSending || telegramLoading || !!pendingTelegramMsg || isEditingPending}
+                    aria-label="Review message before sending"
+                    title="Review message"
                   >
-                    <Icon name="upload" size={14} />
+                    {telegramSending ? <span className="spin spin-light" /> : <Icon name="send" size={17} />}
                   </button>
-                </>
-              )}
-              <label className="wa-template-picker">
-                <Icon name="file" size={14} />
-                <select
-                  className="sel"
-                  aria-label="Insert template"
-                  value=""
-                  onChange={(e) => { if (e.target.value) { const t = TPL.find((x) => x.id === e.target.value)!; setInput(fillTpl(t.body, c.contact.split(' ')[0])); } }}
+                </div>
+                <small className="telegram-composer-hint">Messages are reviewed before they are sent.</small>
+              </div>
+            ) : (
+              <div className="wa-f">
+                <label className="wa-template-picker">
+                  <Icon name="file" size={14} />
+                  <select
+                    className="sel"
+                    aria-label="Insert template"
+                    value=""
+                    onChange={(event) => {
+                      const template = TPL.find((item) => item.id === event.target.value);
+                      if (template) setInput(fillTpl(template.body, c.contact.split(' ')[0]));
+                    }}
+                  >
+                    <option value="">Insert template</option>
+                    {TPL.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                  </select>
+                </label>
+                <input
+                  className="inp"
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault();
+                      void send();
+                    }
+                  }}
+                  placeholder={whatsAppLoading
+                    ? 'Checking WhatsApp API status…'
+                    : !whatsAppReady
+                      ? 'WhatsApp API not configured (switch to Telegram or add env vars)'
+                      : `Message ${c.contact.split(' ')[0]} via WhatsApp`}
+                  disabled={whatsAppLoading || !whatsAppReady || whatsAppSending}
+                  aria-label="Message input"
+                />
+                <button
+                  type="button"
+                  className="btn pri"
+                  onClick={() => void send()}
+                  disabled={!input.trim() || whatsAppLoading || !whatsAppReady || whatsAppSending}
+                  aria-label="Send message"
                 >
-                  <option value="">Insert template</option>
-                  {TPL.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </label>
-              <input
-                className="inp"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    channel === 'telegram' ? requestTelegramSend() : void send();
-                  }
-                }}
-                placeholder={
-                  channel === 'telegram'
-                    ? pendingTelegramForOtherClient
-                      ? `Review the pending message for ${pendingTelegramClient?.short || 'another client'} first…`
-                      : pendingTelegramForCurrentClient || isEditingPending
-                      ? isEditingPending
-                        ? 'Finish editing the message above first…'
-                        : 'Approve, edit, or discard the pending message first…'
-                      : `Message ${c.contact.split(' ')[0]} via Telegram`
-                    : whatsAppLoading
-                      ? 'Checking WhatsApp API status…'
-                      : !whatsAppReady
-                        ? 'WhatsApp API not configured (switch to Telegram or add env vars)'
-                        : `Message ${c.contact.split(' ')[0]} via WhatsApp`
-                }
-                disabled={
-                  channel === 'telegram'
-                    ? telegramSending || telegramLoading || isTelegramConversationLoading || !!pendingTelegramMsg || isEditingPending
-                    : whatsAppLoading || !whatsAppReady || whatsAppSending
-                }
-                aria-label="Message input"
-              />
-              <button
-                className="btn pri"
-                onClick={() => channel === 'telegram' ? requestTelegramSend() : void send()}
-                disabled={
-                  !input.trim() ||
-                  (channel === 'telegram'
-                    ? !telegramReady || !isTelegramLinkedForCurrentClient || isTelegramConversationLoading || telegramSending || telegramLoading || !!pendingTelegramMsg || isEditingPending
-                    : whatsAppLoading || !whatsAppReady || whatsAppSending)
-                }
-                aria-label="Send message"
-              >
-                {(channel === 'telegram' && telegramSending) || (channel === 'whatsapp' && whatsAppSending) ? (
-                  <span className="spin spin-light" />
-                ) : (
-                  <Icon name="send" size={15} />
-                )}
-              </button>
-            </div>
+                  {whatsAppSending ? <span className="spin spin-light" /> : <Icon name="send" size={15} />}
+                </button>
+              </div>
+            )}
           </div>
         </div>}
 
@@ -1119,6 +1408,14 @@ export function WhatsAppPage() {
             </article>
           ))}
         </div>
+      )}
+
+      {activeTelegramPreview && (
+        <TelegramAttachmentPreview
+          message={activeTelegramPreview.message}
+          file={activeTelegramPreview.file}
+          onClose={() => setActiveTelegramPreview(null)}
+        />
       )}
 
       {showSchedule && <ScheduleModal onClose={() => setShowSchedule(false)} defaultClient={c.id} />}

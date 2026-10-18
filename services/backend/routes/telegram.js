@@ -757,13 +757,13 @@ router.get('/clients/:clientId/messages', requireAuth, async (req, res) => {
     if (!isConnected || !(await assertOwnedClient(req.user.id, req.params.clientId))) return res.status(404).json({ success: false, message: 'Client not found.' });
     const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
     const [{ data, error }, { data: client, error: clientError }] = await Promise.all([
-      supabase.from('telegram_messages').select('*').eq('client_id', req.params.clientId).order('created_at', { ascending: true }).limit(limit),
+      supabase.from('telegram_messages').select('*').eq('client_id', req.params.clientId).order('created_at', { ascending: false }).limit(limit),
       supabase.from('clients').select('id,name,telegram_chat_id').eq('id', req.params.clientId).eq('user_id', req.user.id).single(),
     ]);
     if (error) throw error;
     if (clientError) throw clientError;
 
-    const messages = data || [];
+    const messages = (data || []).reverse();
 
     // Automatically mark unread inbound messages as read for this client
     const { error: markReadError } = await supabase.from('telegram_messages')

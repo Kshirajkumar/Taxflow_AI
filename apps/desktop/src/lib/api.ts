@@ -879,7 +879,7 @@ export async function createTelegramLink(clientId: string): Promise<{ link: stri
 }
 
 export async function fetchTelegramMessages(clientId: string): Promise<{ linked: boolean; messages: TelegramMessage[] }> {
-  const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/messages`, { headers: authHeaders() }, 30000, 'Telegram conversation');
+  const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/messages?limit=200`, { headers: authHeaders() }, 30000, 'Telegram conversation');
   if (!res.ok || !json.success) throw new Error(json.message || `Unable to load Telegram conversation (HTTP ${res.status}).`);
   return { linked: Boolean(json.linked), messages: json.data || [] };
 }
