@@ -102,6 +102,72 @@ async function waitFor(predicate, timeoutMs = 3000) {
   throw new Error('Timed out waiting for the Telegram attachment worker.');
 }
 
+test('Telegram status identifies a competing webhook service and an unavailable Storage bucket', async (t) => {
+  const oldFrom = database.supabase.from;
+  const oldGetUser = database.supabase.auth.getUser;
+  const oldStorageFrom = database.supabase.storage.from;
+  const oldFetch = global.fetch;
+  const envKeys = ['TELEGRAM_BOT_TOKEN', 'SUPABASE_STORAGE_BUCKET', 'PUBLIC_URL', 'RENDER_EXTERNAL_URL', 'TELEGRAM_WEBHOOK_AUTO_CONFIGURE'];
+  const oldEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  let telegramApiCalls = 0;
+  database.supabase.from = (table) => fakeQuery(table);
+  database.supabase.auth.getUser = async () => ({ data: { user: { id: 'user-1' } }, error: null });
+  database.supabase.storage.from = (bucket) => ({
+    async list() {
+      assert.equal(bucket, 'taxflow-intake');
+      return { data: null, error: new Error('Bucket not found') };
+    }
+  });
+  process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
+  process.env.SUPABASE_STORAGE_BUCKET = 'taxflow-intake';
+  process.env.PUBLIC_URL = 'https://taxflow-api.onrender.com';
+  process.env.RENDER_EXTERNAL_URL = 'https://taxflow-api.onrender.com';
+  process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE = 'false';
+  global.fetch = async (url, init) => {
+    if (String(url).startsWith('http://127.0.0.1:')) return oldFetch(url, init);
+    telegramApiCalls += 1;
+    const method = String(url).split('/').pop();
+    const result = method === 'getMe'
+      ? { id: 1, username: 'taxflow_test_bot', first_name: 'TaxFlow' }
+      : {
+          url: 'https://telegram-bot-setup.onrender.com/api/v1/telegram/webhook',
+          pending_update_count: 2,
+          last_error_message: ''
+        };
+    return new Response(JSON.stringify({ ok: true, result }));
+  };
+
+  const app = express();
+  app.use('/api/v1/telegram', (req, _res, next) => { req.headers.authorization = 'Bearer test-token'; next(); }, telegramRouter);
+  const server = app.listen(0);
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    database.supabase.from = oldFrom;
+    database.supabase.auth.getUser = oldGetUser;
+    database.supabase.storage.from = oldStorageFrom;
+    global.fetch = oldFetch;
+    for (const [key, value] of Object.entries(oldEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/v1/telegram/status`);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.connected, true);
+  assert.equal(body.diagnostics.webhookMatchesThisService, false);
+  assert.equal(body.diagnostics.webhookPendingUpdates, 2);
+  assert.equal(body.diagnostics.storageBucketReady, false);
+  assert.match(body.diagnostics.warnings.join(' '), /different service/i);
+  assert.match(body.diagnostics.warnings.join(' '), /missing or inaccessible/i);
+  assert.deepEqual(await telegramRouter._test.configureWebhook(), {
+    configured: false,
+    reason: 'auto_configuration_disabled'
+  });
+  assert.equal(telegramApiCalls, 2);
+});
+
 test('Telegram webhook saves supported attachments to the client vault without opening the inbox', async (t) => {
   const oldFrom = database.supabase.from;
   const oldFetch = global.fetch;
@@ -264,7 +330,7 @@ test('Production Telegram attachments upload to private object storage with a ve
   global.fetch = async (url, init) => {
     if (String(url).startsWith('http://127.0.0.1:')) return oldFetch(url, init);
     if (String(url).includes('/getFile')) {
-      return new Response(JSON.stringify({ ok: true, result: { file_path: 'files/cloud.pdf', file_size: fileBytes.length } }));
+      return new Response(JSON.stringify({ ok: true, result: { file_path: 'photos/cloud-photo.jpg', file_size: fileBytes.length } }));
     }
     return new Response(fileBytes, { headers: { 'content-length': String(fileBytes.length) } });
   };
@@ -295,12 +361,10 @@ test('Production Telegram attachments upload to private object storage with a ve
         message_id: 92,
         date: 1792322400,
         chat: { id: 'cloud-chat', type: 'private' },
-        document: {
-          file_id: 'telegram-cloud-file',
-          file_name: 'client-record.pdf',
-          mime_type: 'application/pdf',
-          file_size: fileBytes.length
-        }
+        photo: [
+          { file_id: 'telegram-cloud-thumbnail', file_size: 12, width: 90, height: 90 },
+          { file_id: 'telegram-cloud-photo', file_size: fileBytes.length, width: 1280, height: 960 }
+        ]
       }
     })
   });
@@ -315,11 +379,11 @@ test('Production Telegram attachments upload to private object storage with a ve
   assert.equal(uploads.length, 1);
   assert.equal(uploads[0].bucket, 'taxflow-intake');
   assert.equal(uploads[0].bytes.toString(), fileBytes.toString());
-  assert.match(uploads[0].key, /^user-cloud\/client-cloud\/\d{4}\/[A-Za-z]+\/.+_client-record\.pdf$/);
+  assert.match(uploads[0].key, /^user-cloud\/client-cloud\/\d{4}\/[A-Za-z]+\/.+_telegram-photo-92\.jpg$/);
   assert.equal(document.storage_bucket, 'taxflow-intake');
   assert.equal(document.storage_object_path, uploads[0].key);
   assert.equal(document.file_sha256, crypto.createHash('sha256').update(fileBytes).digest('hex'));
-  assert.equal(document.mime_type, 'application/pdf');
+  assert.equal(document.mime_type, 'image/jpeg');
   assert.ok(document.vault_path.startsWith('supabase://taxflow-intake/'));
 });
 

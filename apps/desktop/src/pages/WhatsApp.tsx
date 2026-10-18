@@ -66,6 +66,8 @@ export function WhatsAppPage() {
   const [telegramReady, setTelegramReady] = useState(false);
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [telegramBot, setTelegramBot] = useState('');
+  const [telegramStatusError, setTelegramStatusError] = useState('');
+  const [telegramDiagnostics, setTelegramDiagnostics] = useState<string[]>([]);
   const [telegramError, setTelegramError] = useState('');
   const [telegramInfo, setTelegramInfo] = useState('');
   const [telegramLoading, setTelegramLoading] = useState(false);
@@ -162,11 +164,40 @@ export function WhatsAppPage() {
   }, [thread.length, telegramMessages.length, s.ui.wa.tab]);
 
   useEffect(() => {
+    if (channel !== 'telegram') return undefined;
+    let active = true;
+    const loadStatus = async () => {
+      if (active) setTelegramLoading(true);
+      try {
+        const status = await fetchTelegramStatus();
+        if (active) {
+          setTelegramReady(status.connected);
+          setTelegramBot(status.bot?.username || '');
+          setTelegramDiagnostics(status.diagnostics?.warnings || []);
+          setTelegramStatusError('');
+        }
+      } catch (error) {
+        if (active) {
+          setTelegramReady(false);
+          setTelegramStatusError(error instanceof Error ? error.message : 'Telegram is unavailable.');
+        }
+      } finally {
+        if (active) setTelegramLoading(false);
+      }
+    };
+    void loadStatus();
+    const timer = window.setInterval(() => void loadStatus(), 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [channel]);
+
+  useEffect(() => {
     if (channel !== 'telegram' || !c) {
       setTelegramMessages([]);
       setTelegramLinked(false);
       setTelegramConversationClientId('');
-      setTelegramLoading(false);
       return undefined;
     }
     let active = true;
@@ -176,16 +207,13 @@ export function WhatsAppPage() {
     setTelegramError('');
     setTelegramInfo('');
     setTelegramConversationClientId('');
-    const load = async (showLoading = false) => {
+    const load = async () => {
       if (loadingConversation) return;
       loadingConversation = true;
-      if (active && showLoading) setTelegramLoading(true);
       try {
-        const [status, conversation] = await Promise.all([fetchTelegramStatus(), fetchTelegramMessages(c.id)]);
+        const conversation = await fetchTelegramMessages(c.id);
         if (active) {
-          setTelegramReady(status.connected);
           setTelegramLinked(conversation.linked);
-          setTelegramBot(status.bot?.username || '');
           setTelegramMessages((current) => mergeTelegramMessages(conversation.messages, current, c.id));
           setTelegramConversationClientId(c.id);
           setTelegramError('');
@@ -193,15 +221,14 @@ export function WhatsAppPage() {
       }
       catch (error) {
         if (active) {
-          setTelegramReady(false);
           setTelegramLinked(false);
           setTelegramConversationClientId(c.id);
           setTelegramError(error instanceof Error ? error.message : 'Telegram is unavailable.');
         }
       }
-      finally { loadingConversation = false; if (active) setTelegramLoading(false); }
+      finally { loadingConversation = false; }
     };
-    void load(true); const timer = window.setInterval(() => void load(), 4000); return () => { active = false; window.clearInterval(timer); };
+    void load(); const timer = window.setInterval(() => void load(), 4000); return () => { active = false; window.clearInterval(timer); };
   }, [channel, c?.id, telegramRetry]);
 
   useEffect(() => {
@@ -608,6 +635,13 @@ export function WhatsAppPage() {
                   <div className="tg-skeleton-message outgoing"><i /><i /></div>
                   <div className="tg-skeleton-message incoming short"><i /><i /></div>
                   <div className="tg-skeleton-message outgoing short"><i /><i /><i /></div>
+                </div>
+              )}
+              {channel === 'telegram' && (telegramStatusError || telegramDiagnostics.length > 0) && (
+                <div className="empty telegram-state error" role="alert">
+                  <b>Telegram setup needs attention</b>
+                  {telegramStatusError && <span>{telegramStatusError}</span>}
+                  {telegramDiagnostics.map((warning) => <span key={warning}>{warning}</span>)}
                 </div>
               )}
               {channel === 'whatsapp' && (!whatsAppReady || whatsAppError) && (

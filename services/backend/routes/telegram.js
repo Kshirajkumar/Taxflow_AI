@@ -18,6 +18,7 @@ const {
 const botToken = () => process.env.TELEGRAM_BOT_TOKEN || '';
 const webhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET || '';
 const botUsername = () => String(process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '');
+const webhookAutoConfigureEnabled = () => String(process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE || '').toLowerCase() === 'true';
 const TELEGRAM_FILE_LIMIT_BYTES = 20 * 1024 * 1024;
 const attachmentDownloads = new Map();
 const attachmentDownloadQueue = [];
@@ -430,6 +431,11 @@ function startAttachmentDownloadWorker() {
   attachmentWorkerTimer.unref?.();
 }
 
+function expectedWebhookUrl() {
+  const publicUrl = String(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
+  return publicUrl ? `${publicUrl}/api/v1/telegram/webhook` : null;
+}
+
 function publicTelegramMessage(message) {
   const { telegram_file_id, ...visibleMessage } = message;
   return {
@@ -472,22 +478,98 @@ async function telegramCall(method, payload) {
 }
 
 async function configureWebhook() {
-  const publicUrl = String(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
-  if (!publicUrl) {
+  if (!webhookAutoConfigureEnabled()) {
+    console.log('[Telegram] Webhook auto-configuration is disabled; the registered Telegram webhook was left unchanged.');
+    return { configured: false, reason: 'auto_configuration_disabled' };
+  }
+  const webhookUrl = expectedWebhookUrl();
+  if (!webhookUrl) {
     console.warn('[Telegram] Webhook auto-configuration skipped: PUBLIC_URL/RENDER_EXTERNAL_URL is not set.');
     return { configured: false, reason: 'public_url_missing' };
   }
-  if (!/^https:\/\//i.test(publicUrl)) throw new Error('Telegram webhook public URL must use HTTPS');
+  if (!/^https:\/\//i.test(webhookUrl)) throw new Error('Telegram webhook public URL must use HTTPS');
   if (!webhookSecret()) throw new Error('TELEGRAM_WEBHOOK_SECRET must be configured before enabling the Telegram webhook.');
-  const webhookUrl = `${publicUrl}/api/v1/telegram/webhook`;
   await telegramCall('setWebhook', { url: webhookUrl, ...(webhookSecret() ? { secret_token: webhookSecret() } : {}), allowed_updates: ['message'] });
   console.log(`[Telegram] Webhook configured: ${webhookUrl}`);
   return { configured: true, webhookUrl };
 }
 
 router.get('/status', requireAuth, async (_req, res) => {
-  try { const bot = await telegramCall('getMe', {}); return res.json({ success: true, connected: true, bot: { id: bot.id, username: bot.username, name: bot.first_name } }); }
-  catch (error) { return res.status(503).json({ success: false, connected: false, message: error.message }); }
+  const warnings = [];
+  let bot;
+  let webhookInfo = null;
+  try {
+    bot = await telegramCall('getMe', {});
+    webhookInfo = await telegramCall('getWebhookInfo', {});
+  } catch (error) {
+    return res.status(503).json({ success: false, connected: false, message: error.message });
+  }
+
+  const targetWebhookUrl = expectedWebhookUrl();
+  if (!isConnected || !supabase) {
+    warnings.push('This backend is not connected to Supabase. Telegram messages and attachments cannot be saved.');
+  } else {
+    try {
+      const [{ error: messagesSchemaError }, { error: documentsSchemaError }] = await Promise.all([
+        supabase.from('telegram_messages')
+          .select('id,telegram_file_id,telegram_file_name,mime_type,file_size,vault_file_ref,file_download_error,attachment_download_status')
+          .limit(1),
+        supabase.from('documents_metadata')
+          .select('id,storage_bucket,storage_object_path,file_sha256,mime_type,telegram_message_id')
+          .limit(1)
+      ]);
+      if (messagesSchemaError || documentsSchemaError) throw messagesSchemaError || documentsSchemaError;
+    } catch (error) {
+      console.error('[Telegram] Runtime database schema check failed:', error.message);
+      warnings.push('Telegram database migrations are missing or the configured Supabase project is unavailable. Apply the Telegram and storage migrations to the same project used by this backend.');
+    }
+  }
+
+  const storageBucket = String(process.env.SUPABASE_STORAGE_BUCKET || '').trim();
+  let storageBucketReady = false;
+  if (!storageBucket) {
+    warnings.push('SUPABASE_STORAGE_BUCKET is not configured on this backend. Production Telegram files cannot be saved to Supabase Storage.');
+  } else if (supabase && isConnected) {
+    try {
+      const { error } = await supabase.storage.from(storageBucket).list('', { limit: 1 });
+      if (error) throw error;
+      storageBucketReady = true;
+    } catch (error) {
+      console.error('[Telegram] Storage bucket check failed:', error.message);
+      warnings.push(`Supabase Storage bucket "${storageBucket}" is missing or inaccessible to this backend.`);
+    }
+  }
+
+  if (!webhookInfo?.url) {
+    warnings.push('No Telegram webhook is currently registered for this bot.');
+  } else if (targetWebhookUrl && webhookInfo.url.replace(/\/+$/, '') !== targetWebhookUrl) {
+    warnings.push('Telegram is delivering updates to a different service than this backend. Check the webhook URL and ensure only the intended Render service configures this bot.');
+  }
+  if (webhookInfo?.last_error_message) {
+    warnings.push(`Telegram reported a recent webhook delivery error: ${webhookInfo.last_error_message}`);
+  }
+  if (!targetWebhookUrl) {
+    warnings.push('Set PUBLIC_URL on the intended Render backend so its expected Telegram webhook URL can be checked.');
+  }
+
+  return res.json({
+    success: true,
+    connected: true,
+    bot: { id: bot.id, username: bot.username, name: bot.first_name },
+    diagnostics: {
+      expectedWebhookUrl: targetWebhookUrl,
+      webhookUrl: webhookInfo?.url || null,
+      webhookMatchesThisService: targetWebhookUrl
+        ? webhookInfo?.url?.replace(/\/+$/, '') === targetWebhookUrl
+        : null,
+      webhookPendingUpdates: Number(webhookInfo?.pending_update_count || 0),
+      webhookLastError: webhookInfo?.last_error_message || null,
+      storageBucket: storageBucket || null,
+      storageBucketReady,
+      webhookAutoConfigureEnabled: webhookAutoConfigureEnabled(),
+      warnings
+    }
+  });
 });
 
 router.post('/clients/:clientId/link', requireAuth, async (req, res) => {
@@ -828,6 +910,9 @@ module.exports.configureWebhook = configureWebhook;
 module.exports.startAttachmentDownloadWorker = startAttachmentDownloadWorker;
 module.exports._test = {
   secretMatches,
+  expectedWebhookUrl,
+  webhookAutoConfigureEnabled,
+  configureWebhook,
   getTelegramAttachment,
   getUnrepresentedTelegramMessage,
   normalizeTelegramFileName,

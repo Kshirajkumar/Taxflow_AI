@@ -130,6 +130,7 @@ Edit `services/backend/.env`:
 | `PORT` | API port (default `5000`) |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | Cloud metadata database |
 | `SUPABASE_STORAGE_BUCKET` | Private object bucket for production Telegram attachments (`taxflow-intake`) |
+| `TELEGRAM_WEBHOOK_AUTO_CONFIGURE` | Set to `true` on exactly one backend service per Telegram bot; other Render services sharing that bot must leave it unset or `false` |
 | `VAULT_PATH` | Folder for client files on the backend host. For a local backend, do not place it in a cloud-synced folder. For a hosted backend, use a persistent mounted disk. |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | AI extraction and generation |
 | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN` | WhatsApp Cloud API |

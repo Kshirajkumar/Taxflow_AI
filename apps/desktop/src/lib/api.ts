@@ -846,7 +846,24 @@ export async function sendWhatsAppManualMessage(clientId: string, toPhone: strin
   }
 }
 
-export async function fetchTelegramStatus(): Promise<{ connected: boolean; bot?: { username?: string; name?: string }; message?: string }> {
+export interface TelegramStatus {
+  connected: boolean;
+  bot?: { username?: string; name?: string };
+  message?: string;
+  diagnostics?: {
+    expectedWebhookUrl: string | null;
+    webhookUrl: string | null;
+    webhookMatchesThisService: boolean | null;
+    webhookPendingUpdates: number;
+    webhookLastError: string | null;
+    storageBucket: string | null;
+    storageBucketReady: boolean;
+    webhookAutoConfigureEnabled: boolean;
+    warnings: string[];
+  };
+}
+
+export async function fetchTelegramStatus(): Promise<TelegramStatus> {
   const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/status`, { headers: authHeaders() }, 20000, 'Telegram status check');
   if (!res.ok || !json.success) throw new Error(json.message || `Telegram status failed (HTTP ${res.status}).`);
   return json;

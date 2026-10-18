@@ -10,11 +10,14 @@ Configure these server-only variables on the backend:
 TELEGRAM_BOT_TOKEN=<BotFather token>
 TELEGRAM_BOT_USERNAME=<bot username without @>
 TELEGRAM_WEBHOOK_SECRET=<high-entropy secret>
+TELEGRAM_WEBHOOK_AUTO_CONFIGURE=true
 SUPABASE_URL=<Supabase project URL>
 SUPABASE_SERVICE_ROLE_KEY=<server-only service-role key>
 SUPABASE_STORAGE_BUCKET=taxflow-intake
 PUBLIC_URL=https://<public-backend-host>
 ```
+
+Set `TELEGRAM_WEBHOOK_AUTO_CONFIGURE=true` on exactly one Render service for each bot. Leave it unset or set it to `false` on any other service that shares the same bot token: Telegram allows only one active webhook per bot, and a second service can otherwise replace the first service's webhook at startup. `PUBLIC_URL` must be the public HTTPS base URL of the one service that owns the webhook.
 
 Ensure `clients`, `user_profiles`, and `documents_metadata` exist. Run `npm run migrate:telegram` from `services/backend` with `DATABASE_URL` set, or apply these files in order in the Supabase SQL Editor:
 
@@ -33,6 +36,8 @@ The Storage migration creates the private `taxflow-intake` bucket, restricts dir
 5. After a successful local write, the desktop records a per-device sync receipt. The private cloud object is intentionally retained for recovery and syncing another authorized device; sync is not a move operation.
 
 The desktop app retries unsynced documents on its next polling cycle. If no storage bucket is configured in production, attachment processing reports an error instead of treating the Render disk as durable storage. In development, without a bucket configured, the existing backend-local vault behavior remains available.
+
+The authenticated Telegram status endpoint checks the active webhook URL, pending Telegram updates, database migration columns, and Storage bucket availability. The desktop Telegram panel displays warnings when those backend settings do not agree.
 
 ## Webhook and operations
 
