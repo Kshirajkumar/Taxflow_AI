@@ -166,6 +166,7 @@ export interface NotificationItem {
 async function authRequest<T extends { success: boolean; message?: string }>(
   url: string,
   options: RequestInit,
+  retryAfterSessionRefresh = false,
 ): Promise<T> {
   let res: Response;
 
@@ -173,8 +174,24 @@ async function authRequest<T extends { success: boolean; message?: string }>(
     res = await fetch(url, options);
   } catch {
     throw new Error(
-      'The TaxFlow.AI backend is not available yet. Please wait a moment for Tauri Dev to finish starting, then try again.',
+      'The TaxFlow.AI backend could not be reached. Check your connection and try again.',
     );
+  }
+
+  if (retryAfterSessionRefresh && res.status === 401) {
+    const refreshed = await refreshSession();
+    if (refreshed?.token) {
+      try {
+        res = await fetch(url, {
+          ...options,
+          headers: { ...(options.headers as Record<string, string> || {}), ...authHeaders() },
+        });
+      } catch {
+        throw new Error('The TaxFlow.AI backend could not be reached. Check your connection and try again.');
+      }
+    } else {
+      window.dispatchEvent(new CustomEvent('taxflow:session-expired'));
+    }
   }
 
   let data: T;
@@ -356,6 +373,22 @@ export async function apiLogin(email: string, password: string): Promise<AuthRes
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
   });
+}
+
+export async function apiVerifyAccountDeletionPassword(password: string): Promise<{ success: boolean; message?: string; challenge?: string; expiresIn?: number }> {
+  return authRequest(`${API_BASE_URL}/auth/delete-account/verify`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ password })
+  }, true);
+}
+
+export async function apiConfirmAccountDeletion(challenge: string, confirmation: string): Promise<{ success: boolean; message?: string }> {
+  return authRequest(`${API_BASE_URL}/auth/delete-account/confirm`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ challenge, confirmation })
+  }, true);
 }
 
 export async function apiForgotPassword(email: string): Promise<{ success: boolean; message: string }> {

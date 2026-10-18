@@ -17,9 +17,52 @@
 
 const express = require('express');
 const path = require('node:path');
+const crypto = require('node:crypto');
+const { createClient } = require('@supabase/supabase-js');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
+const { requireAuth } = require('../middleware/requireAuth');
+const { deleteAccountStorage, deleteAccountVaultSecrets } = require('../lib/accountDeletion');
 const ALLOWED_PRACTICE_TYPES = new Set(['Chartered Accountant (CA)', 'Individual']);
+const ACCOUNT_DELETE_CONFIRMATION = 'DELETE MY ACCOUNT';
+const ACCOUNT_DELETE_CHALLENGE_LIFETIME_SECONDS = 5 * 60;
+
+function signAccountDeletionChallenge(payload) {
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) throw new Error('Account deletion challenge signing is not configured.');
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+  return `${encodedPayload}.${signature}`;
+}
+
+function verifyAccountDeletionChallenge(token, userId) {
+  if (typeof token !== 'string' || token.length > 2048) return false;
+  const parts = token.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return false;
+  const [encodedPayload, signature] = parts;
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) return false;
+  const expected = crypto.createHmac('sha256', secret).update(encodedPayload).digest();
+  let actual;
+  try {
+    if (!/^[A-Za-z0-9_-]+$/.test(signature)) return false;
+    actual = Buffer.from(signature, 'base64url');
+  } catch {
+    return false;
+  }
+  if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return false;
+
+  try {
+    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+    return payload.sub === userId
+      && Number.isInteger(payload.exp)
+      && payload.exp > Math.floor(Date.now() / 1000)
+      && typeof payload.nonce === 'string'
+      && /^[A-Za-z0-9_-]{32}$/.test(payload.nonce);
+  } catch {
+    return false;
+  }
+}
 
 function isLoopbackAddress(address) {
   const value = String(address || '').toLowerCase();
@@ -322,6 +365,127 @@ router.post('/forgot-password', async (req, res) => {
     success: true,
     message: 'If an account exists for that email, a password reset link has been sent.'
   });
+});
+
+router.post('/delete-account/verify', requireAuth, async (req, res) => {
+  if (!requireSupabase(res)) return;
+
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!password || password.length > 1024 || !req.user.email) {
+    return res.status(400).json({ success: false, message: 'Enter your current account password to continue.' });
+  }
+
+  const ip = req.ip || req.connection?.remoteAddress || 'client';
+  const rateKey = `account-delete_${ip}_${req.user.email.toLowerCase()}`;
+  const rateCheck = checkRateLimit(rateKey);
+  if (!rateCheck.allowed) {
+    return res.status(429).json({
+      success: false,
+      rateLimited: true,
+      secondsLeft: rateCheck.secondsLeft,
+      message: `Too many password attempts. Please wait ${rateCheck.secondsLeft} seconds before trying again.`
+    });
+  }
+
+  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!process.env.SUPABASE_URL || !anonKey) {
+    return res.status(503).json({
+      success: false,
+      message: 'Secure password verification is not configured. Ask your administrator to configure the Supabase anon/publishable key on the backend.'
+    });
+  }
+
+  try {
+    const authClient = createClient(process.env.SUPABASE_URL, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+    });
+    const { data, error } = await authClient.auth.signInWithPassword({
+      email: req.user.email,
+      password
+    });
+    if (error || data.user?.id !== req.user.id) {
+      recordFailedAttempt(rateKey);
+      return res.status(401).json({
+        success: false,
+        message: 'The password could not be verified. Check it and try again.'
+      });
+    }
+
+    await authClient.auth.signOut();
+    clearRateLimit(rateKey);
+    const now = Math.floor(Date.now() / 1000);
+    const challenge = signAccountDeletionChallenge({
+      sub: req.user.id,
+      exp: now + ACCOUNT_DELETE_CHALLENGE_LIFETIME_SECONDS,
+      nonce: crypto.randomBytes(24).toString('base64url')
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({
+      success: true,
+      challenge,
+      expiresIn: ACCOUNT_DELETE_CHALLENGE_LIFETIME_SECONDS
+    });
+  } catch (error) {
+    console.error('[AUTH] Account deletion password verification failed:', error.message);
+    return res.status(503).json({
+      success: false,
+      message: 'Password verification is temporarily unavailable. Please try again.'
+    });
+  }
+});
+
+router.post('/delete-account/confirm', requireAuth, async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const storageBucket = String(process.env.SUPABASE_STORAGE_BUCKET || '').trim();
+  if (!storageBucket) {
+    return res.status(503).json({
+      success: false,
+      message: 'Account deletion is not configured to clean private cloud files. Ask your administrator to set SUPABASE_STORAGE_BUCKET on the backend.'
+    });
+  }
+  if (req.body?.confirmation !== ACCOUNT_DELETE_CONFIRMATION) {
+    return res.status(400).json({
+      success: false,
+      message: `Type ${ACCOUNT_DELETE_CONFIRMATION} exactly to confirm permanent account deletion.`
+    });
+  }
+  if (!verifyAccountDeletionChallenge(req.body?.challenge, req.user.id)) {
+    return res.status(401).json({
+      success: false,
+      message: 'The password verification expired or is invalid. Verify your password again.'
+    });
+  }
+
+  try {
+    const { deletedObjectCount } = await deleteAccountStorage(
+      supabase,
+      req.user.id,
+      storageBucket
+    );
+    const { deletedSecretCount } = await deleteAccountVaultSecrets(supabase, req.user.id);
+    const { error } = await supabase.auth.admin.deleteUser(req.user.id);
+    if (error) {
+      console.error(`[AUTH] Account database deletion failed for ${req.user.id}:`, error.message);
+      return res.status(500).json({
+        success: false,
+        message: 'Private cloud files were removed, but database account deletion did not finish. Your account remains active; verify the database foreign-key constraints and retry deletion.'
+      });
+    }
+
+    console.info(`[AUTH] Account ${req.user.id} permanently deleted; removed ${deletedObjectCount} private cloud object(s) and ${deletedSecretCount} integration secret(s).`);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({
+      success: true,
+      message: 'Your account and account-owned cloud data were permanently deleted.',
+      data: { deletedObjectCount, deletedSecretCount, localVaultPreserved: true }
+    });
+  } catch (error) {
+    console.error(`[AUTH] Account deletion failed before auth removal for ${req.user.id}:`, error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Account deletion did not finish. Your sign-in account was not deleted; some private cloud files or integration secrets may already have been removed. Retry, or contact support if the problem continues.'
+    });
+  }
 });
 
 // ──────────────────────────────────────────────────────────

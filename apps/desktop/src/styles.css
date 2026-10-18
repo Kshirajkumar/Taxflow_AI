@@ -1644,6 +1644,220 @@ pre.code{margin:0;background:var(--panel);border:1px solid var(--line);border-ra
   color: var(--tx);
 }
 
+.account-danger-zone {
+  margin-top: 18px;
+  border-color: color-mix(in srgb, var(--red, #d94b4b) 32%, var(--line2));
+}
+
+.account-danger-zone .card-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.account-danger-zone .card-h h2 {
+  margin: 4px 0 0;
+  font-size: 15px;
+}
+
+.account-danger-zone .card-b > p {
+  max-width: 680px;
+  color: var(--tx2);
+  font-size: 12.5px;
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+
+.account-danger-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  color: var(--red, #d94b4b);
+  background: color-mix(in srgb, var(--red, #d94b4b) 10%, transparent);
+}
+
+.account-danger-retention {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 700px;
+  margin: 0 0 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--tx2);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.account-danger-retention svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--ac);
+}
+
+.account-delete-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(8, 12, 20, 0.64);
+  backdrop-filter: blur(8px);
+  animation: accountDeleteFade 160ms ease-out;
+}
+
+.account-delete-dialog {
+  width: min(100%, 480px);
+  max-height: min(90vh, 760px);
+  overflow: auto;
+  border: 1px solid var(--line2);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  animation: modalPop 180ms ease-out;
+}
+
+.account-delete-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.account-delete-header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-delete-header h2 {
+  margin: 4px 0 0;
+  font-size: 17px;
+  color: var(--tx);
+}
+
+.account-delete-dialog .modal-close-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.account-delete-content {
+  padding: 18px 22px 22px;
+}
+
+.account-delete-content p {
+  margin: 0 0 16px;
+  color: var(--tx2);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.account-delete-content .f {
+  display: block;
+  margin-top: 14px;
+  color: var(--tx);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.account-delete-content .modal-input {
+  margin-top: 7px;
+}
+
+.account-delete-content code {
+  color: var(--red, #d94b4b);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.account-delete-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 2px 0 20px;
+}
+
+.account-delete-step span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line2);
+  border-radius: 50%;
+  color: var(--tx3);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.account-delete-step span.active,
+.account-delete-step span.complete {
+  border-color: var(--ac);
+  background: var(--ac);
+  color: #fff;
+}
+
+.account-delete-step i {
+  width: 52px;
+  height: 1px;
+  margin: 0 8px;
+  background: var(--line2);
+}
+
+.account-delete-warning {
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--red, #d94b4b) 24%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--red, #d94b4b) 5%, var(--card));
+  color: var(--tx2);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.account-delete-warning b {
+  color: var(--tx);
+}
+
+.account-delete-warning ul {
+  margin: 7px 0 10px;
+  padding-left: 18px;
+}
+
+.account-delete-warning li + li {
+  margin-top: 4px;
+}
+
+.account-delete-phrase {
+  letter-spacing: 0.03em;
+}
+
+.account-delete-error {
+  margin-top: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.account-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 20px;
+}
+
+.account-delete-actions .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@keyframes accountDeleteFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .modal-desc {
   font-size: 12.5px;
   color: var(--tx2);
