@@ -20,6 +20,8 @@ const webhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET || '';
 const botUsername = () => String(process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '');
 const webhookAutoConfigureEnabled = () => String(process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE || '').toLowerCase() === 'true';
 const TELEGRAM_FILE_LIMIT_BYTES = 20 * 1024 * 1024;
+const TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
+const TELEGRAM_PHOTO_LIMIT_BYTES = 9 * 1024 * 1024;
 const attachmentDownloads = new Map();
 const attachmentDownloadQueue = [];
 let activeAttachmentDownloads = 0;
@@ -432,6 +434,20 @@ function startAttachmentDownloadWorker() {
 }
 
 function expectedWebhookUrl() {
+  if (!webhookAutoConfigureEnabled()) {
+    const relayUrl = String(process.env.TELEGRAM_WEBHOOK_RELAY_URL || '').trim();
+    if (relayUrl) {
+      try {
+        const parsed = new URL(relayUrl);
+        if (parsed.protocol === 'https:' && parsed.pathname === '/telegram/webhook' && !parsed.search && !parsed.hash && !parsed.username && !parsed.password) {
+          return parsed.toString().replace(/\/+$/, '');
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    }
+  }
   const publicUrl = String(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
   return publicUrl ? `${publicUrl}/api/v1/telegram/webhook` : null;
 }
@@ -477,6 +493,30 @@ async function telegramCall(method, payload) {
   return result.result;
 }
 
+async function telegramFileCall(method, chatId, buffer, fileName, mimeType) {
+  if (!botToken()) throw new Error('Telegram bot is not configured.');
+  const form = new FormData();
+  form.set('chat_id', String(chatId));
+  form.set(method === 'sendPhoto' ? 'photo' : 'document', new Blob([buffer], { type: mimeType }), fileName);
+  let response;
+  try {
+    response = await fetch(`https://api.telegram.org/bot${botToken()}/${method}`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(60000)
+    });
+  } catch {
+    throw new Error('Telegram could not confirm file delivery. Check the conversation before trying again.');
+  }
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok) {
+    const error = new Error(result.description || `Telegram file delivery failed (${response.status}).`);
+    error.retryAsDocument = method === 'sendPhoto' && response.status === 400;
+    throw error;
+  }
+  return result.result;
+}
+
 async function configureWebhook() {
   if (!webhookAutoConfigureEnabled()) {
     console.log('[Telegram] Webhook auto-configuration is disabled; the registered Telegram webhook was left unchanged.');
@@ -489,7 +529,7 @@ async function configureWebhook() {
   }
   if (!/^https:\/\//i.test(webhookUrl)) throw new Error('Telegram webhook public URL must use HTTPS');
   if (!webhookSecret()) throw new Error('TELEGRAM_WEBHOOK_SECRET must be configured before enabling the Telegram webhook.');
-  await telegramCall('setWebhook', { url: webhookUrl, ...(webhookSecret() ? { secret_token: webhookSecret() } : {}), allowed_updates: ['message'] });
+  await telegramCall('setWebhook', { url: webhookUrl, ...(webhookSecret() ? { secret_token: webhookSecret() } : {}), allowed_updates: ['message', 'edited_message'] });
   console.log(`[Telegram] Webhook configured: ${webhookUrl}`);
   return { configured: true, webhookUrl };
 }
@@ -506,6 +546,9 @@ router.get('/status', requireAuth, async (_req, res) => {
   }
 
   const targetWebhookUrl = expectedWebhookUrl();
+  const webhookIngress = webhookAutoConfigureEnabled()
+    ? 'direct'
+    : process.env.TELEGRAM_WEBHOOK_RELAY_URL ? 'relay' : 'unconfigured';
   if (!isConnected || !supabase) {
     warnings.push('This backend is not connected to Supabase. Telegram messages and attachments cannot be saved.');
   } else {
@@ -549,7 +592,9 @@ router.get('/status', requireAuth, async (_req, res) => {
     warnings.push(`Telegram reported a recent webhook delivery error: ${webhookInfo.last_error_message}`);
   }
   if (!targetWebhookUrl) {
-    warnings.push('Set PUBLIC_URL on the intended Render backend so its expected Telegram webhook URL can be checked.');
+    warnings.push(webhookIngress === 'relay'
+      ? 'TELEGRAM_WEBHOOK_RELAY_URL is invalid. Set it to the relay service HTTPS URL ending in /telegram/webhook.'
+      : 'Set PUBLIC_URL on the direct webhook service, or configure TELEGRAM_WEBHOOK_RELAY_URL when using the separate relay service.');
   }
 
   return res.json({
@@ -567,6 +612,7 @@ router.get('/status', requireAuth, async (_req, res) => {
       storageBucket: storageBucket || null,
       storageBucketReady,
       webhookAutoConfigureEnabled: webhookAutoConfigureEnabled(),
+      webhookIngress,
       warnings
     }
   });
@@ -804,6 +850,120 @@ router.post('/send', requireAuth, async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
 });
 
+router.post('/clients/:clientId/send-file', requireAuth, express.raw({ type: '*/*', limit: TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES }), async (req, res) => {
+  let queuedMessage;
+  let providerMessageId;
+  let telegramRequestStarted = false;
+  try {
+    const clientId = req.params.clientId;
+    const requestId = String(req.query.requestId || '');
+    const fileNameInput = typeof req.query.fileName === 'string' ? req.query.fileName : '';
+    const mimeType = normalizeMimeType(typeof req.query.mimeType === 'string' ? req.query.mimeType : req.get('content-type'));
+    const approved = req.query.approved === 'true';
+    const fileBytes = req.body;
+
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
+      return res.status(400).json({ success: false, message: 'A valid requestId is required.' });
+    }
+    if (!approved) return res.status(422).json({ success: false, message: 'Explicit file approval is required.' });
+    if (!Buffer.isBuffer(fileBytes)) return res.status(415).json({ success: false, message: 'Upload the attachment as a binary file.' });
+    if (!fileBytes.length) return res.status(400).json({ success: false, message: 'The selected attachment is empty.' });
+    if (fileBytes.length > TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES) {
+      return res.status(413).json({ success: false, message: 'Telegram attachments cannot exceed 25 MB.' });
+    }
+
+    let normalized;
+    try {
+      normalized = normalizeTelegramFileName(fileNameInput, mimeType);
+    } catch (error) {
+      return res.status(415).json({ success: false, message: error.message });
+    }
+    const fileName = normalized.fileName;
+    if (!isConnected || !(await assertOwnedClient(req.user.id, clientId))) {
+      return res.status(404).json({ success: false, message: 'Client not found.' });
+    }
+    const { data: client, error: clientError } = await supabase.from('clients')
+      .select('id,telegram_chat_id')
+      .eq('id', clientId)
+      .eq('user_id', req.user.id)
+      .single();
+    if (clientError) throw clientError;
+    if (!client.telegram_chat_id) return res.status(422).json({ success: false, message: 'This client has not linked Telegram.' });
+
+    providerMessageId = `taxflow:${requestId}`;
+    const isPhoto = ['image/jpeg', 'image/png'].includes(mimeType) && fileBytes.length <= TELEGRAM_PHOTO_LIMIT_BYTES;
+    const messageType = isPhoto ? 'image' : 'document';
+    const body = fileName;
+    const { data, error: queueError } = await supabase.from('telegram_messages')
+      .insert({
+        client_id: clientId,
+        provider_message_id: providerMessageId,
+        direction: 'outbound',
+        chat_id: String(client.telegram_chat_id),
+        body,
+        message_type: messageType,
+        telegram_file_name: fileName,
+        mime_type: mimeType,
+        file_size: fileBytes.length,
+        delivery_status: 'queued',
+        approved_by: req.user.id,
+        approved_at: new Date().toISOString()
+      })
+      .select('*')
+      .single();
+    if (queueError?.code === '23505') {
+      return res.status(409).json({ success: false, message: 'This file request has already been processed.' });
+    }
+    if (queueError) throw queueError;
+    queuedMessage = data;
+
+    telegramRequestStarted = true;
+    let sent;
+    let sentMessageType = messageType;
+    try {
+      sent = await telegramFileCall(isPhoto ? 'sendPhoto' : 'sendDocument', client.telegram_chat_id, fileBytes, fileName, mimeType);
+    } catch (error) {
+      if (!isPhoto || error.retryAsDocument !== true) throw error;
+      console.warn(`[Telegram] Photo validation failed for outbound message ${providerMessageId}; retrying once as a document.`);
+      sent = await telegramFileCall('sendDocument', client.telegram_chat_id, fileBytes, fileName, mimeType);
+      sentMessageType = 'document';
+    }
+    const sentFields = {
+      delivery_status: 'sent',
+      provider_response_id: String(sent.message_id),
+      sender_user_id: String(sent.from?.id || ''),
+      message_type: sentMessageType
+    };
+    const { data: sentMessage, error: updateError } = await supabase.from('telegram_messages')
+      .update(sentFields)
+      .eq('provider_message_id', providerMessageId)
+      .eq('direction', 'outbound')
+      .select('*')
+      .single();
+    if (updateError) {
+      console.error('[Telegram] sent attachment status persistence failed:', updateError.message);
+      return res.json({
+        success: true,
+        data: { ...queuedMessage, ...sentFields },
+        warning: 'delivery_status_persistence_failed'
+      });
+    }
+    return res.json({ success: true, data: sentMessage });
+  } catch (error) {
+    if (providerMessageId && queuedMessage) {
+      const { error: statusError } = await supabase.from('telegram_messages')
+        .update({ delivery_status: 'failed' })
+        .eq('provider_message_id', providerMessageId)
+        .eq('direction', 'outbound');
+      if (statusError) console.error('[Telegram] failed attachment status persistence failed:', statusError.message);
+    }
+    return res.status(telegramRequestStarted ? 502 : 500).json({
+      success: false,
+      message: error.message || 'Unable to send the Telegram attachment.'
+    });
+  }
+});
+
 router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
   if (!webhookSecret()) {
     console.error('[Telegram] Webhook request rejected: TELEGRAM_WEBHOOK_SECRET is not configured.');
@@ -912,6 +1072,8 @@ module.exports._test = {
   secretMatches,
   expectedWebhookUrl,
   webhookAutoConfigureEnabled,
+  TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES,
+  TELEGRAM_PHOTO_LIMIT_BYTES,
   configureWebhook,
   getTelegramAttachment,
   getUnrepresentedTelegramMessage,

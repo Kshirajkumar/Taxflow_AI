@@ -176,6 +176,12 @@ app.use((req, res) => {
 
 // ─── Global Error Handler ─────────────────────────────────────
 app.use((err, req, res, _next) => {
+  if (err.type === 'entity.too.large') {
+    const message = req.path.endsWith('/send-file')
+      ? 'The attachment exceeds the configured 25 MB upload limit.'
+      : 'The request body is too large.';
+    return res.status(413).json({ success: false, message });
+  }
   console.error('[Server Error]', err.message);
   res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
 });

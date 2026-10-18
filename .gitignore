@@ -4,3 +4,4 @@ node_modules
 dist
 .env.local
 .playwright-mcp/
+Render Free Tier Telegram Bot Setup/

@@ -296,6 +296,29 @@ test('Telegram attachment parsing covers media messages and rejects unsafe forma
   assert.throws(() => normalizeTelegramFileName('unknown-document', 'application/octet-stream'), /identified safely/i);
 });
 
+test('outbound Telegram attachment limit includes the approved size buffer', () => {
+  assert.equal(telegramRouter._test.TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES, 25 * 1024 * 1024);
+  assert.equal(telegramRouter._test.TELEGRAM_PHOTO_LIMIT_BYTES, 9 * 1024 * 1024);
+});
+
+test('Telegram diagnostics expect the separate relay when direct webhook registration is disabled', () => {
+  const oldRelayUrl = process.env.TELEGRAM_WEBHOOK_RELAY_URL;
+  const oldAutoConfigure = process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE;
+  process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE = 'false';
+  process.env.TELEGRAM_WEBHOOK_RELAY_URL = 'https://telegram-relay.example.com/telegram/webhook';
+  try {
+    assert.equal(
+      telegramRouter._test.expectedWebhookUrl(),
+      'https://telegram-relay.example.com/telegram/webhook'
+    );
+  } finally {
+    if (oldRelayUrl === undefined) delete process.env.TELEGRAM_WEBHOOK_RELAY_URL;
+    else process.env.TELEGRAM_WEBHOOK_RELAY_URL = oldRelayUrl;
+    if (oldAutoConfigure === undefined) delete process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE;
+    else process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE = oldAutoConfigure;
+  }
+});
+
 test('Production Telegram attachments upload to private object storage with a verifiable checksum', async (t) => {
   const oldFrom = database.supabase.from;
   const oldStorageFrom = database.supabase.storage.from;
@@ -509,4 +532,99 @@ test('Authenticated desktop sync lists only pending owned files and acknowledges
     body: JSON.stringify({ deviceId, documentId, sha256: '0'.repeat(64) })
   });
   assert.equal(mismatchResponse.status, 409);
+});
+
+test('CA-approved Telegram attachments send as photos or documents and persist delivery metadata', async (t) => {
+  const oldFrom = database.supabase.from;
+  const oldGetUser = database.supabase.auth.getUser;
+  const oldFetch = global.fetch;
+  const oldToken = process.env.TELEGRAM_BOT_TOKEN;
+  const oldSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const ownerId = 'telegram-file-owner';
+  const clientId = 'telegram-file-client';
+  const telegramCalls = [];
+  Object.values(tables).forEach((rows) => { rows.length = 0; });
+  tables.clients.push({
+    id: clientId,
+    user_id: ownerId,
+    telegram_chat_id: 'telegram-chat-1'
+  });
+  database.supabase.from = (table) => fakeQuery(table);
+  database.supabase.auth.getUser = async () => ({ data: { user: { id: ownerId } }, error: null });
+  process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
+  process.env.TELEGRAM_WEBHOOK_SECRET = 'test-webhook-secret';
+  global.fetch = async (url, init) => {
+    if (String(url).startsWith('http://127.0.0.1:')) return oldFetch(url, init);
+    telegramCalls.push({ url: String(url), form: init.body });
+    if (String(url).endsWith('/sendPhoto') && init.body.get('photo').name === 'invalid-dimensions.png') {
+      return new Response(JSON.stringify({ ok: false, description: 'Photo dimensions are not supported.' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    return new Response(JSON.stringify({
+      ok: true,
+      result: { message_id: telegramCalls.length, from: { id: 42 } }
+    }), { headers: { 'content-type': 'application/json' } });
+  };
+
+  const app = express();
+  app.use('/api/v1/telegram', (req, _res, next) => {
+    req.headers.authorization = 'Bearer test-access-token';
+    next();
+  }, telegramRouter);
+  const server = app.listen(0);
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    database.supabase.from = oldFrom;
+    database.supabase.auth.getUser = oldGetUser;
+    global.fetch = oldFetch;
+    if (oldToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN; else process.env.TELEGRAM_BOT_TOKEN = oldToken;
+    if (oldSecret === undefined) delete process.env.TELEGRAM_WEBHOOK_SECRET; else process.env.TELEGRAM_WEBHOOK_SECRET = oldSecret;
+  });
+
+  async function sendFile(name, mimeType, bytes, approved = true) {
+    const query = new URLSearchParams({
+      approved: String(approved),
+      requestId: crypto.randomUUID(),
+      fileName: name,
+      mimeType
+    });
+    return fetch(`http://127.0.0.1:${server.address().port}/api/v1/telegram/clients/${clientId}/send-file?${query}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: bytes
+    });
+  }
+
+  const photoResponse = await sendFile('identity.png', 'image/png', Buffer.from('png-bytes'));
+  assert.equal(photoResponse.status, 200);
+  const photoPayload = await photoResponse.json();
+  assert.equal(photoPayload.data.message_type, 'image');
+  assert.equal(photoPayload.data.delivery_status, 'sent');
+  assert.equal(photoPayload.data.approved_by, ownerId);
+  assert.equal(photoPayload.data.body, 'identity.png');
+  assert.match(telegramCalls[0].url, /\/sendPhoto$/);
+  assert.equal(telegramCalls[0].form.get('photo').name, 'identity.png');
+
+  const documentResponse = await sendFile('return.pdf', 'application/pdf', Buffer.from('%PDF-1.7 sample'));
+  assert.equal(documentResponse.status, 200);
+  const documentPayload = await documentResponse.json();
+  assert.equal(documentPayload.data.message_type, 'document');
+  assert.equal(documentPayload.data.delivery_status, 'sent');
+  assert.match(telegramCalls[1].url, /\/sendDocument$/);
+  assert.equal(telegramCalls[1].form.get('document').name, 'return.pdf');
+
+  const fallbackResponse = await sendFile('invalid-dimensions.png', 'image/png', Buffer.from('png-bytes'));
+  assert.equal(fallbackResponse.status, 200);
+  assert.equal((await fallbackResponse.json()).data.message_type, 'document');
+  assert.match(telegramCalls[2].url, /\/sendPhoto$/);
+  assert.match(telegramCalls[3].url, /\/sendDocument$/);
+
+  const unapprovedResponse = await sendFile('return.pdf', 'application/pdf', Buffer.from('%PDF'), false);
+  assert.equal(unapprovedResponse.status, 422);
+  const rejectedFormat = await sendFile('payload.exe', 'application/octet-stream', Buffer.from('no'));
+  assert.equal(rejectedFormat.status, 415);
+  assert.equal(telegramCalls.length, 4);
+  assert.equal(tables.telegram_messages.length, 3);
 });

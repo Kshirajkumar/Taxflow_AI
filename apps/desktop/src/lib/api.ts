@@ -109,7 +109,7 @@ async function fetchTelegramJson(url: string, init: RequestInit, timeoutMs: numb
         response = await fetch(url, { ...init, headers, signal: controller.signal });
       } catch {
         if (controller.signal.aborted) {
-          const timeoutMessage = operation === 'Telegram message delivery'
+          const timeoutMessage = /Telegram (message|attachment) delivery/.test(operation)
             ? 'Delivery status is unknown. Check the conversation before retrying.'
             : 'Check the backend connection and try again.';
           throw new Error(`${operation} timed out after ${Math.round(timeoutMs / 1000)} seconds. ${timeoutMessage}`);
@@ -139,7 +139,9 @@ async function fetchTelegramJson(url: string, init: RequestInit, timeoutMs: numb
   if (isAuthError) {
     const refreshed = await refreshSession();
     if (refreshed?.token) {
-      const retriedHeaders = { ...(init.headers as Record<string, string> || {}), ...authHeaders() };
+      const requestHeaders = init.headers as Record<string, string> || {};
+      const retriedHeaders = { ...requestHeaders, ...authHeaders() };
+      if (requestHeaders['Content-Type']) retriedHeaders['Content-Type'] = requestHeaders['Content-Type'];
       result = await doFetch(retriedHeaders);
     } else {
       window.dispatchEvent(new CustomEvent('taxflow:session-expired'));
@@ -859,6 +861,7 @@ export interface TelegramStatus {
     storageBucket: string | null;
     storageBucketReady: boolean;
     webhookAutoConfigureEnabled: boolean;
+    webhookIngress?: 'direct' | 'relay' | 'unconfigured';
     warnings: string[];
   };
 }
@@ -897,6 +900,30 @@ export async function sendTelegramMessage(clientId: string, message: string, req
   if (!res.ok || !json.success) throw new Error(json.message || `Unable to send Telegram message (HTTP ${res.status}).`);
   if (!json.data || typeof json.data.id !== 'string') {
     throw new Error('Telegram sent the message, but the backend did not return its saved conversation message.');
+  }
+  return json.data;
+}
+
+export async function sendTelegramAttachment(clientId: string, file: File, requestId: string = crypto.randomUUID()): Promise<TelegramMessage> {
+  const params = new URLSearchParams({
+    approved: 'true',
+    requestId,
+    fileName: file.name,
+    mimeType: file.type || 'application/octet-stream',
+  });
+  const { response: res, json } = await fetchTelegramJson(
+    `${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/send-file?${params}`,
+    {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/octet-stream' },
+      body: file,
+    },
+    90000,
+    'Telegram attachment delivery',
+  );
+  if (!res.ok || !json.success) throw new Error(json.message || `Unable to send the Telegram attachment (HTTP ${res.status}).`);
+  if (!json.data || typeof json.data.id !== 'string') {
+    throw new Error('Telegram sent the attachment, but the backend did not return its saved conversation message.');
   }
   return json.data;
 }
