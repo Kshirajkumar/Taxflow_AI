@@ -5,6 +5,7 @@ import { AppProvider, useAppState } from './state/store';
 import { Titlebar } from './components/Titlebar';
 import { Sidebar } from './components/Sidebar';
 import { Chat } from './components/Chat';
+import { Icon } from './components/Icon';
 import { AuthPage } from './pages/AuthPage';
 import { apiGetMeWithToken } from './lib/api';
 import { useDispatch } from './state/store';
@@ -34,10 +35,24 @@ import {
 function Shell() {
   const s = useAppState();
   const dispatch = useDispatch();
-  const [vaultSyncStatus, setVaultSyncStatus] = useState('');
+  const [vaultSyncNotice, setVaultSyncNotice] = useState<{
+    id: number;
+    message: string;
+    kind: 'info' | 'success' | 'warning' | 'error';
+  } | null>(null);
   const [configuringVault, setConfiguringVault] = useState(false);
-  const [localVaultMissing, setLocalVaultMissing] = useState(false);
   const syncNowRef = useRef<(() => void) | null>(null);
+  const vaultNoticeSequenceRef = useRef(0);
+
+  function showVaultSyncNotice(message: string, kind: 'info' | 'success' | 'warning' | 'error') {
+    setVaultSyncNotice({ id: ++vaultNoticeSequenceRef.current, message, kind });
+  }
+
+  useEffect(() => {
+    if (!vaultSyncNotice) return undefined;
+    const timer = window.setTimeout(() => setVaultSyncNotice(null), 20_000);
+    return () => window.clearTimeout(timer);
+  }, [vaultSyncNotice]);
 
   // Apply the theme before the browser paints the next frame. Using a normal
   // effect here briefly rendered the new page background with the previous
@@ -75,11 +90,9 @@ function Shell() {
         const vault = await getLocalVaultStatus();
         if (disposed) return;
         if (!vault) {
-          setLocalVaultMissing(true);
-          setVaultSyncStatus('Choose a local vault folder to sync incoming Telegram files.');
+          showVaultSyncNotice('Choose a local vault folder to securely receive Telegram files on this device.', 'warning');
           return;
         }
-        setLocalVaultMissing(false);
         const pending = await fetchPendingLocalDocuments(vault.deviceId);
         let syncedCount = 0;
         for (const document of pending) {
@@ -97,13 +110,23 @@ function Shell() {
           syncedCount += 1;
         }
         if (!disposed) {
-          setVaultSyncStatus(syncedCount
-            ? `${syncedCount} Telegram file${syncedCount === 1 ? '' : 's'} synced to the local vault.`
-            : '');
+          if (syncedCount) {
+            showVaultSyncNotice(`${syncedCount} Telegram file${syncedCount === 1 ? '' : 's'} synced to the local vault.`, 'success');
+          } else {
+            setVaultSyncNotice(null);
+          }
         }
       } catch (error) {
         console.error('[Vault Sync] Incoming Telegram document sync failed:', error);
-        if (!disposed) setVaultSyncStatus('Telegram file sync paused. Check your connection and retry.');
+        if (!disposed) {
+          const detail = error instanceof Error ? error.message : 'An unexpected sync error occurred.';
+          const message = /failed to fetch|networkerror|network request failed/i.test(detail)
+            ? 'Could not reach the TaxFlow server. Check your internet connection and backend availability.'
+            : /401|unauthori[sz]ed|session.*expir/i.test(detail)
+              ? 'Your session may have expired. Sign in again, then retry the file sync.'
+              : `Could not sync incoming Telegram files. ${detail}`;
+          showVaultSyncNotice(message, 'error');
+        }
       } finally {
         syncing = false;
       }
@@ -125,12 +148,12 @@ function Shell() {
       const selected = await open({ directory: true, multiple: false, title: 'Select Your TaxFlow Local Vault Folder' });
       if (typeof selected !== 'string') return;
       await configureLocalVault(selected);
-      setLocalVaultMissing(false);
-      setVaultSyncStatus('Local vault configured. Checking for Telegram files…');
+      showVaultSyncNotice('Local vault configured. Checking for incoming Telegram files…', 'info');
       syncNowRef.current?.();
     } catch (error) {
       console.error('[Vault Sync] Local vault configuration failed:', error);
-      setVaultSyncStatus('Could not configure the local vault. Choose a writable folder and try again.');
+      const detail = error instanceof Error ? error.message : 'Choose a writable folder and try again.';
+      showVaultSyncNotice(`Could not configure the local vault. ${detail}`, 'error');
     } finally {
       setConfiguringVault(false);
     }
@@ -161,19 +184,36 @@ function Shell() {
   }[s.page] || Dashboard;
 
   return (
-    <div className="app">
+    <div className={`app${vaultSyncNotice ? ' has-vault-sync-status' : ''}`}>
       <Titlebar />
-      {vaultSyncStatus && (
-        <div className="vault-sync-status" role="status">
-          <span>{vaultSyncStatus}</span>
-          {localVaultMissing && (
-            <button type="button" onClick={handleConfigureLocalVault} disabled={configuringVault}>
+      {vaultSyncNotice && (
+        <div
+          key={vaultSyncNotice.id}
+          className={`vault-sync-toast ${vaultSyncNotice.kind}`}
+          role={vaultSyncNotice.kind === 'error' ? 'alert' : 'status'}
+          aria-live={vaultSyncNotice.kind === 'error' ? 'assertive' : 'polite'}
+        >
+          <span className="vault-sync-toast-icon">
+            <Icon name={vaultSyncNotice.kind === 'success' ? 'check' : vaultSyncNotice.kind === 'warning' ? 'folder' : vaultSyncNotice.kind === 'error' ? 'info' : 'refresh'} size={15} />
+          </span>
+          <span className="vault-sync-toast-copy">
+            <b>{vaultSyncNotice.kind === 'error' ? 'Telegram file sync needs attention' : vaultSyncNotice.kind === 'warning' ? 'Local vault setup required' : vaultSyncNotice.kind === 'success' ? 'File sync complete' : 'Telegram file sync'}</b>
+            <span>{vaultSyncNotice.message}</span>
+          </span>
+          {vaultSyncNotice.kind === 'error' && (
+            <button type="button" className="vault-sync-toast-action" onClick={() => { showVaultSyncNotice('Retrying the incoming Telegram file sync…', 'info'); syncNowRef.current?.(); }}>
+              Retry now
+            </button>
+          )}
+          {vaultSyncNotice.kind === 'warning' && (
+            <button type="button" className="vault-sync-toast-action" onClick={handleConfigureLocalVault} disabled={configuringVault}>
               {configuringVault ? 'Opening…' : 'Choose folder'}
             </button>
           )}
-          {!localVaultMissing && vaultSyncStatus.startsWith('Telegram file sync paused') && (
-            <button type="button" onClick={() => syncNowRef.current?.()}>Retry now</button>
-          )}
+          <button type="button" className="vault-sync-toast-close" onClick={() => setVaultSyncNotice(null)} aria-label="Dismiss notification">
+            <Icon name="x" size={13} />
+          </button>
+          <span className="vault-sync-toast-timer" aria-hidden="true"><i key={vaultSyncNotice.id} /></span>
         </div>
       )}
       <div className="shell">

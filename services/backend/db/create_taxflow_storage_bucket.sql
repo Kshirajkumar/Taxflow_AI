@@ -13,6 +13,17 @@ CREATE POLICY "TaxFlow intake is server-only"
   USING (bucket_id <> 'taxflow-intake')
   WITH CHECK (bucket_id <> 'taxflow-intake');
 
+GRANT USAGE ON SCHEMA storage TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE storage.objects TO service_role;
+
+DROP POLICY IF EXISTS "TaxFlow service role manages intake" ON storage.objects;
+CREATE POLICY "TaxFlow service role manages intake"
+  ON storage.objects
+  FOR ALL
+  TO service_role
+  USING (bucket_id = 'taxflow-intake')
+  WITH CHECK (bucket_id = 'taxflow-intake');
+
 ALTER TABLE public.documents_metadata
   ADD COLUMN IF NOT EXISTS storage_bucket TEXT,
   ADD COLUMN IF NOT EXISTS storage_object_path TEXT,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { Icon } from '../components/Icon';
 import { FileArtifactCard } from '../components/FileArtifactCard';
 import { DocumentPreviewDialog } from '../components/DocumentPreviewDialog';
@@ -196,6 +196,8 @@ export function WhatsAppPage() {
   const [telegramNativeOpenError, setTelegramNativeOpenError] = useState('');
   const [openingTelegramNativePreview, setOpeningTelegramNativePreview] = useState(false);
   const [telegramTemplatesOpen, setTelegramTemplatesOpen] = useState(false);
+  const [composerExpanded, setComposerExpanded] = useState(false);
+  const [contactsCollapsed, setContactsCollapsed] = useState(false);
   const [telegramDraft, setTelegramDraft] = useState('');
   const [telegramRequestId, setTelegramRequestId] = useState('');
   const [pendingTelegramFile, setPendingTelegramFile] = useState<File | null>(null);
@@ -220,7 +222,8 @@ export function WhatsAppPage() {
   const threadRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const telegramFileInputRef = useRef<HTMLInputElement>(null);
-  const telegramMessageInputRef = useRef<HTMLInputElement>(null);
+  const telegramMessageInputRef = useRef<HTMLTextAreaElement>(null);
+  const whatsAppMessageInputRef = useRef<HTMLTextAreaElement>(null);
   const telegramTemplateMenuRef = useRef<HTMLDivElement>(null);
   const shouldFollowThreadRef = useRef(true);
   const activeChatRef = useRef({ clientId: '', channel });
@@ -237,10 +240,34 @@ export function WhatsAppPage() {
 
   useEffect(() => {
     setTelegramTemplatesOpen(false);
+    setComposerExpanded(false);
     setActiveTelegramPreview(null);
     setTelegramFileOpenError(null);
     setTelegramNativeOpenError('');
   }, [channel, c?.id]);
+
+  useLayoutEffect(() => {
+    if (!composerExpanded) return;
+    const textarea = channel === 'telegram'
+      ? telegramMessageInputRef.current
+      : whatsAppMessageInputRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const maxHeight = 168;
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, [input, channel, composerExpanded]);
+
+  function openComposer() {
+    setComposerExpanded(true);
+    scrollThreadToLatest('smooth');
+    requestAnimationFrame(() => {
+      const textarea = channel === 'telegram'
+        ? telegramMessageInputRef.current
+        : whatsAppMessageInputRef.current;
+      if (!textarea?.disabled) textarea?.focus();
+    });
+  }
 
   const loadUnreadCounts = useCallback(async () => {
     try {
@@ -803,7 +830,7 @@ export function WhatsAppPage() {
         {!whatsAppReady && channel === 'whatsapp' && <small className="wa-config-note">Configure Meta API credentials on the backend.</small>}
       </div>
 
-      {s.ui.wa.tab === 'chats' && <div className="card wa" id="inbox-panel-chats" role="tabpanel" aria-labelledby="inbox-tab-chats">
+      {s.ui.wa.tab === 'chats' && <div className={`card wa${contactsCollapsed ? ' contacts-collapsed' : ''}`} id="inbox-panel-chats" role="tabpanel" aria-labelledby="inbox-tab-chats">
           <div className="wa-l">
             <div className="wa-list-head">
               <div><b>Conversations</b><span>{visibleClients.length} clients</span></div>
@@ -868,11 +895,31 @@ export function WhatsAppPage() {
               );
             })}
           </div>
-          <div className="wa-r">
+          <div className={`wa-r${composerExpanded ? ' composer-open' : ''}`}>
             <div className="wa-h">
               <div className="row">
-                <span className="av lg" style={{ ['--t' as any]: c.tone }}>{c.short.slice(0, 2).toUpperCase()}</span>
-                <div><b>{c.name}</b><div className="mut" style={{ fontSize: 12 }}>{c.contact} · {c.phone}</div></div>
+                <button
+                  type="button"
+                  className="wa-contacts-toggle"
+                  onClick={() => setContactsCollapsed((collapsed) => !collapsed)}
+                  aria-label={contactsCollapsed ? 'Show conversations list' : 'Collapse conversations list'}
+                  aria-expanded={!contactsCollapsed}
+                  title={contactsCollapsed ? 'Show conversations' : 'Collapse conversations'}
+                >
+                  <Icon name="chev" size={15} />
+                </button>
+                <span className="av lg wa-chat-avatar" style={{ ['--t' as any]: c.tone }}>{c.short.slice(0, 2).toUpperCase()}</span>
+                <div className="wa-chat-identity">
+                  <b>{c.name}</b>
+                  <small className="wa-chat-subtitle">
+                    <i className={channel === 'telegram'
+                      ? (isTelegramLinkedForCurrentClient ? 'connected' : 'disconnected')
+                      : (whatsAppLoading ? 'pending' : whatsAppReady ? 'connected' : 'disconnected')} />
+                    {channel === 'telegram'
+                      ? `${isTelegramLinkedForCurrentClient ? 'Telegram connected' : 'Telegram not linked'} · ${c.contact} · ${c.phone}`
+                      : `${whatsAppLoading ? 'Checking WhatsApp' : whatsAppReady ? 'WhatsApp connected' : 'WhatsApp unavailable'} · ${c.contact} · ${c.phone}`}
+                  </small>
+                </div>
                 <span className="sp" />
               </div>
               <div className="ckl">
@@ -1185,8 +1232,24 @@ export function WhatsAppPage() {
                 </div>
               ))}
             </div>
-            {channel === 'telegram' ? (
-              <div className="wa-f telegram-composer">
+            <div className={`wa-compose-dock${composerExpanded ? ' expanded' : ''}`}>
+              {composerExpanded ? (
+                <>
+                  <div className="wa-compose-heading">
+                    <span className="wa-compose-heading-icon"><Icon name="chat" size={14} /></span>
+                    <span><b>Message {c.contact.split(' ')[0]}</b><small>via {channel === 'telegram' ? 'Telegram' : 'WhatsApp'}</small></span>
+                    <button
+                      type="button"
+                      className="wa-compose-collapse"
+                      onClick={() => { setComposerExpanded(false); setTelegramTemplatesOpen(false); }}
+                      aria-label="Collapse message composer"
+                      title="Collapse composer"
+                    >
+                      <Icon name="chev" size={15} />
+                    </button>
+                  </div>
+                  {channel === 'telegram' ? (
+                <div className="wa-f telegram-composer">
                   <div className="wa-shortcuts" aria-label="Message shortcuts">
                     <span className="wa-shortcuts-label"><Icon name="bolt" size={11} />Shortcuts</span>
                     {TPL.slice(0, 4).map((template) => (
@@ -1266,7 +1329,7 @@ export function WhatsAppPage() {
                       </div>
                     )}
                   </div>
-                  <input
+                    <textarea
                     ref={telegramMessageInputRef}
                     className="inp telegram-composer-input"
                     value={input}
@@ -1277,6 +1340,7 @@ export function WhatsAppPage() {
                         event.preventDefault();
                         requestTelegramSend();
                       }
+                      if (event.key === 'Escape') setComposerExpanded(false);
                     }}
                     placeholder={
                       pendingTelegramForOtherClient
@@ -1290,7 +1354,7 @@ export function WhatsAppPage() {
                     disabled={telegramSending || telegramLoading || isTelegramConversationLoading || !!pendingTelegramMsg || isEditingPending}
                     aria-label="Message input"
                   />
-                  <button
+                    <button
                     type="button"
                     className="telegram-composer-send"
                     onClick={requestTelegramSend}
@@ -1320,8 +1384,9 @@ export function WhatsAppPage() {
                     {TPL.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
                   </select>
                 </label>
-                <input
-                  className="inp"
+                <textarea
+                  ref={whatsAppMessageInputRef}
+                  className="inp wa-compose-input"
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={(event) => {
@@ -1329,6 +1394,7 @@ export function WhatsAppPage() {
                       event.preventDefault();
                       void send();
                     }
+                    if (event.key === 'Escape') setComposerExpanded(false);
                   }}
                   placeholder={whatsAppLoading
                     ? 'Checking WhatsApp API status…'
@@ -1349,10 +1415,24 @@ export function WhatsAppPage() {
                 </button>
               </div>
             )}
-            <div className="wa-footer-note" role="status">
-              <Icon name="lock" size={11} />
-              <span>Messages are sent through the selected channel. Delivery status appears in each message.</span>
-              <span className="wa-footer-channel">{channel === 'telegram' ? 'Telegram gateway' : 'WhatsApp Business'}</span>
+                  <div className="wa-footer-note" role="status">
+                    <Icon name="lock" size={11} />
+                    <span>Messages are sent through the selected channel. Delivery status appears in each message.</span>
+                    <span className="wa-footer-channel">{channel === 'telegram' ? 'Telegram gateway' : 'WhatsApp Business'}</span>
+                  </div>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="wa-compose-launcher"
+                  onClick={openComposer}
+                  aria-label={`Write a message to ${c.contact.split(' ')[0]}`}
+                  title="Write a message"
+                >
+                  <Icon name="chat" size={18} />
+                  <span className="wa-compose-launcher-plus"><Icon name="plus" size={11} /></span>
+                </button>
+              )}
             </div>
           </div>
         </div>}
@@ -1422,7 +1502,9 @@ export function WhatsAppPage() {
                   className="btn sm"
                   onClick={() => {
                     setInput(fillTpl(template.body, c.contact.split(' ')[0]));
+                    setComposerExpanded(true);
                     dispatch({ type: 'WA_TAB', tab: 'chats' });
+                    scrollThreadToLatest('smooth');
                   }}
                 >
                   Use template
