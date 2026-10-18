@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS public.documents_metadata (
   client_id           UUID REFERENCES public.clients(id) ON DELETE CASCADE,
   client_name         VARCHAR(255),
   file_name           VARCHAR(255) NOT NULL,
-  file_type           VARCHAR(30) NOT NULL CHECK (file_type IN ('PDF', 'PNG', 'JPG', 'JPEG', 'WEBP', 'XLS', 'XLSX', 'CSV', 'DOC', 'DOCX')),
+  file_type           VARCHAR(30) NOT NULL CHECK (file_type IN ('PDF', 'PNG', 'JPG', 'JPEG', 'WEBP', 'XLS', 'XLSX', 'CSV', 'DOC', 'DOCX', 'OTHER')),
   file_size_kb        NUMERIC(10,2),
   category            VARCHAR(50) NOT NULL CHECK (category IN ('GST', 'IncomeTax', 'Form16', 'BankStatement', 'Notice', 'TDS', 'Audit', 'General', 'Extracted')),
   source              VARCHAR(20) NOT NULL DEFAULT 'Manual' CHECK (source IN ('WhatsApp', 'Telegram', 'Manual', 'Portal', 'Upload')),
@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS public.documents_metadata (
 ALTER TABLE public.documents_metadata DROP CONSTRAINT IF EXISTS documents_metadata_source_check;
 ALTER TABLE public.documents_metadata ADD CONSTRAINT documents_metadata_source_check
   CHECK (source IN ('WhatsApp', 'Telegram', 'Manual', 'Portal', 'Upload'));
+ALTER TABLE public.documents_metadata DROP CONSTRAINT IF EXISTS documents_metadata_file_type_check;
+ALTER TABLE public.documents_metadata ADD CONSTRAINT documents_metadata_file_type_check
+  CHECK (file_type IN ('PDF', 'PNG', 'JPG', 'JPEG', 'WEBP', 'XLS', 'XLSX', 'CSV', 'DOC', 'DOCX', 'OTHER'));
 
 CREATE INDEX IF NOT EXISTS idx_documents_metadata_client_id ON public.documents_metadata(client_id);
 CREATE INDEX IF NOT EXISTS idx_documents_metadata_status ON public.documents_metadata(status);

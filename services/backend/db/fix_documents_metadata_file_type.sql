@@ -9,6 +9,6 @@ ALTER TABLE public.documents_metadata
 
 ALTER TABLE public.documents_metadata
   ADD CONSTRAINT documents_metadata_file_type_check
-  CHECK (file_type IN ('PDF', 'PNG', 'JPG', 'JPEG', 'WEBP', 'XLS', 'XLSX', 'CSV', 'DOC', 'DOCX'));
+  CHECK (file_type IN ('PDF', 'PNG', 'JPG', 'JPEG', 'WEBP', 'XLS', 'XLSX', 'CSV', 'DOC', 'DOCX', 'OTHER'));
 
 NOTIFY pgrst, 'reload schema';

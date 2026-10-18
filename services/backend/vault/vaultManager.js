@@ -25,15 +25,16 @@ const path = require('path');
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 
 function getVaultBaseDir() {
+  if (process.env.VAULT_PATH) return process.env.VAULT_PATH;
   if (fs.existsSync(CONFIG_PATH)) {
     try {
       const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-      if (config.vaultPath) return config.vaultPath;
+      if (config.vaultPath && path.isAbsolute(config.vaultPath)) return config.vaultPath;
     } catch (e) {
       console.error('[Vault] Error reading config.json:', e);
     }
   }
-  return process.env.VAULT_PATH ? process.env.VAULT_PATH : path.join(__dirname, '..', '..', '..', 'vault');
+  return path.join(__dirname, '..', '..', '..', 'vault');
 }
 
 function getVaultUsage() {

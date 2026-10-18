@@ -62,6 +62,10 @@ const { supabase, isConnected } = require('./db/supabase');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+if (process.env.NODE_ENV === 'production' && !process.env.VAULT_PATH) {
+  console.warn('[Vault] VAULT_PATH is not configured. Files will be stored on this server and may be lost if its filesystem is ephemeral.');
+}
+
 // ─── Middleware ────────────────────────────────────────────────
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(express.json({ limit: '100mb' }));
@@ -194,4 +198,5 @@ app.listen(PORT, () => {
   telegramRouter.configureWebhook().catch((error) => {
     console.error(`[Telegram] Webhook auto-configuration failed: ${error.message}`);
   });
+  telegramRouter.startAttachmentDownloadWorker();
 });

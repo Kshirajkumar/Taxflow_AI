@@ -315,6 +315,10 @@ export interface TelegramMessage {
   vault_file_ref?: string | null;
   file_download_error?: string | null;
   file_download_pending?: boolean;
+  attachment_download_status?: 'pending' | 'downloading' | 'failed' | 'saved' | string;
+  attachment_download_attempts?: number;
+  attachment_download_next_attempt_at?: string | null;
+  file_download_retryable?: boolean;
 }
 
 export interface ComplianceTask {

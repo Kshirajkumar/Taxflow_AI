@@ -670,7 +670,7 @@ export function WhatsAppPage() {
               )}
               {channel === 'telegram' && telegramConversationClientId === c.id && !isTelegramConversationLoading && telegramInfo && <div className="telegram-notice">{telegramInfo}</div>}
               {channel === 'telegram' && isTelegramLinkedForCurrentClient && !isTelegramConversationLoading && telegramMessages.map((m) => {
-                const hasAttachment = m.message_type === 'document' || m.message_type === 'image';
+                const hasAttachment = Boolean(m.telegram_file_name || m.vault_file_ref || m.file_download_pending || m.file_download_error);
                 const attachmentName = m.telegram_file_name || m.body;
                 return (
                   <div key={m.provider_message_id || m.id} className={'msg ' + (m.direction === 'outbound' ? 'me' : 'cl')}>
@@ -681,18 +681,22 @@ export function WhatsAppPage() {
                           <Icon name="file" size={17} />
                           <span className="tg-file-attachment-name">
                             <b>{attachmentName}</b>
-                            <small>{m.message_type === 'image' ? 'Image attachment' : 'Telegram document'}</small>
+                            <small>{m.message_type.replace(/_/g, ' ')} attachment</small>
                           </span>
                           {m.vault_file_ref ? (
                             <button className="btn sm tg-file-open" onClick={() => void openTelegramFile(m)} disabled={openingTelegramFileId === m.id}>
                               {openingTelegramFileId === m.id ? 'Opening…' : 'Open'}
                             </button>
                           ) : m.file_download_error ? (
-                            <button className="btn sm tg-file-open" onClick={() => void retryTelegramFile(m)} disabled={retryingTelegramFileId === m.id}>
-                              {retryingTelegramFileId === m.id ? 'Retrying…' : 'Retry'}
-                            </button>
+                            m.file_download_retryable === false
+                              ? <small className="tg-file-pending">Cannot save this format</small>
+                              : <button className="btn sm tg-file-open" onClick={() => void retryTelegramFile(m)} disabled={retryingTelegramFileId === m.id}>
+                                  {retryingTelegramFileId === m.id ? 'Retrying…' : 'Retry'}
+                                </button>
                           ) : (
-                            <small className="tg-file-pending">{m.file_download_pending ? 'Saving…' : 'Waiting to download…'}</small>
+                            <small className="tg-file-pending">
+                              {m.attachment_download_status === 'downloading' ? 'Saving…' : m.file_download_pending ? 'Queued for saving…' : 'Waiting to download…'}
+                            </small>
                           )}
                         </div>
                         {m.file_download_error && <small className="tg-file-error">{m.file_download_error}</small>}

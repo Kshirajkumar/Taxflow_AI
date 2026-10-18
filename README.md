@@ -2,7 +2,7 @@
 
 **AI-powered practice automation for Chartered Accountants and accounting firms.**
 
-Taxflow.AI is a Windows desktop application that removes repetitive work from a CA practice: collecting client documents over WhatsApp, extracting data from invoices with AI, tracking compliance deadlines, and generating filing-ready outputs. Client files stay on the firm's own machine, and only metadata goes to the cloud.
+Taxflow.AI is a Windows desktop application that removes repetitive work from a CA practice: collecting client documents over WhatsApp and Telegram, extracting data from invoices with AI, tracking compliance deadlines, and generating filing-ready outputs. Client files are stored on the filesystem of the machine running the backend; Supabase stores metadata only.
 
 > **Status:** Working demo (v0.1). Not yet production-ready. See [Roadmap](#roadmap).
 
@@ -46,7 +46,7 @@ Also included: light/dark theme, a custom frameless Windows title bar, and firm 
 └──────────────────┘  └──────────────────────┘
 ```
 
-**Privacy by design:** physical client files (PDFs, images) never leave the local vault. Supabase stores metadata only. The backend runs in **demo mode** with in-memory data when no `.env` is configured.
+**Storage note:** physical client files are stored in the backend's configured vault and are not uploaded to Supabase. Run the backend on the firm's machine to keep files there. A remotely hosted backend stores files on its own filesystem; configure `VAULT_PATH` to a persistent disk or files may be lost when the host restarts or deploys. A remote backend does not automatically sync files back to the desktop PC. The backend runs in **demo mode** with in-memory data when no `.env` is configured.
 
 ---
 
@@ -129,7 +129,7 @@ Edit `services/backend/.env`:
 |---|---|
 | `PORT` | API port (default `5000`) |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | Cloud metadata database |
-| `VAULT_PATH` | Local folder for client files. **Do not** place it in a cloud-synced folder. |
+| `VAULT_PATH` | Folder for client files on the backend host. For a local backend, do not place it in a cloud-synced folder. For a hosted backend, use a persistent mounted disk. |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | AI extraction and generation |
 | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN` | WhatsApp Cloud API |
 
