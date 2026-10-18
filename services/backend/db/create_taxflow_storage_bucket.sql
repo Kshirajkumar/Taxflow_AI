@@ -15,6 +15,7 @@ CREATE POLICY "TaxFlow intake is server-only"
 
 GRANT USAGE ON SCHEMA storage TO service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE storage.objects TO service_role;
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "TaxFlow service role manages intake" ON storage.objects;
 CREATE POLICY "TaxFlow service role manages intake"
@@ -29,6 +30,17 @@ ALTER TABLE public.documents_metadata
   ADD COLUMN IF NOT EXISTS storage_object_path TEXT,
   ADD COLUMN IF NOT EXISTS file_sha256 TEXT,
   ADD COLUMN IF NOT EXISTS mime_type TEXT;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.documents_metadata TO service_role;
+ALTER TABLE public.documents_metadata ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS documents_metadata_service_role ON public.documents_metadata;
+CREATE POLICY documents_metadata_service_role
+  ON public.documents_metadata
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
 
 CREATE INDEX IF NOT EXISTS documents_metadata_pending_local_sync_idx
   ON public.documents_metadata(created_at, id)

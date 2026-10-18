@@ -296,6 +296,28 @@ test('Telegram attachment parsing covers media messages and rejects unsafe forma
   assert.throws(() => normalizeTelegramFileName('unknown-document', 'application/octet-stream'), /identified safely/i);
 });
 
+test('Telegram attachment RLS errors identify the blocked production stage and repair steps', () => {
+  const { getAttachmentErrorMessage } = telegramRouter._test;
+  const storageError = getAttachmentErrorMessage(
+    new Error('new row violates row-level security policy'),
+    'private Storage upload'
+  );
+  assert.match(storageError, /private Storage upload/);
+  assert.match(storageError, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(storageError, /db\/fix_telegram_attachment_rls\.sql/);
+
+  const metadataError = getAttachmentErrorMessage(
+    new Error('new row violates row-level security policy for table "documents_metadata"'),
+    'document metadata insert'
+  );
+  assert.match(metadataError, /document metadata insert/);
+
+  assert.equal(
+    getAttachmentErrorMessage(new Error('Telegram timed out'), 'Telegram download'),
+    'Telegram timed out'
+  );
+});
+
 test('outbound Telegram attachment limit includes the approved size buffer', () => {
   assert.equal(telegramRouter._test.TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES, 25 * 1024 * 1024);
   assert.equal(telegramRouter._test.TELEGRAM_PHOTO_LIMIT_BYTES, 9 * 1024 * 1024);
@@ -341,7 +363,7 @@ test('Production Telegram attachments upload to private object storage with a ve
   database.supabase.storage.from = (bucket) => ({
     async upload(key, bytes, options) {
       uploadAttempts += 1;
-      if (uploadAttempts === 1) return { data: null, error: new Error('Simulated temporary Storage failure') };
+      if (uploadAttempts === 1) return { data: null, error: new Error('new row violates row-level security policy') };
       uploads.push({ bucket, key, bytes: Buffer.from(bytes), options });
       return { data: { path: key }, error: null };
     }
@@ -394,6 +416,8 @@ test('Production Telegram attachments upload to private object storage with a ve
 
   assert.equal(response.status, 200);
   await waitFor(() => tables.telegram_messages[0]?.attachment_download_status === 'pending' && tables.telegram_messages[0]?.file_download_error);
+  assert.match(tables.telegram_messages[0].file_download_error, /private Storage upload/);
+  assert.match(tables.telegram_messages[0].file_download_error, /fix_telegram_attachment_rls\.sql/);
   tables.telegram_messages[0].attachment_download_next_attempt_at = new Date().toISOString();
   assert.equal(await telegramRouter._test.recoverPendingAttachmentDownloads(), 1);
   await waitFor(() => tables.telegram_messages[0]?.attachment_download_status === 'saved');

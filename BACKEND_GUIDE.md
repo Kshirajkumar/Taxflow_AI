@@ -83,6 +83,8 @@ Files must be organized strictly by this pattern:
 
 Before enabling Telegram on an existing database, ensure `clients`, `user_profiles`, and `documents_metadata` exist, then run `npm run migrate:telegram` from `services/backend` with `DATABASE_URL` set. It applies the Telegram schema, private Storage bucket/device-sync migration, and clears previously persisted machine-specific vault paths. Alternatively, run `db/telegram.sql`, `db/telegram_document_storage.sql`, then `db/create_taxflow_storage_bucket.sql` in Supabase SQL Editor. Set `SUPABASE_STORAGE_BUCKET=taxflow-intake`, `SUPABASE_SERVICE_ROLE_KEY`, `TELEGRAM_WEBHOOK_SECRET`, and a public HTTPS URL before starting the production backend. Never grant `anon` or `authenticated` access to the private intake bucket or expose the service-role key.
 
+If inbound attachments show a Row Level Security error, run `db/fix_telegram_attachment_rls.sql` in the Supabase project configured by this backend, verify that `SUPABASE_SERVICE_ROLE_KEY` is that same project's service-role key (not its anon/publishable key), then restart or redeploy the backend. The repair grants only `service_role` access to the private Telegram bucket and document metadata; never work around the error by granting access to `anon` or `authenticated`.
+
 #### Sync Logic:
 - **Creation**: When a client is created in Supabase $\rightarrow$ Create their root vault directory.
 - **Upload**: Save file to Vault $\rightarrow$ Save the resulting `vault_path` to Supabase `documents_metadata`.

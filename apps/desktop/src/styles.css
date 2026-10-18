@@ -3516,7 +3516,10 @@ body.sidebar-collapsed.chat-hidden .shell {
 .main-inbox .ckl .chip{font-size:8px}
 .main-inbox #wa-thread{min-height:0;padding:14px clamp(10px,2vw,24px) 82px;gap:8px;background:linear-gradient(180deg,var(--bg),color-mix(in srgb,var(--panel) 72%,var(--bg)))}
 .main-inbox .wa-r.composer-open #wa-thread{padding-bottom:min(46vh,390px)}
-.main-inbox #wa-thread .msg{max-width:min(82%,620px);padding:8px 10px 6px;border-radius:11px}
+.main-inbox #wa-thread .msg{min-width:0;max-width:min(82%,620px);padding:8px 10px 6px;border-radius:11px;overflow-wrap:anywhere;word-break:normal}
+.main-inbox #wa-thread .msg>.wa-message-body{min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal}
+.main-inbox #wa-thread .msg .file-artifact-copy{min-width:0}
+.main-inbox #wa-thread .msg .file-artifact-copy>.file-artifact-status{height:auto;overflow:visible;white-space:normal;overflow-wrap:anywhere;line-height:1.4}
 .main-inbox #wa-thread .msg.me{border-bottom-right-radius:4px}
 .main-inbox #wa-thread .msg.cl{border-bottom-left-radius:4px}
 .main-inbox .wa-compose-dock{position:absolute;z-index:6;right:auto;bottom:14px;left:14px;width:48px;max-width:calc(100% - 28px);margin-left:0;border:1px solid color-mix(in srgb,var(--blue) 26%,var(--line2));border-radius:18px;background:color-mix(in srgb,var(--bg2) 96%,var(--blue));box-shadow:0 14px 38px color-mix(in srgb,#000 32%,transparent);backdrop-filter:blur(18px);transition:border-color .2s ease,box-shadow .2s ease}

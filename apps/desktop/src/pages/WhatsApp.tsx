@@ -1062,7 +1062,7 @@ export function WhatsAppPage() {
                         />
                         {telegramFileOpenError?.messageId === m.id && <small className="tg-file-error">{telegramFileOpenError.message}</small>}
                       </>
-                    ) : <div>{m.body}</div>}
+                    ) : <div className="wa-message-body">{m.body}</div>}
                     <span className="mt">
                       {fTime(new Date(m.created_at))} · {
                         m.delivery_status === 'sending' || m.delivery_status === 'queued'

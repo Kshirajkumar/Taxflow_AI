@@ -175,6 +175,14 @@ function isPermanentAttachmentError(error) {
   return /not supported|does not match its declared|larger than 20 MB|invalid timestamp|empty file/i.test(text);
 }
 
+function getAttachmentErrorMessage(error, stage) {
+  const message = error instanceof Error ? error.message : String(error || 'Unknown error');
+  if (/row-level security|violates row security|permission denied/i.test(message)) {
+    return `Supabase blocked the Telegram attachment during ${stage} because of Row Level Security. Confirm the backend's SUPABASE_SERVICE_ROLE_KEY belongs to this project, then run db/fix_telegram_attachment_rls.sql in that project's Supabase SQL Editor.`;
+  }
+  return message || `Telegram attachment failed during ${stage}.`;
+}
+
 function getAttachmentRetryDelay(attempt) {
   return Math.min(15000 * (2 ** Math.max(0, attempt - 1)), 15 * 60 * 1000);
 }
@@ -197,6 +205,7 @@ async function claimAttachmentDownload(message, client) {
 }
 
 async function processTelegramAttachmentDownload(message, client) {
+  let failureStage = 'Telegram download';
   return (async () => {
     const current = await claimAttachmentDownload(message, client);
     if (!current) return message;
@@ -231,6 +240,7 @@ async function processTelegramAttachmentDownload(message, client) {
     let saved = null;
     let cloudObject = null;
     if (cloudStorageEnabled) {
+      failureStage = 'private Storage upload';
       const objectKey = getStorageObjectKey({
         userId: client.user_id,
         clientId: client.id,
@@ -242,6 +252,7 @@ async function processTelegramAttachmentDownload(message, client) {
       cloudObject = await uploadDocument(objectKey, buffer, current.mime_type);
     } else {
       // General maps to the Raw bucket in the configured local vault.
+      failureStage = 'local vault save';
       saved = saveFileToVault(client.name, storedFileName, buffer.toString('base64'), 'General', undefined, receivedAt);
     }
     const metadata = {
@@ -268,6 +279,7 @@ async function processTelegramAttachmentDownload(message, client) {
     };
 
     let document;
+    failureStage = 'document metadata insert';
     const { data, error } = await supabase.from('documents_metadata').insert(metadata).select('id').single();
     if (error?.code === '23505') {
       if (saved) deleteVaultFile(saved.vaultPath);
@@ -281,6 +293,7 @@ async function processTelegramAttachmentDownload(message, client) {
       document = data;
     }
 
+    failureStage = 'Telegram message status update';
     const { data: updated, error: updateError } = await supabase
       .from('telegram_messages')
       .update({
@@ -296,7 +309,7 @@ async function processTelegramAttachmentDownload(message, client) {
     if (updateError) throw updateError;
     return updated;
   })().catch(async (error) => {
-    const messageText = error instanceof Error ? error.message : 'Telegram attachment could not be downloaded.';
+    const messageText = getAttachmentErrorMessage(error, failureStage);
     const attempts = Number(message.attachment_download_attempts || 0) + 1;
     const retry = !isPermanentAttachmentError(error) && attempts < MAX_ATTACHMENT_DOWNLOAD_ATTEMPTS;
     const nextAttemptAt = retry ? new Date(Date.now() + getAttachmentRetryDelay(attempts)).toISOString() : null;
@@ -579,7 +592,7 @@ router.get('/status', requireAuth, async (_req, res) => {
       storageBucketReady = true;
     } catch (error) {
       console.error('[Telegram] Storage bucket check failed:', error.message);
-      warnings.push(`Supabase Storage bucket "${storageBucket}" is missing or inaccessible to this backend.`);
+      warnings.push(`Supabase Storage bucket "${storageBucket}" is missing or inaccessible. Verify this backend's service-role key targets the same Supabase project, then apply db/fix_telegram_attachment_rls.sql.`);
     }
   }
 
@@ -1085,6 +1098,7 @@ module.exports._test = {
   getTelegramMessageDate,
   getAssessmentYear,
   isPermanentAttachmentError,
+  getAttachmentErrorMessage,
   getAttachmentRetryDelay,
   recoverPendingAttachmentDownloads,
   isAttachmentDownloadQueued: (messageId) => attachmentDownloads.has(messageId),
