@@ -1,39 +1,41 @@
 # Telegram intake integration
 
-Taxflow receives Telegram documents through the verified bot webhook. Telegram is an inbound collection channel; outbound messages are intentionally separate and require an approval workflow.
+TaxFlow receives client documents through a verified Telegram bot webhook. Telegram is an inbound collection channel; outbound messages remain separate and require an approval workflow.
 
-## Production configuration
+## Production setup
 
-Set these server-only environment variables:
+Configure these server-only variables on the backend:
 
 ```text
 TELEGRAM_BOT_TOKEN=<BotFather token>
-TELEGRAM_WEBHOOK_SECRET=<random high-entropy secret>
-
-For a hosted deployment, configure Supabase Storage as the encrypted object store:
-
-```text
+TELEGRAM_BOT_USERNAME=<bot username without @>
+TELEGRAM_WEBHOOK_SECRET=<high-entropy secret>
 SUPABASE_URL=<Supabase project URL>
 SUPABASE_SERVICE_ROLE_KEY=<server-only service-role key>
 SUPABASE_STORAGE_BUCKET=taxflow-intake
+PUBLIC_URL=https://<public-backend-host>
 ```
 
-Apply `services/backend/db/create_taxflow_storage_bucket.sql` and
-`services/backend/db/add_telegram_client_identity.sql` before starting the
-service. Add the client's Telegram username or numeric Telegram user ID to
-`public.clients`. The relay will also accept an explicit caption such as
-`client=sharma September 2026`; unresolved or ambiguous routing remains in
-quarantine.
-```
+Ensure `clients`, `user_profiles`, and `documents_metadata` exist. Run `npm run migrate:telegram` from `services/backend` with `DATABASE_URL` set, or apply these files in order in the Supabase SQL Editor:
 
-Register the webhook over HTTPS with the Telegram Bot API. Keep the secret out of source control and logs:
+1. `services/backend/db/telegram.sql`
+2. `services/backend/db/telegram_document_storage.sql`
+3. `services/backend/db/create_taxflow_storage_bucket.sql`
 
-```powershell
-curl.exe -X POST "https://api.telegram.org/bot$env:TELEGRAM_BOT_TOKEN/setWebhook" `
-  -H "content-type: application/json" `
-  -d (@{ url = 'https://api.example.com/api/v1/integrations/telegram/webhook'; secret_token = $env:TELEGRAM_WEBHOOK_SECRET; allowed_updates = @('message','edited_message','channel_post') } | ConvertTo-Json -Compress)
-```
+The Storage migration creates the private `taxflow-intake` bucket, restricts direct `anon`/`authenticated` object access, adds object/checksum metadata and per-device sync receipts, and replaces old machine-specific vault paths in cloud profiles. Do not expose the service-role key or make the bucket public.
 
-The relay validates `X-Telegram-Bot-Api-Secret-Token`, downloads document/photo bytes through the Bot API, encrypts the relay spool, computes SHA-256, applies deterministic client/period routing, and quarantines unresolved metadata. Telegram `update_id` values provide idempotency; duplicate updates do not create duplicate documents.
+## Message and file flow
 
-The server must run behind TLS, enforce request-size limits, keep the bot token and Supabase service-role key server-side, and expose health/metrics without exposing message contents or credentials. When Supabase Storage is configured, spool and published files are encrypted before upload, so a free host's ephemeral local filesystem is not the source of truth.
+1. A client links a private Telegram chat to a TaxFlow client record. Incoming messages are matched by the linked chat; unlinked chats and group messages are ignored.
+2. The webhook persists the inbound Telegram message and queues supported media immediately.
+3. In production, the backend downloads the bytes from Telegram and uploads them directly to private Supabase Storage. It does not rely on Render's ephemeral filesystem for these Telegram originals. Metadata records the object key and SHA-256 checksum.
+4. The signed-in desktop app polls for pending Telegram documents, downloads each through the authenticated API, verifies its checksum, and atomically saves it under `<selected vault>\clients\<client>\<year>\<month>\Raw`.
+5. After a successful local write, the desktop records a per-device sync receipt. The private cloud object is intentionally retained for recovery and syncing another authorized device; sync is not a move operation.
+
+The desktop app retries unsynced documents on its next polling cycle. If no storage bucket is configured in production, attachment processing reports an error instead of treating the Render disk as durable storage. In development, without a bucket configured, the existing backend-local vault behavior remains available.
+
+## Webhook and operations
+
+Register the configured webhook over HTTPS at `/api/v1/telegram/webhook`. Keep the webhook secret and bot token out of source control and logs. The backend verifies Telegram's `X-Telegram-Bot-Api-Secret-Token` header, deduplicates updates, enforces the Telegram download size limit, and exposes failed attachments for retry in the inbox.
+
+The Telegram source object is durable cloud storage; the desktop folder is a local working copy. Back up the desktop vault separately, and use an explicit retention/deletion policy if cloud copies should ever be removed. A desktop configured in browser-only mode cannot write to a local folder; local sync requires the installed Tauri app.

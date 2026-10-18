@@ -102,6 +102,9 @@ h1,h2,h3,p{margin:0}
 @keyframes sessionAlertIcon{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
 @media (max-width:1180px){.session-alert-actions{margin-left:0}}
 @media (prefers-reduced-motion:reduce){.session-alert,.session-alert::before,.session-alert-icon{animation:none}.session-alert-btn{transition:none}}
+.vault-sync-status{position:fixed;z-index:1000;right:18px;bottom:18px;display:flex;align-items:center;gap:12px;max-width:min(620px,calc(100vw - 36px));padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--tx);box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:12px}
+.vault-sync-status button{flex:none;border:0;border-radius:6px;padding:6px 9px;background:var(--blue);color:#fff;font:inherit;cursor:pointer}
+.vault-sync-status button:disabled{opacity:.6;cursor:wait}
 .shell{display:grid;grid-template-columns:232px minmax(0,1fr) 380px;min-height:0}
 .side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px 10px;overflow:auto}
 .main{min-width:0;overflow:auto;padding:24px 28px 40px;background:var(--bg);container-type:inline-size;container-name:main}

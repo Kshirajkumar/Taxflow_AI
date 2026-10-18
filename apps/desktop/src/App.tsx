@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
+import { open } from '@tauri-apps/plugin-dialog';
 import { AppProvider, useAppState } from './state/store';
 import { Titlebar } from './components/Titlebar';
 import { Sidebar } from './components/Sidebar';
@@ -18,10 +19,25 @@ import { GeneratePage } from './pages/Generate';
 import { ClientsPage, SettingsPage } from './pages/Other';
 import { ProfilePage } from './pages/Profile';
 import { SubscriptionsPage } from './pages/Subscriptions';
+import {
+  acknowledgeLocalDocumentSync,
+  downloadDocumentForLocalVault,
+  fetchPendingLocalDocuments,
+} from './lib/api';
+import {
+  configureLocalVault,
+  getLocalVaultStatus,
+  isDesktopApp,
+  saveSyncedDocument,
+} from './lib/localVault';
 
 function Shell() {
   const s = useAppState();
   const dispatch = useDispatch();
+  const [vaultSyncStatus, setVaultSyncStatus] = useState('');
+  const [configuringVault, setConfiguringVault] = useState(false);
+  const [localVaultMissing, setLocalVaultMissing] = useState(false);
+  const syncNowRef = useRef<(() => void) | null>(null);
 
   // Apply the theme before the browser paints the next frame. Using a normal
   // effect here briefly rendered the new page background with the previous
@@ -46,6 +62,79 @@ function Shell() {
   useEffect(() => {
     document.body.classList.toggle('sidebar-collapsed', !!s.sidebarCollapsed);
   }, [s.sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!s.currentUser?.onboardingComplete || !isDesktopApp()) return;
+
+    let disposed = false;
+    let syncing = false;
+    const syncDocuments = async () => {
+      if (syncing || disposed) return;
+      syncing = true;
+      try {
+        const vault = await getLocalVaultStatus();
+        if (disposed) return;
+        if (!vault) {
+          setLocalVaultMissing(true);
+          setVaultSyncStatus('Choose a local vault folder to sync incoming Telegram files.');
+          return;
+        }
+        setLocalVaultMissing(false);
+        const pending = await fetchPendingLocalDocuments(vault.deviceId);
+        let syncedCount = 0;
+        for (const document of pending) {
+          if (disposed) return;
+          const content = await downloadDocumentForLocalVault(document.id);
+          if (disposed) return;
+          const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', content));
+          const actualHash = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+          if (actualHash !== document.sha256.toLowerCase()) {
+            throw new Error(`Checksum mismatch for ${document.fileName}.`);
+          }
+          await saveSyncedDocument(document, content);
+          if (disposed) return;
+          await acknowledgeLocalDocumentSync(vault.deviceId, document.id, actualHash);
+          syncedCount += 1;
+        }
+        if (!disposed) {
+          setVaultSyncStatus(syncedCount
+            ? `${syncedCount} Telegram file${syncedCount === 1 ? '' : 's'} synced to the local vault.`
+            : '');
+        }
+      } catch (error) {
+        console.error('[Vault Sync] Incoming Telegram document sync failed:', error);
+        if (!disposed) setVaultSyncStatus('Telegram file sync paused. Check your connection and retry.');
+      } finally {
+        syncing = false;
+      }
+    };
+
+    syncNowRef.current = () => { void syncDocuments(); };
+    void syncDocuments();
+    const timer = window.setInterval(() => { void syncDocuments(); }, 60_000);
+    return () => {
+      disposed = true;
+      syncNowRef.current = null;
+      window.clearInterval(timer);
+    };
+  }, [s.currentUser?.id, s.currentUser?.onboardingComplete]);
+
+  async function handleConfigureLocalVault() {
+    setConfiguringVault(true);
+    try {
+      const selected = await open({ directory: true, multiple: false, title: 'Select Your TaxFlow Local Vault Folder' });
+      if (typeof selected !== 'string') return;
+      await configureLocalVault(selected);
+      setLocalVaultMissing(false);
+      setVaultSyncStatus('Local vault configured. Checking for Telegram files…');
+      syncNowRef.current?.();
+    } catch (error) {
+      console.error('[Vault Sync] Local vault configuration failed:', error);
+      setVaultSyncStatus('Could not configure the local vault. Choose a writable folder and try again.');
+    } finally {
+      setConfiguringVault(false);
+    }
+  }
 
   // Not authenticated → show login / signup page
   if (!s.currentUser) {
@@ -74,6 +163,19 @@ function Shell() {
   return (
     <div className="app">
       <Titlebar />
+      {vaultSyncStatus && (
+        <div className="vault-sync-status" role="status">
+          <span>{vaultSyncStatus}</span>
+          {localVaultMissing && (
+            <button type="button" onClick={handleConfigureLocalVault} disabled={configuringVault}>
+              {configuringVault ? 'Opening…' : 'Choose folder'}
+            </button>
+          )}
+          {!localVaultMissing && vaultSyncStatus.startsWith('Telegram file sync paused') && (
+            <button type="button" onClick={() => syncNowRef.current?.()}>Retry now</button>
+          )}
+        </div>
+      )}
       <div className="shell">
         <Sidebar />
         <main className={`main${s.page === 'whatsapp' ? ' main-inbox' : ''}`}><Page /></main>

@@ -9,12 +9,12 @@ async function main() {
   const client = await pool.connect();
   try {
     await client.query('begin');
-    for (const migration of ['telegram.sql', 'telegram_document_storage.sql']) {
+    for (const migration of ['telegram.sql', 'telegram_document_storage.sql', 'create_taxflow_storage_bucket.sql']) {
       const sql = await fs.readFile(path.join(__dirname, migration), 'utf8');
       await client.query(sql);
     }
     await client.query('commit');
-    console.log('Telegram message and document-storage migrations applied successfully.');
+    console.log('Telegram, private Storage bucket, and device-sync migrations applied successfully.');
   } catch (error) {
     await client.query('rollback').catch(() => {});
     throw error;

@@ -8,6 +8,42 @@ const express = require('express');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
 const { ensureClientVaultStructure, listClientVaultTree, getClientVaultRoot, deleteClientVaultFile, resolveClientVaultFile, searchClientVaultFiles } = require('../vault/vaultManager');
+const {
+  downloadDocument,
+  isExpectedTelegramObject,
+  normalizeMimeType
+} = require('../lib/documentStorage');
+
+function addCloudDocumentToTree(entries, document) {
+  const createdAt = new Date(document.created_at);
+  if (Number.isNaN(createdAt.getTime())) throw new Error(`Cloud document ${document.id} has an invalid creation date.`);
+  const year = String(createdAt.getFullYear());
+  const month = new Intl.DateTimeFormat('en-US', { month: 'long' }).format(createdAt);
+  let yearEntry = entries.find(entry => entry.type === 'folder' && entry.name === year);
+  if (!yearEntry) {
+    yearEntry = { name: year, type: 'folder', modifiedAt: document.created_at, children: [] };
+    entries.push(yearEntry);
+  }
+  let monthEntry = yearEntry.children.find(entry => entry.type === 'folder' && entry.name === month);
+  if (!monthEntry) {
+    monthEntry = { name: month, type: 'folder', modifiedAt: document.created_at, children: [] };
+    yearEntry.children.push(monthEntry);
+  }
+  let rawEntry = monthEntry.children.find(entry => entry.type === 'folder' && entry.name === 'Raw');
+  if (!rawEntry) {
+    rawEntry = { name: 'Raw', type: 'folder', modifiedAt: document.created_at, children: [] };
+    monthEntry.children.push(rawEntry);
+  }
+  if (!rawEntry.children.some(entry => entry.type === 'file' && entry.name === document.file_name)) {
+    rawEntry.children.push({
+      name: document.file_name,
+      type: 'file',
+      size: Math.max(0, Math.round(Number(document.file_size_kb || 0) * 1024)),
+      modifiedAt: document.created_at,
+      cloudRetained: true
+    });
+  }
+}
 
 // --- In-Memory Fallback Data (used when Supabase is not connected) ---
 let fallbackClients = [
@@ -167,15 +203,8 @@ router.post('/', async (req, res) => {
 
       let vault = null;
       try {
-        vault = ensureClientVaultStructure(data.name);
-        const { data: updated, error: vaultPathError } = await supabase
-          .from('clients')
-          .update({ vault_folder: vault.clientRoot })
-          .eq('id', data.id)
-          .eq('user_id', req.user.id)
-          .select('*, supported_countries(country_name,currency_code)')
-          .single();
-        if (!vaultPathError && updated) data = updated;
+        ensureClientVaultStructure(data.name);
+        vault = { created: true };
       } catch (vaultError) {
         console.error(`[Clients] Vault folder creation failed for ${data.id}:`, vaultError);
         vault = { created: false, warning: 'Client saved, but the local vault folder could not be created. Check the configured vault path and permissions.' };
@@ -323,6 +352,42 @@ router.get('/:id/vault-file', async (req, res) => {
     if (!client) return res.status(404).json({ success: false, message: 'Client not found.' });
 
     const target = resolveClientVaultFile(getClientVaultRoot(client.name), relativePath);
+    if (!target && isConnected) {
+      const parts = relativePath.split(/[\\/]/);
+      if (parts.length === 4 && parts[2] === 'Raw') {
+        const { data: documents, error: documentError } = await supabase
+          .from('documents_metadata')
+          .select('id, client_id, file_name, created_at, storage_bucket, storage_object_path, mime_type')
+          .eq('client_id', client.id)
+          .eq('file_name', parts[3])
+          .eq('source', 'Telegram')
+          .not('storage_object_path', 'is', null);
+        if (documentError) throw documentError;
+        const document = (documents || []).find(item => {
+          const date = new Date(item.created_at);
+          return !Number.isNaN(date.getTime())
+            && String(date.getFullYear()) === parts[0]
+            && new Intl.DateTimeFormat('en-US', { month: 'long' }).format(date) === parts[1];
+        });
+        if (document) {
+          if (!isExpectedTelegramObject({
+            bucket: document.storage_bucket,
+            objectKey: document.storage_object_path,
+            userId: req.user.id,
+            clientId: document.client_id,
+            createdAt: document.created_at,
+            fileName: document.file_name
+          })) {
+            console.error(`[Clients] Refusing unexpected cloud storage reference for document ${document.id}.`);
+            return res.status(404).json({ success: false, message: 'The cloud document reference is invalid.' });
+          }
+          const buffer = await downloadDocument(document.storage_bucket, document.storage_object_path);
+          res.setHeader('Cache-Control', 'private, no-store');
+          res.setHeader('Content-Type', normalizeMimeType(document.mime_type));
+          return res.send(buffer);
+        }
+      }
+    }
     if (!target) return res.status(404).json({ success: false, message: 'Vault file not found.' });
     if (isConnected) {
       const { data: document, error: documentError } = await supabase
@@ -406,10 +471,34 @@ router.get('/:id/vault-tree', async (req, res) => {
     // Reconcile the active period for older clients created before the
     // two-bucket vault layout was introduced. This is idempotent and safe.
     ensureClientVaultBuckets(root);
+    const entries = listClientVaultTree(root);
+    if (isConnected) {
+      const { data: cloudDocuments, error: documentsError } = await supabase
+        .from('documents_metadata')
+        .select('id, file_name, file_size_kb, created_at, storage_bucket, storage_object_path')
+        .eq('client_id', client.id)
+        .eq('source', 'Telegram')
+        .not('storage_object_path', 'is', null);
+      if (documentsError) throw documentsError;
+      for (const document of cloudDocuments || []) {
+        if (!isExpectedTelegramObject({
+          bucket: document.storage_bucket,
+          objectKey: document.storage_object_path,
+          userId: req.user.id,
+          clientId: client.id,
+          createdAt: document.created_at,
+          fileName: document.file_name
+        })) {
+          console.error(`[Clients] Skipping unexpected cloud storage reference for document ${document.id}.`);
+          continue;
+        }
+        addCloudDocumentToTree(entries, document);
+      }
+    }
     return res.json({
       success: true,
       source: isConnected ? 'supabase' : 'demo',
-      data: { clientId: client.id, clientName: client.name, root, entries: listClientVaultTree(root) }
+      data: { clientId: client.id, clientName: client.name, root, entries }
     });
   } catch (err) {
     console.error(`[Clients] Vault tree failed for ${req.params.id}:`, err);

@@ -13,6 +13,11 @@ const path = require('path');
 const { supabase, isConnected } = require('../db/supabase');
 const { saveFileToVault, vaultFileExists, getVaultBaseDir } = require('../vault/vaultManager');
 const { getOwnedClientIds, assertOwnedClient } = require('../lib/ownership');
+const {
+  downloadDocument,
+  isExpectedTelegramObject,
+  normalizeMimeType
+} = require('../lib/documentStorage');
 
 function normalizeFileType(fileType, fileName) {
   const extension = String(fileName || '').split('.').pop().toLowerCase();
@@ -198,15 +203,47 @@ function isMissingDocumentsMetadataTable(error) {
 router.get('/:id/serve', async (req, res) => {
   try {
     let vaultPath = null;
+    let storageObject = null;
 
     if (isConnected) {
+      const ownedClientIds = await getOwnedClientIds(req.user.id);
       const { data, error } = await supabase
-        .from('documents_metadata').select('vault_path, file_name').eq('id', req.params.id).in('client_id', (await getOwnedClientIds(req.user.id)).length ? await getOwnedClientIds(req.user.id) : ['00000000-0000-0000-0000-000000000000']).single();
+        .from('documents_metadata')
+        .select('client_id, source, created_at, vault_path, file_name, storage_bucket, storage_object_path, mime_type')
+        .eq('id', req.params.id)
+        .in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000'])
+        .single();
       if (error) throw error;
       vaultPath = data.vault_path;
+      if (data.storage_bucket && data.storage_object_path) {
+        if (data.source !== 'Telegram' || !isExpectedTelegramObject({
+          bucket: data.storage_bucket,
+          objectKey: data.storage_object_path,
+          userId: req.user.id,
+          clientId: data.client_id,
+          createdAt: data.created_at,
+          fileName: data.file_name
+        })) {
+          console.error(`[Documents] Refusing unexpected cloud storage reference for document ${req.params.id}.`);
+          return res.status(404).json({ success: false, message: 'The cloud document reference is invalid.' });
+        }
+        storageObject = {
+          bucket: data.storage_bucket,
+          objectKey: data.storage_object_path,
+          mimeType: normalizeMimeType(data.mime_type)
+        };
+      }
     } else {
       const doc = fallbackDocuments.find(d => d.id === req.params.id);
       if (doc) vaultPath = doc.vault_path;
+    }
+
+    if (storageObject) {
+      const buffer = await downloadDocument(storageObject.bucket, storageObject.objectKey);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('Content-Type', storageObject.mimeType);
+      res.setHeader('Content-Disposition', 'inline');
+      return res.send(buffer);
     }
 
     if (!vaultPath || !vaultFileExists(vaultPath)) {
@@ -216,6 +253,83 @@ router.get('/:id/serve', async (req, res) => {
     res.sendFile(path.resolve(vaultPath));
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/sync/pending', async (req, res) => {
+  try {
+    const deviceId = String(req.query.deviceId || '');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(deviceId)) {
+      return res.status(400).json({ success: false, message: 'A valid deviceId is required.' });
+    }
+
+    const limitValue = Number(req.query.limit || 50);
+    if (!Number.isInteger(limitValue) || limitValue < 1 || limitValue > 100) {
+      return res.status(400).json({ success: false, message: 'limit must be between 1 and 100.' });
+    }
+
+    const { data: documents, error } = await supabase.rpc('list_pending_document_sync', {
+      p_user_id: req.user.id,
+      p_device_id: deviceId,
+      p_limit: limitValue
+    });
+    if (error) throw error;
+
+    const pending = (documents || []).map(document => {
+        const createdAt = new Date(document.created_at);
+        if (Number.isNaN(createdAt.getTime())) throw new Error(`Document ${document.document_id} has an invalid creation date.`);
+        return {
+          id: document.document_id,
+          clientName: document.client_name || 'unknown',
+          fileName: document.file_name,
+          sha256: document.file_sha256,
+          year: String(createdAt.getFullYear()),
+          month: new Intl.DateTimeFormat('en-US', { month: 'long' }).format(createdAt)
+        };
+      });
+
+    return res.json({ success: true, data: pending });
+  } catch (error) {
+    console.error('[Documents] Local sync queue error:', error.message);
+    return res.status(500).json({ success: false, message: 'Could not load the local document sync queue.' });
+  }
+});
+
+router.post('/sync/receipt', async (req, res) => {
+  try {
+    const { deviceId, documentId, sha256 } = req.body || {};
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidPattern.test(String(deviceId || '')) || !uuidPattern.test(String(documentId || ''))) {
+      return res.status(400).json({ success: false, message: 'Valid deviceId and documentId values are required.' });
+    }
+    if (!/^[0-9a-f]{64}$/i.test(String(sha256 || ''))) {
+      return res.status(400).json({ success: false, message: 'A valid SHA-256 checksum is required.' });
+    }
+
+    const ownedClientIds = await getOwnedClientIds(req.user.id);
+    const { data: document, error: documentError } = await supabase
+      .from('documents_metadata')
+      .select('id, file_sha256')
+      .eq('id', documentId)
+      .in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000'])
+      .single();
+    if (documentError) throw documentError;
+    if (!document.file_sha256 || document.file_sha256 !== String(sha256).toLowerCase()) {
+      return res.status(409).json({ success: false, message: 'The local file checksum does not match the stored document.' });
+    }
+
+    const { error } = await supabase.from('document_sync_receipts').upsert({
+      user_id: req.user.id,
+      device_id: deviceId,
+      document_id: documentId,
+      file_sha256: document.file_sha256,
+      synced_at: new Date().toISOString()
+    }, { onConflict: 'user_id,device_id,document_id' });
+    if (error) throw error;
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('[Documents] Local sync receipt error:', error.message);
+    return res.status(500).json({ success: false, message: 'Could not record the local document sync.' });
   }
 });
 

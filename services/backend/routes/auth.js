@@ -5,21 +5,26 @@
  * - Signup  → supabase.auth.signUp  → trigger auto-creates user_profiles row
  * - Login   → supabase.auth.signInWithPassword → fetches profile + onboarding status
  * - /me     → supabase.auth.getUser(token) → validates JWT + returns profile
- * - Vault Setup → saves encrypted vault path to user_profiles in Supabase
+ * - Vault Setup → stores an onboarding marker; local filesystem paths stay on the machine
  * - Forgot  → supabase.auth.resetPasswordForEmail → real email via Supabase SMTP
  *
  * Security:
  * - Rate limiting (5 failed attempts → 60 sec lockout) per IP+email
- * - Vault path stored in Supabase (server-side), never in localStorage or config.json
+ * - Desktop vault paths are persisted only in the desktop's local app configuration
  * - No in-memory user stores, no mock credentials, no demo bypass
  * - All tokens validated with Supabase on every /me request
  */
 
 const express = require('express');
+const path = require('node:path');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
-const { ensureClientVaultStructure } = require('../vault/vaultManager');
 const ALLOWED_PRACTICE_TYPES = new Set(['Chartered Accountant (CA)', 'Individual']);
+
+function isLoopbackAddress(address) {
+  const value = String(address || '').toLowerCase();
+  return value === '::1' || value.startsWith('127.') || value.startsWith('::ffff:127.');
+}
 
 // ──────────────────────────────────────────────────────────
 // Rate Limiting (in-memory, per IP+email)
@@ -349,10 +354,8 @@ router.get('/me', async (req, res) => {
 
 // ──────────────────────────────────────────────────────────
 // POST /api/v1/auth/vault-setup
-// Saves the user's selected vault folder path to Supabase
-// user_profiles table. The path is stored server-side only,
-// never in the browser/localStorage.
-// Also marks onboarding_complete = true when called.
+// Marks onboarding complete; a local backend may also apply a folder path
+// supplied over loopback, but no machine-specific path is stored in Supabase.
 // ──────────────────────────────────────────────────────────
 router.post('/vault-setup', async (req, res) => {
   if (!requireSupabase(res)) return;
@@ -363,10 +366,12 @@ router.post('/vault-setup', async (req, res) => {
   }
 
   const token = authHeader.split(' ')[1];
-  const { vaultPath } = req.body;
-
-  if (!vaultPath || typeof vaultPath !== 'string' || vaultPath.trim().length < 3) {
-    return res.status(400).json({ success: false, message: 'A valid vault folder path is required.' });
+  const requestedVaultPath = typeof req.body?.vaultPath === 'string' ? req.body.vaultPath.trim() : '';
+  if (requestedVaultPath && (!isLoopbackAddress(req.socket.remoteAddress) || !path.isAbsolute(requestedVaultPath))) {
+    return res.status(400).json({ success: false, message: 'A local vault path can only be applied by a local backend.' });
+  }
+  if (req.body?.vaultPath !== undefined && !requestedVaultPath) {
+    return res.status(400).json({ success: false, message: 'A valid local vault folder path is required.' });
   }
 
   // Verify the JWT
@@ -375,59 +380,46 @@ router.post('/vault-setup', async (req, res) => {
     return res.status(401).json({ success: false, message: 'Session is invalid or has expired.' });
   }
 
-  const cleanPath = vaultPath.trim();
-
-  // Persist to Supabase user_profiles (RLS-secured, service-role bypasses for write)
+  // Keep the onboarding marker but never persist a machine-specific folder path.
   const { error: updateErr } = await supabase
     .from('user_profiles')
-    .update({ vault_path: cleanPath, onboarding_complete: true, updated_at: new Date().toISOString() })
+    .update({ vault_path: 'desktop-local', onboarding_complete: true, updated_at: new Date().toISOString() })
     .eq('id', data.user.id);
 
   if (updateErr) {
-    console.error('[AUTH] Vault setup save error:', updateErr.message);
-    return res.status(500).json({ success: false, message: 'Failed to save vault configuration. Please try again.' });
+    console.error('[AUTH] Local vault onboarding save error:', updateErr.message);
+    return res.status(500).json({ success: false, message: 'Failed to save vault onboarding. Please try again.' });
   }
 
-  // Also apply locally so this server instance uses the right path immediately
-  try {
-    const { updateVaultBaseDir } = require('../vault/vaultManager');
-    updateVaultBaseDir(cleanPath);
-  } catch (e) {
-    console.warn('[AUTH] Local vault update failed (non-critical):', e.message);
-  }
-
-  // Onboarding creates clients before this step. Reconcile their folders now
-  // that the user-selected vault is active, so first-run clients are not left
-  // behind in the temporary/default vault location.
-  const vaultWarnings = [];
-  try {
-    const { data: clients, error: clientsError } = await supabase
-      .from('clients')
-      .select('id, name')
-      .eq('user_id', data.user.id);
-    if (clientsError) throw clientsError;
-
-    for (const client of clients || []) {
-      try {
-        const folder = ensureClientVaultStructure(client.name);
-        await supabase.from('clients').update({ vault_folder: folder.clientRoot }).eq('id', client.id).eq('user_id', data.user.id);
-      } catch (clientVaultError) {
-        console.error(`[AUTH] Client vault reconciliation failed for ${client.id}:`, clientVaultError);
-        vaultWarnings.push(client.name);
+  let vaultWarnings = [];
+  if (requestedVaultPath) {
+    try {
+      const { updateVaultBaseDir, ensureClientVaultStructure } = require('../vault/vaultManager');
+      updateVaultBaseDir(requestedVaultPath);
+      const { data: clients, error: clientsError } = await supabase
+        .from('clients')
+        .select('id, name')
+        .eq('user_id', data.user.id);
+      if (clientsError) throw clientsError;
+      for (const client of clients || []) {
+        try {
+          ensureClientVaultStructure(client.name);
+        } catch (clientError) {
+          console.error(`[AUTH] Client vault reconciliation failed for ${client.id}:`, clientError);
+          vaultWarnings.push(client.name);
+        }
       }
+    } catch (vaultError) {
+      console.error('[AUTH] Local vault configuration failed:', vaultError);
+      vaultWarnings.push('local vault');
     }
-  } catch (clientsError) {
-    console.error('[AUTH] Client vault reconciliation query failed:', clientsError);
-    vaultWarnings.push('existing clients');
   }
 
-  console.log(`[AUTH] Vault configured for user ${data.user.id}: ${cleanPath}`);
-
+  console.log(`[AUTH] Local vault onboarding completed for user ${data.user.id}.`);
   return res.json({
     success: true,
-    message: 'Vault folder configured and onboarding complete.',
-    vaultPath: cleanPath,
-    vaultWarnings: vaultWarnings.length ? `Some client folders could not be created: ${vaultWarnings.join(', ')}` : null
+    message: 'Local vault configured and onboarding complete.',
+    ...(vaultWarnings.length ? { vaultWarnings: `Could not create all local client folders: ${vaultWarnings.join(', ')}` } : {})
   });
 });
 

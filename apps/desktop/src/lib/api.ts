@@ -413,13 +413,64 @@ export async function apiUpdateProfile(data: {
   return res.json();
 }
 
-export async function apiSetupVault(vaultPath: string): Promise<{ success: boolean; message: string; vaultPath?: string }> {
+export async function apiSetupVault(vaultPath?: string): Promise<{ success: boolean; message: string }> {
+  const hostname = new URL(API_ORIGIN).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const localBackend = hostname === 'localhost' || hostname === '::1' || /^127\./.test(hostname);
   const res = await fetch(`${API_BASE_URL}/auth/vault-setup`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ vaultPath })
+    body: JSON.stringify(localBackend && vaultPath ? { vaultPath } : {})
   });
   return res.json();
+}
+
+export interface PendingLocalDocument {
+  id: string;
+  clientName: string;
+  fileName: string;
+  sha256: string;
+  year: string;
+  month: string;
+}
+
+export async function fetchPendingLocalDocuments(deviceId: string): Promise<PendingLocalDocument[]> {
+  const query = new URLSearchParams({ deviceId, limit: '20' });
+  const response = await authRequest<{ success: boolean; message?: string; data?: PendingLocalDocument[] }>(
+    `${API_BASE_URL}/documents/sync/pending?${query}`,
+    { method: 'GET', headers: authHeaders() },
+  );
+  if (!response.success) throw new Error(response.message || 'Could not load pending local documents.');
+  return response.data || [];
+}
+
+export async function downloadDocumentForLocalVault(documentId: string): Promise<ArrayBuffer> {
+  const response = await fetch(`${API_BASE_URL}/documents/${encodeURIComponent(documentId)}/serve`, {
+    method: 'GET',
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    let message = `Document download failed (HTTP ${response.status}).`;
+    try {
+      const payload = await response.json() as { message?: string };
+      if (payload.message) message = payload.message;
+    } catch {
+      // Keep the HTTP error visible when the server response is not JSON.
+    }
+    throw new Error(message);
+  }
+  return response.arrayBuffer();
+}
+
+export async function acknowledgeLocalDocumentSync(deviceId: string, documentId: string, sha256: string): Promise<void> {
+  const response = await authRequest<{ success: boolean; message?: string }>(
+    `${API_BASE_URL}/documents/sync/receipt`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ deviceId, documentId, sha256 }),
+    },
+  );
+  if (!response.success) throw new Error(response.message || 'Could not record local document sync.');
 }
 
 // ─── Client API ────────────────────────────────────────────────
@@ -519,6 +570,7 @@ export interface VaultTreeEntry {
   size?: number;
   modifiedAt: string;
   children?: VaultTreeEntry[];
+  cloudRetained?: boolean;
 }
 
 export interface VaultTreeResponse {

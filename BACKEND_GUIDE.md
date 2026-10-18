@@ -7,10 +7,11 @@ This document defines the architectural standards, design rules, and implementat
 TaxFlow.AI employs a **Hybrid Metadata/Binary Storage Model**. This separates structured data from heavy physical files to optimize performance and privacy.
 
 ### The Data Flow
-`Frontend Request` $\rightarrow$ `Express Route` $\rightarrow$ `(Supabase Metadata $\leftrightarrow$ Local Vault Binary)` $\rightarrow$ `Standardized JSON Response`
+`Frontend Request` $\rightarrow$ `Express Route` $\rightarrow$ `(Supabase Metadata + private Telegram object storage; local vault for other workflows)` $\rightarrow$ `Standardized JSON Response`
 
-- **Supabase (Cloud)**: Acts as the "Brain." Stores only structured metadata, relationships, logs, and state.
-- **Local Vault (Disk)**: Acts as the "Storage." Stores the actual physical files (PDFs, Images) in a structured directory tree.
+- **Supabase Database**: Stores structured metadata, relationships, logs, and state.
+- **Supabase Storage**: Private durable source for production Telegram attachments; only the server service-role client can access this bucket.
+- **Local Vault (Disk)**: Desktop copies of Telegram attachments are verified and stored in the user-selected directory; other existing upload workflows still use the backend's local vault.
 
 ---
 
@@ -78,9 +79,9 @@ Files must be organized strictly by this pattern:
 2. **Binary Handling**: Convert base64 uploads to buffers immediately.
 3. **Collision Prevention**: Prefix files with a timestamp or unique ID during `saveFileToVault()`.
 4. **Categories**: Only use `ALLOWED_CATEGORIES` (e.g., `GST`, `IncomeTax`, `Form16`, `Notice`).
-5. **Telegram Attachments**: The webhook stores each inbound message before acknowledging it, then immediately queues supported attachments for download into that client's calendar year/month `Raw` folder using the Telegram message timestamp. A database-backed worker resumes pending downloads after backend restarts, retries transient failures with backoff, and exposes permanent failures for manual retry in the inbox. The authenticated document metadata link is saved after the vault write succeeds. Configure `VAULT_PATH` on the machine running the backend; if the backend runs on a hosted service, use a persistent disk or files may be lost on restart. The vault is on the backend host, not automatically copied to a separate desktop PC.
+5. **Telegram Attachments**: The webhook stores each inbound message before acknowledging it, then queues supported attachments immediately. In production, bytes are uploaded to the private `SUPABASE_STORAGE_BUCKET`; a checksum and object key are recorded with the document metadata. A database-backed worker resumes pending downloads after backend restarts and retries transient failures. Authenticated desktops poll for pending documents, verify SHA-256, atomically save each copy under `client/year/month/Raw`, and record a per-device sync receipt. Keep the Supabase object as the recovery source; do not delete it after local sync. In development, if the Storage bucket is not configured, the existing backend-local vault path is used.
 
-Before enabling Telegram on an existing database, ensure `clients` and `documents_metadata` exist, then run `npm run migrate:telegram` from `services/backend` with `DATABASE_URL` set. It applies `db/telegram.sql` and `db/telegram_document_storage.sql` in one transaction. The backend must use `SUPABASE_SERVICE_ROLE_KEY`; do not grant table access to `anon`. Configure `TELEGRAM_WEBHOOK_SECRET` and a public HTTPS URL (`PUBLIC_URL` or `RENDER_EXTERNAL_URL`) before starting the backend so it can register the webhook.
+Before enabling Telegram on an existing database, ensure `clients`, `user_profiles`, and `documents_metadata` exist, then run `npm run migrate:telegram` from `services/backend` with `DATABASE_URL` set. It applies the Telegram schema, private Storage bucket/device-sync migration, and clears previously persisted machine-specific vault paths. Alternatively, run `db/telegram.sql`, `db/telegram_document_storage.sql`, then `db/create_taxflow_storage_bucket.sql` in Supabase SQL Editor. Set `SUPABASE_STORAGE_BUCKET=taxflow-intake`, `SUPABASE_SERVICE_ROLE_KEY`, `TELEGRAM_WEBHOOK_SECRET`, and a public HTTPS URL before starting the production backend. Never grant `anon` or `authenticated` access to the private intake bucket or expose the service-role key.
 
 #### Sync Logic:
 - **Creation**: When a client is created in Supabase $\rightarrow$ Create their root vault directory.

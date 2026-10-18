@@ -6,6 +6,14 @@ const { supabase, isConnected } = require('../db/supabase');
 const { requireAuth } = require('../middleware/requireAuth');
 const { assertOwnedClient } = require('../lib/ownership');
 const { saveFileToVault, deleteVaultFile } = require('../vault/vaultManager');
+const {
+  getStorageObjectKey,
+  isCloudDocumentStorageEnabled,
+  isCloudDocumentStorageRequired,
+  normalizeMimeType,
+  sha256,
+  uploadDocument
+} = require('../lib/documentStorage');
 
 const botToken = () => process.env.TELEGRAM_BOT_TOKEN || '';
 const webhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET || '';
@@ -209,31 +217,62 @@ async function processTelegramAttachmentDownload(message, client) {
     if (!buffer.length) throw new Error('Telegram returned an empty file.');
 
     const receivedAt = getTelegramMessageDate(current);
-    // General is the document metadata category; the vault maps it to the Raw bucket.
-    const saved = saveFileToVault(client.name, `${current.id}_${normalized.fileName}`, buffer.toString('base64'), 'General', undefined, receivedAt);
+    const periodYear = String(receivedAt.getFullYear());
+    const periodMonth = new Intl.DateTimeFormat('en-US', { month: 'long' }).format(receivedAt);
+    const storedFileName = `${current.id}_${normalized.fileName}`;
+    const cloudStorageEnabled = isCloudDocumentStorageEnabled();
+    if (!cloudStorageEnabled && isCloudDocumentStorageRequired()) {
+      throw new Error('Supabase Storage is required for production Telegram attachments. Configure SUPABASE_STORAGE_BUCKET and apply the storage migration.');
+    }
+
+    let saved = null;
+    let cloudObject = null;
+    if (cloudStorageEnabled) {
+      const objectKey = getStorageObjectKey({
+        userId: client.user_id,
+        clientId: client.id,
+        year: periodYear,
+        month: periodMonth,
+        documentId: current.id,
+        fileName: normalized.fileName
+      });
+      cloudObject = await uploadDocument(objectKey, buffer, current.mime_type);
+    } else {
+      // General maps to the Raw bucket in the configured local vault.
+      saved = saveFileToVault(client.name, storedFileName, buffer.toString('base64'), 'General', undefined, receivedAt);
+    }
     const metadata = {
       client_id: client.id,
       client_name: client.name,
-      file_name: saved.fileName,
+      file_name: saved ? saved.fileName : storedFileName,
       file_type: normalized.fileType,
-      file_size_kb: saved.fileSizeKb,
+      file_size_kb: Number((buffer.length / 1024).toFixed(2)),
       category: 'General',
       source: 'Telegram',
       status: 'Pending',
-      vault_path: saved.vaultPath,
+      vault_path: cloudObject
+        ? `supabase://${cloudObject.bucket}/${cloudObject.objectKey}`
+        : saved.vaultPath,
+      ...(cloudObject ? {
+        storage_bucket: cloudObject.bucket,
+        storage_object_path: cloudObject.objectKey,
+        file_sha256: sha256(buffer),
+        mime_type: normalizeMimeType(current.mime_type)
+      } : {}),
       assessment_year: getAssessmentYear(receivedAt),
-      telegram_message_id: message.id
+      telegram_message_id: message.id,
+      created_at: receivedAt.toISOString()
     };
 
     let document;
     const { data, error } = await supabase.from('documents_metadata').insert(metadata).select('id').single();
     if (error?.code === '23505') {
-      deleteVaultFile(saved.vaultPath);
+      if (saved) deleteVaultFile(saved.vaultPath);
       const existing = await supabase.from('documents_metadata').select('id').eq('telegram_message_id', message.id).single();
       if (existing.error) throw existing.error;
       document = existing.data;
     } else if (error) {
-      deleteVaultFile(saved.vaultPath);
+      if (saved) deleteVaultFile(saved.vaultPath);
       throw error;
     } else {
       document = data;
@@ -368,7 +407,7 @@ async function recoverPendingAttachmentDownloads() {
 
   const clientIds = Array.from(new Set(messages.map((message) => message.client_id)));
   const { data: clients, error: clientsError } = await supabase.from('clients')
-    .select('id,name')
+    .select('id,name,user_id')
     .in('id', clientIds);
   if (clientsError) throw clientsError;
   const clientsById = new Map((clients || []).map((client) => [client.id, client]));
@@ -729,7 +768,7 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
       console.warn(`[Telegram] Ignored message ${message.message_id} from unsupported ${message.chat.type} chat ${message.chat.id}.`);
       return res.status(200).json({ ok: true, ignored: true, reason: 'private_chat_required' });
     }
-    const { data: client, error: clientError } = await supabase.from('clients').select('id,name').eq('telegram_chat_id', String(message.chat.id)).maybeSingle();
+    const { data: client, error: clientError } = await supabase.from('clients').select('id,name,user_id').eq('telegram_chat_id', String(message.chat.id)).maybeSingle();
     if (clientError) throw clientError;
     if (!client) {
       console.warn(`[Telegram] Ignored inbound message from unlinked chat ${message.chat.id}.`);
@@ -774,7 +813,7 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
     }
     if (error) throw error;
     if (attachment) {
-      console.log(`[Telegram] Received ${attachment.messageType} attachment for client ${client.id}; queued immediate vault download.`);
+      console.log(`[Telegram] Received ${attachment.messageType} attachment for client ${client.id}; queued immediate storage.`);
       void downloadTelegramAttachment(savedMessage, client);
     }
     return res.status(200).json({ ok: true });

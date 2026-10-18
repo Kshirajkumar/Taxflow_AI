@@ -14,6 +14,7 @@ import { useAppState, useDispatch } from '../state/store';
 import { apiUpdateProfile, apiSetupVault, createClient } from '../lib/api';
 import { FilingTypePicker } from '../components/FilingTypePicker';
 import { open } from '@tauri-apps/plugin-dialog';
+import { configureLocalVault, isDesktopApp } from '../lib/localVault';
 
 // Try to open native folder picker via Tauri; falls back gracefully in browser/web
 async function pickFolder(): Promise<string | null> {
@@ -214,12 +215,17 @@ export function OnboardingFlow() {
     const trimmed = vaultPath.trim();
     if (!trimmed) { setVaultError('Please select or enter a vault folder path.'); return; }
     if (trimmed.length < 3) { setVaultError('Please enter a valid folder path.'); return; }
+    if (!isDesktopApp()) {
+      setVaultError('Local document sync requires the installed TaxFlow desktop app. Open onboarding there to configure this folder.');
+      return;
+    }
 
     setVaultSaveLoading(true);
     setVaultError('');
     try {
+      await configureLocalVault(trimmed);
       const res = await apiSetupVault(trimmed);
-      if (!res.success) throw new Error(res.message || 'Failed to save vault path');
+      if (!res.success) throw new Error(res.message || 'Failed to save vault setup');
       setVaultSuccess(true);
       setTimeout(() => goToStep(3), 1200);
     } catch (err: any) {
@@ -296,7 +302,7 @@ export function OnboardingFlow() {
             <div className="ob-step-badge">Step 2 of 3</div>
             <h1 className="ob-title">Configure Your Local Vault</h1>
             <p className="ob-subtitle">
-              Your Local Vault is a secure folder on <strong>your computer</strong> where TaxFlow.AI stores all client documents — PDFs, invoices, bank statements, and extracted data. This data never leaves your machine.
+              Choose a folder on <strong>this computer</strong>. Incoming Telegram files are copied into each client’s year/month/Raw folder after a verified download. A private cloud copy is retained for recovery and syncing other authorized devices.
             </p>
 
             <div className="ob-vault-visual">
@@ -311,20 +317,24 @@ export function OnboardingFlow() {
             <div className="ob-vault-info-grid">
               <div className="ob-vault-info-item">
                 <span className="ob-vault-info-icon">🔒</span>
-                <span>Stored only on your device</span>
+                <span>Local copy on this device</span>
               </div>
               <div className="ob-vault-info-item">
                 <span className="ob-vault-info-icon">⚡</span>
-                <span>Lightning-fast local access</span>
+                <span>Verified before saving</span>
               </div>
               <div className="ob-vault-info-item">
                 <span className="ob-vault-info-icon">🛡️</span>
-                <span>Never synced to cloud</span>
+                <span>Private cloud recovery copy</span>
               </div>
               <div className="ob-vault-info-item">
                 <span className="ob-vault-info-icon">📁</span>
                 <span>You choose the folder location</span>
               </div>
+            </div>
+
+            <div className="ob-vault-note">
+              Use a firm-approved folder on this computer. Avoid consumer cloud-sync folders such as OneDrive unless your firm's data policy permits them.
             </div>
 
             <div className="ob-vault-path-row">
@@ -339,6 +349,12 @@ export function OnboardingFlow() {
                 {vaultPickLoading ? <span className="ob-spinner" /> : '📂 Browse'}
               </button>
             </div>
+
+            {!isDesktopApp() && (
+              <div className="ob-vault-note">
+                Local document sync is available in the installed TaxFlow desktop app. A browser cannot write directly to a selected folder.
+              </div>
+            )}
 
             {vaultPath && !vaultSuccess && (
               <div className="ob-vault-preview">
@@ -358,7 +374,7 @@ export function OnboardingFlow() {
 
             <div className="ob-actions">
               <button className="ob-skip" onClick={() => goToStep(1)}>← Back</button>
-              <button className="ob-btn-primary" onClick={handleVaultSave} disabled={vaultSaveLoading || vaultSuccess || !vaultPath.trim()}>
+              <button className="ob-btn-primary" onClick={handleVaultSave} disabled={vaultSaveLoading || vaultSuccess || !vaultPath.trim() || !isDesktopApp()}>
                 {vaultSaveLoading ? <span className="ob-spinner" /> : 'Configure Vault →'}
               </button>
             </div>
@@ -673,6 +689,7 @@ export function OnboardingFlow() {
         .ob-vault-path-row { display: flex; gap: 10px; align-items: center; }
         .ob-vault-input { flex: 1; font-family: monospace; font-size: 13px; }
 
+        .ob-vault-note { margin-top: 10px; color: var(--tx2); font-size: 12px; }
         .ob-vault-preview {
           display: flex;
           align-items: center;

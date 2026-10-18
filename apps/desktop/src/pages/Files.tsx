@@ -71,10 +71,10 @@ function FileCard({ item, onOpen, onDelete }: { item: VaultTreeEntry; onOpen: ()
   return <div className="vault-file-card">
     <button className="vault-file-card-main" onClick={onOpen} title={`Open ${item.name}`}>
       <span className={fileClass(item.name) + ' vault-file-card-icon'}><Icon name={extension(item.name) === 'xlsx' || extension(item.name) === 'csv' ? 'table' : 'file'} size={22} /></span>
-      <span className="vault-file-card-body"><b>{item.name}</b><small>{fileTypeLabel(item.name)}</small></span>
+      <span className="vault-file-card-body"><b>{item.name}</b><small>{fileTypeLabel(item.name)}{item.cloudRetained ? ' · private cloud recovery copy' : ''}</small></span>
       <span className="vault-file-card-meta"><span>{formatBytes(item.size)}</span><span>{fDT(new Date(item.modifiedAt))}</span></span>
     </button>
-    <button className="vault-file-delete" onClick={onDelete} title={`Delete ${item.name}`} aria-label={`Delete ${item.name}`}><Icon name="trash" size={15} /></button>
+    {!item.cloudRetained && <button className="vault-file-delete" onClick={onDelete} title={`Delete ${item.name}`} aria-label={`Delete ${item.name}`}><Icon name="trash" size={15} /></button>}
   </div>;
 }
 

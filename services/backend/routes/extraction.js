@@ -20,6 +20,7 @@ const { supabase, isConnected } = require('../db/supabase');
 const { vaultFileExists, saveTextFileToVault } = require('../vault/vaultManager');
 const { getGeminiConfig } = require('../lib/aiProvider');
 const { getOwnedClientIds } = require('../lib/ownership');
+const { downloadDocument, isExpectedTelegramObject } = require('../lib/documentStorage');
 
 // Prompt templates for different document types
 const EXTRACTION_PROMPTS = {
@@ -89,9 +90,25 @@ router.post('/process', async (req, res) => {
       });
     }
 
-    // Step 2: Check if physical file exists in Local Vault Storage
+    // Step 2: Read from private object storage or the legacy local vault.
     const vaultPath = doc.vault_path;
-    if (!vaultFileExists(vaultPath)) {
+    let fileBuffer = null;
+    if (doc.storage_bucket && doc.storage_object_path) {
+      if (doc.source !== 'Telegram' || !isExpectedTelegramObject({
+        bucket: doc.storage_bucket,
+        objectKey: doc.storage_object_path,
+        userId: req.user.id,
+        clientId: doc.client_id,
+        createdAt: doc.created_at,
+        fileName: doc.file_name
+      })) {
+        console.error(`[Extraction] Refusing unexpected cloud storage reference for document ${doc.id}.`);
+        return res.status(404).json({ success: false, message: 'The cloud document reference is invalid.' });
+      }
+      fileBuffer = await downloadDocument(doc.storage_bucket, doc.storage_object_path);
+    } else if (vaultFileExists(vaultPath)) {
+      fileBuffer = fs.readFileSync(vaultPath);
+    } else {
       return res.status(404).json({
         success: false,
         message: `Physical file not found in Local Vault at: ${vaultPath}`
@@ -113,7 +130,6 @@ router.post('/process', async (req, res) => {
       try {
         const docCategory = doc.category || category || 'GST';
         const prompt = EXTRACTION_PROMPTS[docCategory] || EXTRACTION_PROMPTS.General;
-        const fileBuffer = fs.readFileSync(vaultPath);
         const base64Content = fileBuffer.toString('base64');
         const mimeType = getMimeType(doc.file_type || 'PDF');
 

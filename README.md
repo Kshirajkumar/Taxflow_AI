@@ -41,12 +41,12 @@ Also included: light/dark theme, a custom frameless Windows title bar, and firm 
 └─────────┬──────────────────┬─────────┘
           ▼                  ▼
 ┌──────────────────┐  ┌──────────────────────┐
-│ Supabase         │  │ Local Vault          │
-│ metadata only    │  │ client files on disk │
-└──────────────────┘  └──────────────────────┘
+│ Supabase DB      │  │ Supabase Storage     │  │ Local Vault       │
+│ metadata         │  │ private Telegram     │  │ desktop copies    │
+└──────────────────┘  └──────────────────────┘  └───────────────────┘
 ```
 
-**Storage note:** physical client files are stored in the backend's configured vault and are not uploaded to Supabase. Run the backend on the firm's machine to keep files there. A remotely hosted backend stores files on its own filesystem; configure `VAULT_PATH` to a persistent disk or files may be lost when the host restarts or deploys. A remote backend does not automatically sync files back to the desktop PC. The backend runs in **demo mode** with in-memory data when no `.env` is configured.
+**Storage note:** Telegram attachments in production are uploaded directly to a private Supabase Storage bucket, then downloaded by the signed-in TaxFlow desktop app into the selected local vault under `clients/client/year/month/Raw`. The cloud object is retained as the recovery source; successful local sync does not delete it. Other file-upload workflows still use the backend's configured vault. If those workflows run on Render, their files are on the Render host and need a persistent disk (`VAULT_PATH`) or a separate cloud-storage migration. The backend runs in **demo mode** with in-memory data when no `.env` is configured.
 
 ---
 
@@ -129,6 +129,7 @@ Edit `services/backend/.env`:
 |---|---|
 | `PORT` | API port (default `5000`) |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | Cloud metadata database |
+| `SUPABASE_STORAGE_BUCKET` | Private object bucket for production Telegram attachments (`taxflow-intake`) |
 | `VAULT_PATH` | Folder for client files on the backend host. For a local backend, do not place it in a cloud-synced folder. For a hosted backend, use a persistent mounted disk. |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | AI extraction and generation |
 | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN` | WhatsApp Cloud API |
