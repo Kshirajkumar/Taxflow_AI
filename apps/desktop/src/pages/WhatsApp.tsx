@@ -197,6 +197,7 @@ export function WhatsAppPage() {
   const [telegramError, setTelegramError] = useState('');
   const [telegramRefreshWarning, setTelegramRefreshWarning] = useState('');
   const [telegramInfo, setTelegramInfo] = useState('');
+  const [telegramLinkToShare, setTelegramLinkToShare] = useState('');
   const [telegramLoading, setTelegramLoading] = useState(false);
   const [telegramConnecting, setTelegramConnecting] = useState(false);
   const [telegramSending, setTelegramSending] = useState(false);
@@ -256,6 +257,8 @@ export function WhatsAppPage() {
   useEffect(() => {
     setTelegramTemplatesOpen(false);
     setComposerExpanded(false);
+    setTelegramLinkToShare('');
+    setTelegramInfo('');
     setActiveTelegramPreview(null);
     setTelegramFileOpenError(null);
     setTelegramNativeOpenError('');
@@ -534,15 +537,34 @@ export function WhatsAppPage() {
     setTelegramConnecting(true);
     setTelegramError('');
     setTelegramInfo('');
+    setTelegramLinkToShare('');
     try {
       const result = await createTelegramLink(c.id);
-      try { await navigator.clipboard?.writeText(result.link); } catch { /* Clipboard access is optional. */ }
-      const opened = window.open(result.link, '_blank', 'noopener,noreferrer');
-      setTelegramInfo(opened ? `Connection link opened. It expires at ${new Date(result.expiresAt).toLocaleTimeString()}.` : `Connection link copied. Open it in Telegram before ${new Date(result.expiresAt).toLocaleTimeString()}.`);
+      setTelegramLinkToShare(result.link);
+      let copied = false;
+      try {
+        await navigator.clipboard.writeText(result.link);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+      const expiresAt = new Date(result.expiresAt).toLocaleTimeString();
+      setTelegramInfo(`${copied ? 'Connection link copied.' : 'Connection link is ready below.'} Send it directly to ${c.name}; do not open it from your own Telegram account. It expires at ${expiresAt}.`);
     } catch (error) {
       setTelegramError(error instanceof Error ? error.message : 'Unable to create Telegram connection link.');
     } finally {
       setTelegramConnecting(false);
+    }
+  }
+
+  async function copyTelegramLink() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable.');
+      await navigator.clipboard.writeText(telegramLinkToShare);
+      setTelegramError('');
+      setTelegramInfo(`Connection link copied. Send it directly to ${c.name}; do not open it from your own Telegram account.`);
+    } catch {
+      setTelegramError('Could not copy the link. Select the link text and copy it manually.');
     }
   }
 
@@ -1041,7 +1063,17 @@ export function WhatsAppPage() {
                   <button className="btn sm" onClick={() => dispatch({ type: 'WA_CLIENT', id: pendingTelegramClient.id })}>Review message</button>
                 </div>
               )}
-              {channel === 'telegram' && telegramConversationClientId === c.id && !isTelegramConversationLoading && telegramInfo && <div className="telegram-notice">{telegramInfo}</div>}
+              {channel === 'telegram' && telegramConversationClientId === c.id && !isTelegramConversationLoading && telegramInfo && (
+                <div className="telegram-notice" role="status">
+                  {telegramInfo}
+                  {telegramLinkToShare && (
+                    <div className="row" style={{ gap: 8, marginTop: 8 }}>
+                      <input className="inp" aria-label={`Telegram connection link for ${c.name}`} readOnly value={telegramLinkToShare} onFocus={(event) => event.currentTarget.select()} />
+                      <button className="btn sm" onClick={() => void copyTelegramLink()}>Copy link</button>
+                    </div>
+                  )}
+                </div>
+              )}
               {channel === 'telegram' && telegramRefreshWarning && (
                 <div className="telegram-notice telegram-refresh-warning" role="status">{telegramRefreshWarning}</div>
               )}
