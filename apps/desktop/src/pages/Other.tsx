@@ -13,6 +13,7 @@ export function ClientsPage() {
   const [selectedClient, setSelectedClient] = React.useState<(typeof s.clients)[number] | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [portalNotice, setPortalNotice] = React.useState('');
   const [editingClient, setEditingClient] = React.useState(false);
   const [editSaving, setEditSaving] = React.useState(false);
   const [editError, setEditError] = React.useState('');
@@ -85,6 +86,7 @@ export function ClientsPage() {
     try {
       const saved: any = await createClient(form as any);
       if (!saved) throw new Error('Could not save client.');
+      setPortalNotice(saved.portalAccessWarning || '');
       dispatch({ type: 'ADD_CLIENT', client: { id: saved.id, name: saved.name, entityType: saved.entity_type || form.entityType, short: saved.name.slice(0, 3).toUpperCase(), city: 'Local', country: saved.country_name || 'Selected country', countryId: saved.country_id || form.countryId, cur: saved.currency_code || 'INR', gstin: saved.gstin || '', pan: saved.pan || '', svc: saved.filing_types || form.filingTypes, filingTypes: saved.filing_types || form.filingTypes, contact: saved.email || '', phone: saved.phone || '', fee: 0, tone: 'blue', alias: [] } });
       setShowAdd(false); setForm({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', countryId: '', filingTypes: [] });
     } catch (err: any) { setError(err.message || 'Could not save client.'); }
@@ -125,6 +127,7 @@ export function ClientsPage() {
       const updated = { ...selectedClient, name: saved.name || editForm.name.trim(), entityType: saved.entity_type || editForm.entityType, countryId: saved.country_id || editForm.countryId, country: saved.country_name || selectedClient.country, short: (saved.name || editForm.name).slice(0, 3).toUpperCase(), gstin: saved.gstin || '', pan: saved.pan || '', svc: Array.isArray(saved.filing_types) ? saved.filing_types : editForm.filingTypes, filingTypes: Array.isArray(saved.filing_types) ? saved.filing_types : editForm.filingTypes, contact: saved.email || '', phone: saved.phone || '' };
       dispatch({ type: 'UPDATE_CLIENT', client: updated });
       setSelectedClient(updated);
+      setPortalError(saved.portalAccessWarning || '');
       setEditingClient(false);
     } catch (err: any) { setEditError(err.message || 'Could not update client.'); }
     finally { setEditSaving(false); }
@@ -132,6 +135,7 @@ export function ClientsPage() {
   return (
     <>
       <div className="ph"><div><h1>Clients</h1><p>Everyone you file for, with their services and current workload.</p></div><button className="btn pri" onClick={() => setShowAdd(true)}>+ Add client</button></div>
+      {portalNotice && <div className="ob-error" role="status">{portalNotice}</div>}
       {!s.clients.length ? <section className="card client-empty-state" aria-labelledby="clients-empty-title">
         <div className="client-empty-visual"><div className="client-empty-orb"><Icon name="users" size={28} /></div><span className="client-empty-spark client-empty-spark-one"><Icon name="check" size={11} /></span><span className="client-empty-spark client-empty-spark-two"><Icon name="file" size={11} /></span></div>
         <div className="client-empty-copy"><span className="eyebrow"><span className="eyebrow-dot" />CLIENT WORKSPACE</span><h2 id="clients-empty-title">Your client list starts here</h2><p>Add your first client to organize filings, secure documents, deadlines, and extraction work in one place.</p><button className="btn pri" onClick={() => setShowAdd(true)}><Icon name="users" size={14} />Add your first client</button></div>

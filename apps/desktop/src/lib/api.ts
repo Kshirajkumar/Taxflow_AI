@@ -1038,6 +1038,51 @@ export async function generateNoticeResponse(payload: {
 
 // ─── Health ────────────────────────────────────────────────────
 
+// ─── Message Templates ─────────────────────────────────────────
+
+export interface MessageTemplate {
+  id: string;
+  name: string;
+  cat: string;
+  body: string;
+  protected?: boolean;
+}
+
+export async function fetchTemplates(): Promise<MessageTemplate[]> {
+  const response = await authRequest<{ success: boolean; message?: string; data?: MessageTemplate[] }>(
+    `${API_BASE_URL}/templates`,
+    { method: 'GET', headers: authHeaders() },
+  );
+  if (!response.success) throw new Error(response.message || 'Could not load templates.');
+  return response.data || [];
+}
+
+export async function createTemplate(data: { name: string; cat: string; body: string }): Promise<MessageTemplate> {
+  const response = await authRequest<{ success: boolean; message?: string; data?: MessageTemplate }>(
+    `${API_BASE_URL}/templates`,
+    { method: 'POST', headers: authHeaders(), body: JSON.stringify(data) },
+  );
+  if (!response.success || !response.data) throw new Error(response.message || 'Could not create template.');
+  return response.data;
+}
+
+export async function updateTemplate(templateId: string, data: { name?: string; cat?: string; body?: string }): Promise<MessageTemplate> {
+  const response = await authRequest<{ success: boolean; message?: string; data?: MessageTemplate }>(
+    `${API_BASE_URL}/templates/${encodeURIComponent(templateId)}`,
+    { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(data) },
+  );
+  if (!response.success || !response.data) throw new Error(response.message || 'Could not update template.');
+  return response.data;
+}
+
+export async function deleteTemplate(templateId: string): Promise<void> {
+  const response = await authRequest<{ success: boolean; message?: string }>(
+    `${API_BASE_URL}/templates/${encodeURIComponent(templateId)}`,
+    { method: 'DELETE', headers: authHeaders() },
+  );
+  if (!response.success) throw new Error(response.message || 'Could not delete template.');
+}
+
 export async function getHealthStatus() {
   try {
     const res = await fetch(`${API_BASE_URL}/health`);

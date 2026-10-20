@@ -61,6 +61,7 @@ export interface Template {
   name: string;
   cat: string;
   body: string;
+  protected?: boolean;
 }
 
 export interface ChatMsg {

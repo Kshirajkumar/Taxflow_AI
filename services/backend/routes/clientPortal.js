@@ -108,7 +108,6 @@ router.get('/clients/:clientId/access', requireAuth, async (req, res) => {
       data: {
         enabled: Boolean(
           data?.active
-          && data.user_id
           && String(data.invited_email || '').toLowerCase() === String(client.email || '').trim().toLowerCase()
         ),
         email: client.email || null,

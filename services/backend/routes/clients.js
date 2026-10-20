@@ -192,12 +192,19 @@ router.post('/', async (req, res) => {
     if (filing_types !== undefined && !Array.isArray(filing_types)) {
       return res.status(400).json({ success: false, message: 'filing_types must be an array' });
     }
+    if (email !== undefined && email !== null && typeof email !== 'string') {
+      return res.status(400).json({ success: false, message: 'Client email must be a string.' });
+    }
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ success: false, message: 'Enter a valid client email address.' });
+    }
     const filingTypes = (filing_types || []).filter(type => typeof type === 'string' && type.trim()).map(type => type.trim());
 
     if (isConnected) {
       let { data, error } = await supabase
         .from('clients')
-        .insert([{ user_id: req.user.id, name: name.trim(), entity_type: entity_type || 'Individual', pan: pan || null, gstin: gstin || null, phone: phone || null, email: email || null, country_id: country_id || null, filing_type: filing_type || filingTypes[0] || 'ITR-1', filing_types: filingTypes, gstin_registered: gstin_registered ?? Boolean(gstin), notes: notes || null }])
+        .insert([{ user_id: req.user.id, name: name.trim(), entity_type: entity_type || 'Individual', pan: pan || null, gstin: gstin || null, phone: phone || null, email: normalizedEmail || null, country_id: country_id || null, filing_type: filing_type || filingTypes[0] || 'ITR-1', filing_types: filingTypes, gstin_registered: gstin_registered ?? Boolean(gstin), notes: notes || null }])
         .select('*, supported_countries(country_name,currency_code)')
         .single();
       if (error) throw error;
@@ -210,13 +217,47 @@ router.post('/', async (req, res) => {
         console.error(`[Clients] Vault folder creation failed for ${data.id}:`, vaultError);
         vault = { created: false, warning: 'Client saved, but the local vault folder could not be created. Check the configured vault path and permissions.' };
       }
+      // Auto-create portal access for the client's email so they can log in and upload documents
+      let portalAccess = null;
+      let portalAccessWarning = '';
+      if (normalizedEmail) {
+        try {
+          const { data: existingAccess, error: existingAccessError } = await supabase
+            .from('client_portal_access')
+            .select('id')
+            .eq('client_id', data.id)
+            .maybeSingle();
+          if (existingAccessError) throw existingAccessError;
+          if (!existingAccess) {
+            const { data: newAccess, error: accessError } = await supabase
+              .from('client_portal_access')
+              .insert({
+                client_id: data.id,
+                invited_email: normalizedEmail,
+                active: true,
+                invitation_pending: false,
+                created_by: req.user.id,
+              })
+              .select('id, invited_email, active, created_at')
+              .single();
+            if (accessError) throw accessError;
+            portalAccess = newAccess;
+          }
+        } catch (portalError) {
+          console.error(`[Clients] Auto portal access creation failed for ${data.id}:`, portalError.message);
+          portalAccessWarning = 'Client was saved, but portal access could not be enabled. Confirm the client portal database migration has been applied, then enable access from the client portal settings.';
+        }
+      } else {
+        portalAccessWarning = 'Client was saved without an email address, so client portal access is not enabled.';
+      }
+
       invalidateClientsCache(req.user.id);
-      return res.status(201).json({ success: true, source: 'supabase', data: { ...data, country_name: data.supported_countries?.country_name, currency_code: data.supported_countries?.currency_code }, vault });
+      return res.status(201).json({ success: true, source: 'supabase', data: { ...data, country_name: data.supported_countries?.country_name, currency_code: data.supported_countries?.currency_code, portalAccess, portalAccessWarning }, vault });
     }
 
     // Fallback
     const newClient = {
-      id: `demo_${Date.now()}`, name, entity_type, pan, gstin, phone, email,
+      id: `demo_${Date.now()}`, name, entity_type, pan, gstin, phone, email: normalizedEmail || null,
       status: 'Active', total_docs: 0, total_ai_calls: 0,
       created_at: new Date().toISOString()
     };
@@ -242,6 +283,16 @@ router.patch('/:id', async (req, res) => {
   try {
     const allowedFields = ['name', 'entity_type', 'pan', 'gstin', 'phone', 'email', 'country_id', 'filing_type', 'filing_types', 'gstin_registered', 'notes'];
     const updates = Object.fromEntries(Object.entries(req.body).filter(([key]) => allowedFields.includes(key)));
+    if (updates.email !== undefined) {
+      if (updates.email !== null && typeof updates.email !== 'string') {
+        return res.status(400).json({ success: false, message: 'Client email must be a string.' });
+      }
+      const normalizedEmail = typeof updates.email === 'string' ? updates.email.trim().toLowerCase() : '';
+      if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        return res.status(400).json({ success: false, message: 'Enter a valid client email address.' });
+      }
+      updates.email = normalizedEmail || null;
+    }
     if (updates.filing_types !== undefined && !Array.isArray(updates.filing_types)) {
       return res.status(400).json({ success: false, message: 'filing_types must be an array' });
     }
@@ -249,11 +300,53 @@ router.patch('/:id', async (req, res) => {
       return res.status(400).json({ success: false, message: 'No valid client fields were provided.' });
     }
     if (isConnected) {
+      const { data: currentClient, error: currentClientError } = await supabase
+        .from('clients')
+        .select('email')
+        .eq('id', req.params.id)
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+      if (currentClientError) throw currentClientError;
+      if (!currentClient) return res.status(404).json({ success: false, message: 'Client not found.' });
       const { data, error } = await supabase
         .from('clients').update(updates).eq('id', req.params.id).eq('user_id', req.user.id).select('*, supported_countries(country_name,currency_code)').single();
       if (error) throw error;
+      let portalAccessWarning = '';
+      const previousEmail = String(currentClient.email || '').trim().toLowerCase();
+      const updatedEmail = String(data.email || '').trim().toLowerCase();
+      if (updates.email !== undefined && previousEmail !== updatedEmail) {
+        try {
+          const { data: existingAccess, error: accessLookupError } = await supabase
+            .from('client_portal_access')
+            .select('id')
+            .eq('client_id', data.id)
+            .maybeSingle();
+          if (accessLookupError) throw accessLookupError;
+          if (existingAccess && updatedEmail) {
+            const { error: accessUpdateError } = await supabase
+              .from('client_portal_access')
+              .update({ invited_email: updatedEmail, user_id: null, active: true, invitation_pending: false })
+              .eq('id', existingAccess.id);
+            if (accessUpdateError) throw accessUpdateError;
+          } else if (existingAccess) {
+            const { error: accessRevokeError } = await supabase
+              .from('client_portal_access')
+              .update({ invited_email: null, user_id: null, active: false, invitation_pending: false })
+              .eq('id', existingAccess.id);
+            if (accessRevokeError) throw accessRevokeError;
+          } else if (updatedEmail) {
+            const { error: accessInsertError } = await supabase
+              .from('client_portal_access')
+              .insert({ client_id: data.id, invited_email: updatedEmail, active: true, invitation_pending: false, created_by: req.user.id });
+            if (accessInsertError) throw accessInsertError;
+          }
+        } catch (portalError) {
+          console.error(`[Clients] Portal access email update failed for ${data.id}:`, portalError.message);
+          portalAccessWarning = 'Client details were updated, but portal access could not be updated. Review this client’s portal access before sending an upload link.';
+        }
+      }
       invalidateClientsCache(req.user.id);
-      return res.json({ success: true, source: 'supabase', data: { ...data, country_name: data.supported_countries?.country_name, currency_code: data.supported_countries?.currency_code } });
+      return res.json({ success: true, source: 'supabase', data: { ...data, country_name: data.supported_countries?.country_name, currency_code: data.supported_countries?.currency_code, portalAccessWarning } });
     }
     const idx = fallbackClients.findIndex(c => c.id === req.params.id);
     if (idx === -1) return res.status(404).json({ success: false, message: 'Not found' });

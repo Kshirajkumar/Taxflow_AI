@@ -11,11 +11,11 @@ export const DOCS: InvoiceDoc[] = [];
 export const FILES: VaultFile[] = [];
 
 export const TPL: Template[] = [
-  { id: 'docs', name: 'GST documents request', cat: 'Utility', body: 'Hello {name}, please share your {period} sales & purchase invoices by {due} so we can file {filing} on time.' },
-  { id: 'pending', name: 'Missing document', cat: 'Utility', body: 'Hi {name}, we have not received the {doc} for {period} yet. Please send a photo or PDF right here on this chat.' },
-  { id: 'fee', name: 'Fee payment due', cat: 'Utility', body: 'Hi {name}, our fee invoice {inv} for {amt} is due on {feedue}. You can pay securely here: pay.example.com/{inv}' },
-  { id: 'filed', name: 'Filing completed', cat: 'Utility', body: 'Hi {name}, your {filing} has been filed. The acknowledgement is attached for your records.' },
-  { id: 'itr', name: 'ITR documents', cat: 'Utility', body: 'Hi {name}, to file your ITR please share Form 16 / 26AS, bank interest certificates, and investment proofs.' },
+  { id: 'docs', name: 'GST documents request', cat: 'Utility', body: 'Hello {name}, please upload your {period} sales & purchase invoices through your secure client portal: {portalLink}. Deadline: {due}.', protected: true },
+  { id: 'pending', name: 'Missing document', cat: 'Utility', body: 'Hi {name}, we have not received the {doc} for {period} yet. Please upload it through your secure client portal: {portalLink}.', protected: true },
+  { id: 'fee', name: 'Fee payment due', cat: 'Utility', body: 'Hi {name}, our fee invoice {inv} for {amt} is due on {feedue}. You can pay securely here: pay.example.com/{inv}. Upload documents securely after signing in: {portalLink}.' },
+  { id: 'filed', name: 'Filing completed', cat: 'Utility', body: 'Hi {name}, your {filing} has been filed. The acknowledgement is available from your practice. Upload any additional documents securely after signing in: {portalLink}.' },
+  { id: 'itr', name: 'ITR documents', cat: 'Utility', body: 'Hi {name}, to file your ITR please upload Form 16 / 26AS, bank interest certificates, and investment proofs through your secure client portal: {portalLink}.', protected: true },
 ];
 
 export const STEPS: Record<string, string[]> = {

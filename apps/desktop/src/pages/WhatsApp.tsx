@@ -13,13 +13,17 @@ import {
   fetchDocumentPreview,
   fetchWhatsAppStatus,
   sendWhatsAppManualMessage,
+  fetchTemplates,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
   type TelegramMessage,
   type TelegramPreview,
+  type MessageTemplate,
 } from '../lib/api';
 import { useAppState, useDispatch } from '../state/store';
 import { openWithDefaultApp, supportsNativeFileOpen } from '../lib/nativeFiles';
 import { nextMsgId } from '../lib/messageIds';
-import { TPL } from '../data/seed';
 import { missing } from '../lib/domain';
 import { fDate, fTime, fDT, until, agoT, dayDiff, vnow, toInput } from '../lib/format';
 import type { ChatMsg, Reminder } from '../types';
@@ -29,8 +33,18 @@ function dayLabel(d: Date) {
   return n === 0 ? 'Today' : n === 1 ? 'Yesterday' : fDate(d);
 }
 
-function fillTpl(body: string, name: string) {
-  return body.replace(/\{(\w+)\}/g, (_, k) => (k === 'name' ? name : k === 'period' ? 'August 2026' : k === 'due' ? '20 Sep 2026' : k === 'filing' ? 'GSTR-3B' : k === 'doc' ? 'bank statement' : '—'));
+function fillTpl(body: string, name: string, portalLink?: string) {
+  const link = portalLink || 'https://taxflowaiwebsite.vercel.app/portal';
+  const filled = body.replace(/\{(\w+)\}/g, (_, k) => {
+    if (k === 'name') return name;
+    if (k === 'period') return 'August 2026';
+    if (k === 'due') return '20 Sep 2026';
+    if (k === 'filing') return 'GSTR-3B';
+    if (k === 'doc') return 'bank statement';
+    if (k === 'portalLink') return link;
+    return '—';
+  });
+  return filled.includes(link) ? filled : `${filled.trim()}\n\nUpload documents securely after signing in: ${link}`;
 }
 
 
@@ -193,6 +207,13 @@ export function WhatsAppPage() {
   const [openingTelegramNativePreview, setOpeningTelegramNativePreview] = useState(false);
   const [telegramTemplatesOpen, setTelegramTemplatesOpen] = useState(false);
   const [composerExpanded, setComposerExpanded] = useState(false);
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templateError, setTemplateError] = useState('');
+  const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null);
+  const [templateEditorOpen, setTemplateEditorOpen] = useState(false);
+  const [templateForm, setTemplateForm] = useState({ name: '', cat: 'Utility', body: '' });
+  const [templateSaving, setTemplateSaving] = useState(false);
   const [contactsCollapsed, setContactsCollapsed] = useState(false);
   const [telegramDraft, setTelegramDraft] = useState('');
   const [telegramRequestId, setTelegramRequestId] = useState('');
@@ -440,6 +461,73 @@ export function WhatsAppPage() {
     });
     return () => { active = false; };
   }, []);
+
+  // Load message templates from backend
+  useEffect(() => {
+    let active = true;
+    async function loadTemplates() {
+      setTemplatesLoading(true);
+      setTemplateError('');
+      try {
+        const data = await fetchTemplates();
+        if (active) setTemplates(data);
+      } catch (error) {
+        if (active) {
+          setTemplateError(error instanceof Error ? error.message : 'Could not load templates.');
+        }
+      } finally {
+        if (active) setTemplatesLoading(false);
+      }
+    }
+    void loadTemplates();
+  }, []);
+
+  function startTemplateEdit(template?: MessageTemplate) {
+    setEditingTemplate(template || null);
+    setTemplateEditorOpen(true);
+    setTemplateForm(template
+      ? { name: template.name, cat: template.cat, body: template.body }
+      : { name: '', cat: 'Utility', body: '' });
+    setTemplateError('');
+  }
+
+  async function saveTemplate() {
+    if (templateSaving) return;
+    setTemplateSaving(true);
+    setTemplateError('');
+    try {
+      const payload = {
+        name: templateForm.name.trim(),
+        cat: templateForm.cat.trim() || 'Utility',
+        body: templateForm.body.trim(),
+      };
+      if (editingTemplate) {
+        const updated = await updateTemplate(editingTemplate.id, payload);
+        setTemplates((current) => current.map((item) => item.id === updated.id ? updated : item));
+      } else {
+        const created = await createTemplate(payload);
+        setTemplates((current) => [...current, created]);
+      }
+      setTemplateEditorOpen(false);
+      setEditingTemplate(null);
+      setTemplateForm({ name: '', cat: 'Utility', body: '' });
+    } catch (error) {
+      setTemplateError(error instanceof Error ? error.message : 'Could not save template.');
+    } finally {
+      setTemplateSaving(false);
+    }
+  }
+
+  async function removeTemplate(template: MessageTemplate) {
+    if (template.protected || !window.confirm(`Delete the "${template.name}" template?`)) return;
+    setTemplateError('');
+    try {
+      await deleteTemplate(template.id);
+      setTemplates((current) => current.filter((item) => item.id !== template.id));
+    } catch (error) {
+      setTemplateError(error instanceof Error ? error.message : 'Could not delete template.');
+    }
+  }
 
   async function connectTelegram() {
     if (telegramConnecting) return;
@@ -1177,7 +1265,7 @@ export function WhatsAppPage() {
                 <div className="wa-f telegram-composer">
                   <div className="wa-shortcuts" aria-label="Message shortcuts">
                     <span className="wa-shortcuts-label"><Icon name="bolt" size={11} />Shortcuts</span>
-                    {TPL.slice(0, 4).map((template) => (
+                    {templates.slice(0, 4).map((template) => (
                       <button
                         key={template.id}
                         type="button"
@@ -1214,7 +1302,7 @@ export function WhatsAppPage() {
                           <b>Message templates</b>
                           <small>Choose a prepared message to edit</small>
                         </div>
-                        {TPL.map((template) => (
+                        {templates.map((template) => (
                           <button
                             key={template.id}
                             type="button"
@@ -1281,12 +1369,12 @@ export function WhatsAppPage() {
                     aria-label="Insert template"
                     value=""
                     onChange={(event) => {
-                      const template = TPL.find((item) => item.id === event.target.value);
+                      const template = templates.find((item) => item.id === event.target.value);
                       if (template) setInput(fillTpl(template.body, c.contact.split(' ')[0]));
                     }}
                   >
                     <option value="">Insert template</option>
-                    {TPL.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                    {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
                   </select>
                 </label>
                 <textarea
@@ -1371,7 +1459,7 @@ export function WhatsAppPage() {
                         <div className="wa-reminder-client">
                           <span className="av" style={{ ['--t' as any]: reminderClient.tone }}>{reminderClient.short.slice(0, 2).toUpperCase()}</span>
                           <b>{reminderClient.name}</b>
-                          <span className="chip blue">{TPL.find((template) => template.id === reminder.tpl)?.name || 'Reminder'}</span>
+                          <span className="chip blue">{templates.find((template) => template.id === reminder.tpl)?.name || 'Reminder'}</span>
                         </div>
                         <p>{reminder.text}</p>
                         {reminderSendErrors[reminder.id] && <small className="wa-reminder-error">{reminderSendErrors[reminder.id]}</small>}
@@ -1394,15 +1482,56 @@ export function WhatsAppPage() {
       )}
 
       {s.ui.wa.tab === 'templates' && (
-        <div className="wa-template-grid" id="inbox-panel-templates" role="tabpanel" aria-labelledby="inbox-tab-templates">
-          {TPL.map((template) => (
+        <div id="inbox-panel-templates" role="tabpanel" aria-labelledby="inbox-tab-templates">
+          <div className="row" style={{ marginBottom: 14 }}>
+            <div>
+              <h2 style={{ margin: 0 }}>Message templates</h2>
+              <small>Templates include the authenticated client portal link. Do not send sensitive files through Telegram.</small>
+            </div>
+            <span className="sp" />
+            {!templateEditorOpen && <button className="btn pri" onClick={() => startTemplateEdit()}><Icon name="plus" size={14} />New template</button>}
+          </div>
+          {templateError && <div className="empty error" role="alert">{templateError}</div>}
+          {templateEditorOpen ? (
+            <section className="card" style={{ marginBottom: 16, padding: 16 }}>
+              <h3>{editingTemplate ? `Edit ${editingTemplate.name}` : 'Create template'}</h3>
+              <div className="mgrid">
+                <div className="mrow">
+                  <label className="f" htmlFor="template-name">Name</label>
+                  <input id="template-name" className="inp" maxLength={200} value={templateForm.name} onChange={(event) => setTemplateForm((current) => ({ ...current, name: event.target.value }))} />
+                </div>
+                <div className="mrow">
+                  <label className="f" htmlFor="template-category">Category</label>
+                  <input id="template-category" className="inp" maxLength={50} value={templateForm.cat} onChange={(event) => setTemplateForm((current) => ({ ...current, cat: event.target.value }))} />
+                </div>
+              </div>
+              <div className="mrow">
+                <label className="f" htmlFor="template-body">Message</label>
+                <textarea id="template-body" className="inp" rows={5} maxLength={5000} value={templateForm.body} onChange={(event) => setTemplateForm((current) => ({ ...current, body: event.target.value }))} />
+                <small>Use {'{name}'} for the client name. The secure portal link is added automatically.</small>
+              </div>
+              <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
+                <button className="btn gh" onClick={() => { setTemplateEditorOpen(false); setEditingTemplate(null); setTemplateError(''); }}>Cancel</button>
+                <button className="btn pri" onClick={() => void saveTemplate()} disabled={templateSaving || !templateForm.name.trim() || !templateForm.body.trim()}>
+                  {templateSaving ? 'Saving…' : 'Save template'}
+                </button>
+              </div>
+            </section>
+          ) : null}
+          {templatesLoading && <div className="empty" role="status">Loading templates…</div>}
+          {!templatesLoading && !templates.length && !templateError && <div className="empty">No templates are available yet.</div>}
+          <div className="wa-template-grid">
+          {templates.map((template) => (
             <article className="card tpl wa-template-card" key={template.id}>
               <div className="row">
                 <b>{template.name}</b><span className="sp" /><span className="chip blue">{template.cat}</span>
+                {template.protected && <span className="chip green">Protected</span>}
               </div>
               <p>{template.body}</p>
               <div className="wa-template-footer">
-                <span className="chip green"><Icon name="check" size={11} />Ready to use</span>
+                <button className="btn sm" onClick={() => startTemplateEdit(template)}>Edit</button>
+                <button className="btn sm gh" onClick={() => void removeTemplate(template)} disabled={template.protected} title={template.protected ? 'Core templates cannot be deleted' : 'Delete template'}>Delete</button>
+                <span className="sp" />
                 <button
                   className="btn sm"
                   onClick={() => {
@@ -1417,6 +1546,7 @@ export function WhatsAppPage() {
               </div>
             </article>
           ))}
+          </div>
         </div>
       )}
 
@@ -1432,22 +1562,22 @@ export function WhatsAppPage() {
         />
       )}
 
-      {showSchedule && <ScheduleModal onClose={() => setShowSchedule(false)} defaultClient={c.id} />}
+      {showSchedule && <ScheduleModal onClose={() => setShowSchedule(false)} defaultClient={c.id} templates={templates} />}
 
     </div>
   );
 }
 
-function ScheduleModal({ onClose, defaultClient }: { onClose: () => void; defaultClient: string }) {
+function ScheduleModal({ onClose, defaultClient, templates }: { onClose: () => void; defaultClient: string; templates: MessageTemplate[] }) {
   const s = useAppState();
   const dispatch = useDispatch();
   const [client, setClient] = useState(defaultClient);
-  const [tpl, setTpl] = useState('pending');
+  const [tpl, setTpl] = useState(templates[0]?.id || '');
   const d = new Date(vnow()); d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0);
   const [when, setWhen] = useState(toInput(d));
   const c = s.clients.find((x) => x.id === client)!;
-  const t = TPL.find((x) => x.id === tpl)!;
-  const [text, setText] = useState(fillTpl(t.body, c.contact.split(' ')[0]));
+  const t = templates.find((x) => x.id === tpl);
+  const [text, setText] = useState(t ? fillTpl(t.body, c.contact.split(' ')[0]) : '');
 
   return (
     <div className="modal" role="dialog" aria-label="Schedule reminder" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -1456,14 +1586,14 @@ function ScheduleModal({ onClose, defaultClient }: { onClose: () => void; defaul
         <div className="mgrid">
           <div className="mrow">
             <label className="f">Client</label>
-            <select className="sel" value={client} onChange={(e) => { setClient(e.target.value); const cc = s.clients.find((x) => x.id === e.target.value)!; setText(fillTpl(t.body, cc.contact.split(' ')[0])); }}>
+            <select className="sel" value={client} onChange={(e) => { setClient(e.target.value); const cc = s.clients.find((x) => x.id === e.target.value)!; const selectedTemplate = templates.find((item) => item.id === tpl); if (selectedTemplate) setText(fillTpl(selectedTemplate.body, cc.contact.split(' ')[0])); }}>
               {s.clients.map((cl) => <option key={cl.id} value={cl.id}>{cl.name}</option>)}
             </select>
           </div>
           <div className="mrow">
             <label className="f">Template</label>
-            <select className="sel" value={tpl} onChange={(e) => { setTpl(e.target.value); const tt = TPL.find((x) => x.id === e.target.value)!; setText(fillTpl(tt.body, c.contact.split(' ')[0])); }}>
-              {TPL.map((tt) => <option key={tt.id} value={tt.id}>{tt.name}</option>)}
+            <select className="sel" value={tpl} onChange={(e) => { setTpl(e.target.value); const tt = templates.find((x) => x.id === e.target.value); if (tt) setText(fillTpl(tt.body, c.contact.split(' ')[0])); }}>
+              {templates.map((tt) => <option key={tt.id} value={tt.id}>{tt.name}</option>)}
             </select>
           </div>
           <div className="mrow"><label className="f">Send on</label><input className="inp" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></div>
@@ -1473,6 +1603,7 @@ function ScheduleModal({ onClose, defaultClient }: { onClose: () => void; defaul
           <button className="btn gh" onClick={onClose}>Cancel</button>
           <button
             className="btn pri"
+            disabled={!templates.length || !text.trim()}
             onClick={() => {
               const at = new Date(when);
               const reminder: Reminder = { id: 'r' + Date.now(), client, tpl, at, repeat: 'Once', approve: true, status: 'scheduled', text };
