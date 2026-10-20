@@ -163,6 +163,33 @@ test('portal identities cannot access staff routes even without an active client
   }
 });
 
+test('staff routes do not require a client portal access-table lookup', async () => {
+  const previousGetUser = database.supabase.auth.getUser;
+  const previousFrom = database.supabase.from;
+  database.supabase.from = () => {
+    throw new Error('Staff auth must not query the client portal table.');
+  };
+  database.supabase.auth.getUser = async () => ({
+    data: { user: { id: 'staff-user-1', email: 'staff@example.com', app_metadata: {} } },
+    error: null,
+  });
+  const app = express();
+  app.get('/staff', requireAuth, (req, res) => res.json({ success: true, userId: req.user.id }));
+
+  try {
+    await withServer(app, async (origin) => {
+      const response = await fetch(`${origin}/staff`, {
+        headers: { authorization: 'Bearer staff-token' },
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { success: true, userId: 'staff-user-1' });
+    });
+  } finally {
+    database.supabase.auth.getUser = previousGetUser;
+    database.supabase.from = previousFrom;
+  }
+});
+
 test('template listing seeds the protected secure portal invitation', async () => {
   const previousFrom = database.supabase.from;
   const previousGetUser = database.supabase.auth.getUser;

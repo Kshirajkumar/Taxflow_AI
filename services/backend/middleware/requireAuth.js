@@ -28,19 +28,6 @@ async function requireAuth(req, res, next) {
     return res.status(403).json({ success: false, message: 'Client portal accounts cannot access staff services.' });
   }
 
-  const { data: portalAccess, error: portalAccessError } = await supabase
-    .from('client_portal_access')
-    .select('id')
-    .eq('user_id', data.user.id)
-    .maybeSingle();
-  if (portalAccessError) {
-    console.error('[Auth] Client portal identity check failed:', portalAccessError.message);
-    return res.status(503).json({ success: false, message: 'Staff access could not be verified. Please try again shortly.' });
-  }
-  if (portalAccess) {
-    return res.status(403).json({ success: false, message: 'Client portal accounts cannot access staff services.' });
-  }
-
   req.user = data.user;
   req.accessToken = token;
   next();
