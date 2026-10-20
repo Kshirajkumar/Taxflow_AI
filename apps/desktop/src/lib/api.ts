@@ -511,6 +511,7 @@ export async function acknowledgeLocalDocumentSync(deviceId: string, documentId:
 
 export interface ClientPortalAccess {
   enabled: boolean;
+  linked: boolean;
   email: string | null;
   createdAt: string | null;
 }
@@ -530,17 +531,17 @@ export async function fetchClientPortalAccess(clientId: string): Promise<ClientP
   return response.data;
 }
 
-export async function inviteClientToPortal(clientId: string): Promise<{ email: string }> {
+export async function inviteClientToPortal(clientId: string): Promise<{ email: string; link: string; expiresAt: string }> {
   const response = await authRequest<{
     success: boolean;
     message?: string;
-    data?: { email: string };
+    data?: { email: string; link: string; expiresAt: string };
   }>(
     `${API_BASE_URL}/client-portal/clients/${encodeURIComponent(clientId)}/invite`,
     { method: 'POST', headers: authHeaders(), body: '{}' },
   );
   if (!response.success || !response.data) {
-    throw new Error(response.message || 'Could not send the client portal invitation.');
+    throw new Error(response.message || 'Could not create the client portal invitation.');
   }
   return response.data;
 }
@@ -1042,6 +1043,7 @@ export async function generateNoticeResponse(payload: {
 
 export interface MessageTemplate {
   id: string;
+  template_key?: string | null;
   name: string;
   cat: string;
   body: string;

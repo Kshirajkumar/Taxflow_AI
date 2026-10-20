@@ -17,6 +17,7 @@ import {
   createTemplate,
   updateTemplate,
   deleteTemplate,
+  inviteClientToPortal,
   type TelegramMessage,
   type TelegramPreview,
   type MessageTemplate,
@@ -45,6 +46,14 @@ function fillTpl(body: string, name: string, portalLink?: string) {
     return '—';
   });
   return filled.includes(link) ? filled : `${filled.trim()}\n\nUpload documents securely after signing in: ${link}`;
+}
+
+async function fillPortalTemplate(template: MessageTemplate, client: { id: string; contact: string }) {
+  if (template.template_key !== 'portal_invite' || !template.body.includes('{portalLink}')) {
+    return fillTpl(template.body, client.contact.split(' ')[0]);
+  }
+  const invitation = await inviteClientToPortal(client.id);
+  return fillTpl(template.body, client.contact.split(' ')[0], invitation.link);
 }
 
 
@@ -211,6 +220,8 @@ export function WhatsAppPage() {
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templateError, setTemplateError] = useState('');
+  const [templateApplyError, setTemplateApplyError] = useState('');
+  const [applyingTemplateId, setApplyingTemplateId] = useState('');
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null);
   const [templateEditorOpen, setTemplateEditorOpen] = useState(false);
   const [templateForm, setTemplateForm] = useState({ name: '', cat: 'Utility', body: '' });
@@ -492,6 +503,34 @@ export function WhatsAppPage() {
       ? { name: template.name, cat: template.cat, body: template.body }
       : { name: '', cat: 'Utility', body: '' });
     setTemplateError('');
+  }
+
+  async function applyTemplate(template: MessageTemplate, openChats = false) {
+    if (applyingTemplateId || !c) return;
+    setApplyingTemplateId(template.id);
+    setTemplateError('');
+    setTemplateApplyError('');
+    try {
+      const message = await fillPortalTemplate(template, c);
+      setInput(message);
+      if (openChats) {
+        setComposerExpanded(true);
+        dispatch({ type: 'WA_TAB', tab: 'chats' });
+        scrollThreadToLatest('smooth');
+      }
+      requestAnimationFrame(() => {
+        if (channel === 'telegram') telegramMessageInputRef.current?.focus();
+        else whatsAppMessageInputRef.current?.focus();
+      });
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : 'Could not create a secure portal invitation. Please try again.';
+      setTemplateError(message);
+      setTemplateApplyError(message);
+    } finally {
+      setApplyingTemplateId('');
+    }
   }
 
   async function saveTemplate() {
@@ -807,7 +846,13 @@ export function WhatsAppPage() {
     setSendingReminderId(reminder.id);
     setReminderSendErrors((errors) => ({ ...errors, [reminder.id]: '' }));
     try {
-      await sendWhatsAppManualMessage(reminderClient.id, reminderClient.phone, reminder.text);
+      const reminderTemplate = templates.find((template) => template.id === reminder.tpl);
+      let message = reminder.text;
+      if (reminderTemplate?.template_key === 'portal_invite' && reminderTemplate.body.includes('{portalLink}')) {
+        const invitation = await inviteClientToPortal(reminderClient.id);
+        message = message.replace(/https:\/\/taxflowaiwebsite\.vercel\.app\/portal/g, invitation.link);
+      }
+      await sendWhatsAppManualMessage(reminderClient.id, reminderClient.phone, message);
       dispatch({ type: 'REM_SEND_NOW', id: reminder.id });
     } catch (error) {
       setReminderSendErrors((errors) => ({
@@ -918,6 +963,7 @@ export function WhatsAppPage() {
                   aria-pressed={isSelected}
                   title={cl.name}
                   onClick={() => {
+                    setTemplateApplyError('');
                     dispatch({ type: 'WA_CLIENT', id: cl.id });
                   }}
                 >
@@ -989,6 +1035,13 @@ export function WhatsAppPage() {
                 shouldFollowThreadRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96;
               }}
             >
+              {templateApplyError && (
+                <div className="empty error" role="alert">
+                  <b>Secure portal invitation could not be prepared</b>
+                  <span>{templateApplyError}</span>
+                  <button className="btn sm" onClick={() => setTemplateApplyError('')}>Dismiss</button>
+                </div>
+              )}
               {channel === 'telegram' && isTelegramConversationLoading && (
                 <div className="tg-conversation-skeleton" role="status" aria-live="polite" aria-label={`Loading Telegram conversation with ${c.name}`}>
                   <div className="tg-skeleton-heading"><span className="tg-skeleton-dot" /><span>Loading conversation history</span></div>
@@ -1302,14 +1355,11 @@ export function WhatsAppPage() {
                         key={template.id}
                         type="button"
                         className="wa-shortcut"
-                        onClick={() => {
-                          setInput(fillTpl(template.body, c.contact.split(' ')[0]));
-                          requestAnimationFrame(() => telegramMessageInputRef.current?.focus());
-                        }}
-                        disabled={telegramSending || !!pendingTelegramMsg || isEditingPending}
+                        onClick={() => void applyTemplate(template)}
+                        disabled={telegramSending || !!pendingTelegramMsg || isEditingPending || !!applyingTemplateId}
                         title={`Insert ${template.name}`}
                       >
-                        {template.name}
+                        {applyingTemplateId === template.id ? 'Preparing invite…' : template.name}
                       </button>
                     ))}
                   </div>
@@ -1341,13 +1391,13 @@ export function WhatsAppPage() {
                             role="menuitem"
                             className="telegram-template-option"
                             onClick={() => {
-                              setInput(fillTpl(template.body, c.contact.split(' ')[0]));
+                              void applyTemplate(template);
                               setTelegramTemplatesOpen(false);
-                              requestAnimationFrame(() => telegramMessageInputRef.current?.focus());
                             }}
+                            disabled={!!applyingTemplateId}
                           >
                             <span className="telegram-template-option-icon"><Icon name="file" size={14} /></span>
-                            <span><b>{template.name}</b><small>{fillTpl(template.body, c.contact.split(' ')[0])}</small></span>
+                            <span><b>{applyingTemplateId === template.id ? 'Preparing invite…' : template.name}</b><small>{fillTpl(template.body, c.contact.split(' ')[0])}</small></span>
                             <span className="chip blue">{template.cat}</span>
                           </button>
                         ))}
@@ -1402,8 +1452,9 @@ export function WhatsAppPage() {
                     value=""
                     onChange={(event) => {
                       const template = templates.find((item) => item.id === event.target.value);
-                      if (template) setInput(fillTpl(template.body, c.contact.split(' ')[0]));
+                      if (template) void applyTemplate(template);
                     }}
+                    disabled={!!applyingTemplateId}
                   >
                     <option value="">Insert template</option>
                     {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
@@ -1518,7 +1569,7 @@ export function WhatsAppPage() {
           <div className="row" style={{ marginBottom: 14 }}>
             <div>
               <h2 style={{ margin: 0 }}>Message templates</h2>
-              <small>Templates include the authenticated client portal link. Do not send sensitive files through Telegram.</small>
+              <small>Use the protected invitation template to create a private client-specific link. Keep sensitive files out of Telegram.</small>
             </div>
             <span className="sp" />
             {!templateEditorOpen && <button className="btn pri" onClick={() => startTemplateEdit()}><Icon name="plus" size={14} />New template</button>}
@@ -1540,7 +1591,7 @@ export function WhatsAppPage() {
               <div className="mrow">
                 <label className="f" htmlFor="template-body">Message</label>
                 <textarea id="template-body" className="inp" rows={5} maxLength={5000} value={templateForm.body} onChange={(event) => setTemplateForm((current) => ({ ...current, body: event.target.value }))} />
-                <small>Use {'{name}'} for the client name. The secure portal link is added automatically.</small>
+                <small>Use {'{name}'} for the client name. Portal links are added automatically; the protected invitation template creates a private one-time link for the selected client.</small>
               </div>
               <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
                 <button className="btn gh" onClick={() => { setTemplateEditorOpen(false); setEditingTemplate(null); setTemplateError(''); }}>Cancel</button>
@@ -1566,14 +1617,10 @@ export function WhatsAppPage() {
                 <span className="sp" />
                 <button
                   className="btn sm"
-                  onClick={() => {
-                    setInput(fillTpl(template.body, c.contact.split(' ')[0]));
-                    setComposerExpanded(true);
-                    dispatch({ type: 'WA_TAB', tab: 'chats' });
-                    scrollThreadToLatest('smooth');
-                  }}
+                  onClick={() => void applyTemplate(template, true)}
+                  disabled={!!applyingTemplateId}
                 >
-                  Use template
+                  {applyingTemplateId === template.id ? 'Preparing invite…' : 'Use template'}
                 </button>
               </div>
             </article>

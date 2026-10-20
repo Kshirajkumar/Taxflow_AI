@@ -24,11 +24,10 @@ async function requireClientPortalAuth(req, res, next) {
     if (authError || !user) {
       return res.status(401).json({ success: false, message: 'Your portal session is invalid or has expired.' });
     }
-    if (!user.email_confirmed_at) {
-      return res.status(403).json({ success: false, message: 'Verify your email address before using the client portal.' });
+    if (user.app_metadata?.taxflow_client_portal !== true) {
+      return res.status(403).json({ success: false, message: 'This account is not a client portal account.' });
     }
-
-    let { data: access, error: accessError } = await supabase
+    const { data: access, error: accessError } = await supabase
       .from('client_portal_access')
       .select('client_id, invited_email, user_id')
       .eq('user_id', user.id)
@@ -36,46 +35,8 @@ async function requireClientPortalAuth(req, res, next) {
       .maybeSingle();
     if (accessError) throw accessError;
 
-    // Auto-bind: if no access by user_id, match by invited_email (client created via desktop app)
     if (!access) {
-      const { data: emailAccessMatches, error: emailAccessError } = await supabase
-        .from('client_portal_access')
-        .select('id, client_id, invited_email, user_id')
-        .eq('invited_email', String(user.email || '').trim().toLowerCase())
-        .eq('active', true)
-        .limit(2);
-      if (emailAccessError) throw emailAccessError;
-      if ((emailAccessMatches || []).length > 1) {
-        return res.status(403).json({ success: false, message: 'This email is assigned to multiple client records. Contact the practice to resolve the portal access.' });
-      }
-      const emailAccess = (emailAccessMatches || [])[0] || null;
-      if (emailAccess?.user_id) {
-        return res.status(403).json({ success: false, message: 'This portal access is already linked to a different account.' });
-      }
-      if (emailAccess) {
-        const { error: bindError } = await supabase
-          .from('client_portal_access')
-          .update({ user_id: user.id })
-          .eq('id', emailAccess.id)
-          .is('user_id', null);
-        if (bindError) throw bindError;
-        const { data: boundAccess, error: verifyBindError } = await supabase
-          .from('client_portal_access')
-          .select('client_id, invited_email, user_id')
-          .eq('id', emailAccess.id)
-          .eq('user_id', user.id)
-          .eq('active', true)
-          .maybeSingle();
-        if (verifyBindError) throw verifyBindError;
-        if (!boundAccess) {
-          return res.status(403).json({ success: false, message: 'This portal invitation has already been claimed by another account.' });
-        }
-        access = boundAccess;
-      }
-    }
-
-    if (!access) {
-      return res.status(403).json({ success: false, message: 'This account does not have active client portal access.' });
+      return res.status(403).json({ success: false, message: 'This account has no active portal access. Ask your CA for a client-specific invitation link.' });
     }
     if (String(user.email || '').trim().toLowerCase() !== String(access.invited_email || '').trim().toLowerCase()) {
       return res.status(403).json({ success: false, message: 'This account no longer matches the client’s portal email. Contact the practice.' });

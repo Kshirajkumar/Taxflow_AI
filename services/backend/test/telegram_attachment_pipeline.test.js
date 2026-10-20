@@ -12,7 +12,7 @@ const database = require('../db/supabase');
 const { getStorageObjectKey } = require('../lib/documentStorage');
 const telegramRouter = require('../routes/telegram');
 
-const tables = { clients: [], client_portal_access: [], telegram_link_tokens: [], telegram_messages: [], documents_metadata: [], document_sync_receipts: [] };
+const tables = { clients: [], client_portal_access: [], client_portal_invites: [], telegram_link_tokens: [], telegram_messages: [], documents_metadata: [], document_sync_receipts: [] };
 
 function matches(row, filters) {
   return filters.every(({ field, operator, value }) => {
@@ -292,12 +292,13 @@ test('Telegram sends a secure portal welcome once when a client first starts the
   let failFirstWelcome = true;
   const rawToken = 'first-start-token';
   Object.values(tables).forEach((rows) => { rows.length = 0; });
-  tables.clients.push({ id: 'client-welcome', name: 'Welcome Client', telegram_chat_id: null, telegram_user_id: null });
+  tables.clients.push({ id: 'client-welcome', name: 'Welcome Client', email: 'client@example.com', status: 'Active', telegram_chat_id: null, telegram_user_id: null });
   tables.telegram_link_tokens.push({
     id: 'link-welcome',
     client_id: 'client-welcome',
     token_hash: crypto.createHash('sha256').update(rawToken).digest('hex'),
     expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    created_by: 'staff-1',
     consumed_at: null,
   });
   database.supabase.from = (table) => fakeQuery(table);
@@ -359,7 +360,8 @@ test('Telegram sends a secure portal welcome once when a client first starts the
   assert.match(telegramCalls[0].body.text, /do not send tax, financial, identity, or other sensitive documents/i);
   assert.match(telegramCalls[0].body.text, /https:\/\/taxflow\.example\/portal/);
   assert.match(telegramCalls[0].body.text, /same email address you gave your CA/i);
-  assert.match(telegramCalls[0].body.text, /Email me a sign-in link/);
+  assert.match(telegramCalls[0].body.text, /Create a password the first time/);
+  assert.match(telegramCalls[0].body.text, /#invite=/);
   assert.equal(tables.telegram_messages.length, 1);
   assert.equal(tables.telegram_messages[0].delivery_status, 'failed');
 

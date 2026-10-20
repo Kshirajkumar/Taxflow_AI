@@ -3,6 +3,11 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
+const {
+  createClientPortalInvite,
+  deriveTelegramPortalInviteToken,
+  hashInviteToken,
+} = require('../lib/clientPortalInvites');
 const { requireAuth } = require('../middleware/requireAuth');
 const { assertOwnedClient } = require('../lib/ownership');
 const { saveFileToVault, deleteVaultFile } = require('../vault/vaultManager');
@@ -498,7 +503,10 @@ async function telegramCall(method, payload) {
   return result.result;
 }
 
-function getClientPortalLink() {
+function getClientPortalLink(inviteToken) {
+  if (typeof inviteToken !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(inviteToken)) {
+    throw new Error('A valid client portal invitation is required.');
+  }
   const configuredUrl = String(process.env.CLIENT_PORTAL_URL || '').trim();
   if (!configuredUrl) throw new Error('CLIENT_PORTAL_URL is not configured.');
   const portalUrl = new URL(configuredUrl);
@@ -508,16 +516,16 @@ function getClientPortalLink() {
   if (portalUrl.username || portalUrl.password || portalUrl.search || portalUrl.hash || portalUrl.pathname !== '/') {
     throw new Error('CLIENT_PORTAL_URL must be the website origin without a path or credentials.');
   }
-  return `${portalUrl.origin}/portal`;
+  return `${portalUrl.origin}/portal#invite=${encodeURIComponent(inviteToken)}`;
 }
 
-function createTelegramWelcome(clientName) {
+function createTelegramWelcome(clientName, inviteToken) {
   let portalInstructions;
   try {
-    portalInstructions = `1. Open the secure portal: ${getClientPortalLink()}\n2. Enter the same email address you gave your CA.\n3. Select “Email me a sign-in link”. Open the email and tap its sign-in link.\n4. Back in the portal, choose your documents and upload them.`;
+    portalInstructions = `1. Open your private portal invitation: ${getClientPortalLink(inviteToken)}\n2. Use the same email address you gave your CA.\n3. Create a password the first time. On future visits, choose “I already have an account” and sign in with that email and password.\n4. Choose your documents and upload them securely.`;
   } catch (error) {
     console.error('[Telegram] Could not add the client portal link to the welcome message:', error.message);
-    portalInstructions = '1. Ask your CA for the secure client portal website address.\n2. Open it and enter the same email address you gave your CA.\n3. Select “Email me a sign-in link”, then open the email and tap its sign-in link.\n4. Back in the portal, choose your documents and upload them.';
+    portalInstructions = '1. Ask your CA to resend your secure client portal invitation.\n2. Open it and use the same email address you gave your CA.\n3. Create a password the first time; use that password for future visits.\n4. Choose your documents and upload them securely.';
   }
   return [
     `Welcome to TaxFlow, ${clientName}! Your private Telegram chat is connected.`,
@@ -527,12 +535,36 @@ function createTelegramWelcome(clientName) {
     'Upload documents in 4 easy steps:',
     portalInstructions,
     '',
-    'Use exactly the email address your CA has on file. If you cannot sign in or do not receive the email, check your spam folder or contact your CA. Never share your sign-in link or email verification code with anyone.'
+    'Use exactly the email address your CA has on file. Your invitation is private and should not be forwarded. If you lose it or cannot access your account, contact your CA for help.'
   ].join('\n');
 }
 
-async function sendTelegramWelcome(client, chatId) {
-  const body = createTelegramWelcome(client.name);
+async function sendTelegramWelcome(client, chatId, telegramToken, createdBy) {
+  let portalInviteToken = deriveTelegramPortalInviteToken(telegramToken);
+  const { data: invitation, error: invitationLookupError } = await supabase.from('client_portal_invites')
+    .select('id,invited_email,expires_at,consumed_at,revoked_at')
+    .eq('token_hash', hashInviteToken(portalInviteToken))
+    .maybeSingle();
+  if (invitationLookupError) throw invitationLookupError;
+  if (!invitation) {
+    if (!client.email || client.status !== 'Active') {
+      throw new Error('An active client email is required to create the portal invitation.');
+    }
+    await createClientPortalInvite({
+      clientId: client.id,
+      email: client.email,
+      createdBy,
+      token: portalInviteToken,
+    });
+  } else if (
+    invitation.consumed_at
+    || invitation.revoked_at
+    || new Date(invitation.expires_at).getTime() <= Date.now()
+    || String(invitation.invited_email || '').trim().toLowerCase() !== String(client.email || '').trim().toLowerCase()
+  ) {
+    portalInviteToken = null;
+  }
+  const body = createTelegramWelcome(client.name, portalInviteToken);
   const providerMessageId = `taxflow:welcome:${client.id}:${chatId}`;
   let { data: queuedMessage, error: queueError } = await supabase.from('telegram_messages')
     .insert({
@@ -704,13 +736,43 @@ router.get('/status', requireAuth, async (_req, res) => {
 router.post('/clients/:clientId/link', requireAuth, async (req, res) => {
   try {
     if (!isConnected || !(await assertOwnedClient(req.user.id, req.params.clientId))) return res.status(404).json({ success: false, message: 'Client not found.' });
+    const { data: client, error: clientError } = await supabase.from('clients')
+      .select('id,email,status')
+      .eq('id', req.params.clientId)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+    if (clientError) throw clientError;
+    if (!client) return res.status(404).json({ success: false, message: 'Client not found.' });
+    if (client.status !== 'Active') return res.status(422).json({ success: false, message: 'Only active clients can be connected to Telegram.' });
+    const clientEmail = String(client.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmail) || clientEmail.length > 254) {
+      return res.status(422).json({ success: false, message: 'Add a valid client email address before creating their secure portal invitation.' });
+    }
     const username = botUsername() || (await telegramCall('getMe', {})).username;
     const raw = crypto.randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    const { error } = await supabase.from('telegram_link_tokens').insert({ client_id: req.params.clientId, token_hash: hash(raw), expires_at: expiresAt, created_by: req.user.id });
+    const telegramTokenHash = hash(raw);
+    const { error } = await supabase.from('telegram_link_tokens').insert({ client_id: req.params.clientId, token_hash: telegramTokenHash, expires_at: expiresAt, created_by: req.user.id });
     if (error) throw error;
+    try {
+      await createClientPortalInvite({
+        clientId: client.id,
+        email: clientEmail,
+        createdBy: req.user.id,
+        token: deriveTelegramPortalInviteToken(raw),
+      });
+    } catch (inviteError) {
+      const { error: cleanupError } = await supabase.from('telegram_link_tokens')
+        .delete()
+        .eq('token_hash', telegramTokenHash);
+      if (cleanupError) console.error('[Telegram] Failed to remove the incomplete client link token:', cleanupError.message);
+      throw inviteError;
+    }
     return res.status(201).json({ success: true, link: `https://t.me/${username}?start=${encodeURIComponent(raw)}`, expiresAt });
-  } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
+  } catch (error) {
+    console.error('[Telegram] Could not create a client connection invitation:', error.message);
+    return res.status(500).json({ success: false, message: 'Could not create the secure client connection invitation. Please try again.' });
+  }
 });
 
 router.get('/search', requireAuth, async (req, res) => {
@@ -1066,13 +1128,13 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
       const token = text.replace(/^\/start(?:@[^\s]+)?\s*/i, '').trim();
       if (!token || message.chat.type !== 'private') return res.status(200).json({ ok: true, ignored: true });
       const { data: link, error: linkLookupError } = await supabase.from('telegram_link_tokens')
-        .select('id,client_id,consumed_at,expires_at')
+        .select('id,client_id,created_by,consumed_at,expires_at')
         .eq('token_hash', hash(token))
         .maybeSingle();
       if (linkLookupError) throw linkLookupError;
       if (!link) return res.status(200).json({ ok: true, ignored: true });
       const { data: client, error: clientLookupError } = await supabase.from('clients')
-        .select('id,name,telegram_chat_id,telegram_user_id')
+        .select('id,name,email,status,telegram_chat_id,telegram_user_id')
         .eq('id', link.client_id)
         .single();
       if (clientLookupError) throw clientLookupError;
@@ -1083,7 +1145,7 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
           String(client.telegram_chat_id || '') === String(message.chat.id)
           && String(client.telegram_user_id || '') === String(telegramUserId || '')
         ) {
-          await sendTelegramWelcome(client, message.chat.id);
+          await sendTelegramWelcome(client, message.chat.id, token, link.created_by);
           return res.status(200).json({ ok: true, duplicate: true });
         }
         return res.status(200).json({ ok: true, ignored: true });
@@ -1100,7 +1162,7 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
         if (restoreError) console.error('[Telegram] failed to restore consumed link token:', restoreError.message);
         throw linkError;
       }
-      await sendTelegramWelcome(client, message.chat.id);
+      await sendTelegramWelcome(client, message.chat.id, token, link.created_by);
       return res.status(200).json({ ok: true });
     }
     const attachment = getTelegramAttachment(message);

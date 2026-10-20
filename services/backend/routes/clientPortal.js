@@ -8,6 +8,12 @@ const { requireClientPortalAuth } = require('../middleware/requireClientPortalAu
 const { assertOwnedClient } = require('../lib/ownership');
 const { consume, RateLimiterUnavailableError } = require('../lib/rateLimiter');
 const {
+  createClientPortalInvite,
+  deriveTelegramPortalInviteToken,
+  hashInviteToken,
+  revokeClientPortalInvites,
+} = require('../lib/clientPortalInvites');
+const {
   getStorageBucket,
   getStorageObjectKey,
   normalizeMimeType,
@@ -15,6 +21,7 @@ const {
 } = require('../lib/documentStorage');
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const PORTAL_INVITE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{40,64}$/;
 const FILE_TYPES = new Map([
   ['.pdf', { fileType: 'PDF', mimeTypes: ['application/pdf'], signature: buffer => buffer.subarray(0, 5).toString('ascii') === '%PDF-' }],
   ['.png', { fileType: 'PNG', mimeTypes: ['image/png'], signature: buffer => buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) }],
@@ -51,6 +58,93 @@ function normalizePortalFileName(value) {
     throw new Error('Choose a file with a name under 180 characters.');
   }
   return baseName;
+}
+
+function normalizePortalEmail(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function isValidPortalEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254;
+}
+
+async function consumeInvitationRateLimit(req, res, purpose) {
+  try {
+    const result = await consume(`client-portal:${purpose}:${req.ip || 'unknown'}`, 12, 60 * 60);
+    if (result.allowed) return true;
+    res.set('Retry-After', String(result.retryAfterSeconds));
+    res.status(429).json({ success: false, message: 'Too many attempts. Please wait a while and try again.' });
+    return false;
+  } catch (error) {
+    if (error instanceof RateLimiterUnavailableError) {
+      res.status(error.status).json({ success: false, message: 'Portal sign-in protection is temporarily unavailable. Please try again shortly.' });
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function findValidPortalInvite(token, email) {
+  if (typeof token !== 'string' || !PORTAL_INVITE_TOKEN_PATTERN.test(token) || !isValidPortalEmail(email)) return null;
+  const { data: invite, error: inviteError } = await supabase.from('client_portal_invites')
+    .select('id, client_id, invited_email, expires_at, consumed_at, revoked_at')
+    .eq('token_hash', hashInviteToken(token))
+    .maybeSingle();
+  if (inviteError) throw inviteError;
+  if (
+    !invite
+    || invite.consumed_at
+    || invite.revoked_at
+    || new Date(invite.expires_at).getTime() <= Date.now()
+    || normalizePortalEmail(invite.invited_email) !== email
+  ) return null;
+
+  const { data: client, error: clientError } = await supabase.from('clients')
+    .select('id, email, status')
+    .eq('id', invite.client_id)
+    .maybeSingle();
+  if (clientError) throw clientError;
+  if (
+    !client
+    || client.status !== 'Active'
+    || normalizePortalEmail(client.email) !== email
+  ) return null;
+
+  return invite;
+}
+
+async function claimPortalInvite(user, token) {
+  if (
+    !user?.id
+    || user.app_metadata?.taxflow_client_portal !== true
+    || typeof token !== 'string'
+    || !PORTAL_INVITE_TOKEN_PATTERN.test(token)
+  ) {
+    return { error: 'This invitation cannot be used with this account.' };
+  }
+  const { data, error } = await supabase.rpc('claim_client_portal_invite', {
+    p_user_id: user.id,
+    p_token_hash: hashInviteToken(token),
+  });
+  if (error) {
+    console.error('[Client Portal] Invitation claim failed:', error.message);
+    return { error: 'This invitation is invalid, expired, already used, or does not match this account.' };
+  }
+  const claimed = Array.isArray(data) ? data[0] : data;
+  if (!claimed?.client_id || normalizePortalEmail(claimed.invited_email) !== normalizePortalEmail(user.email)) {
+    return { error: 'This invitation could not be connected to the client account.' };
+  }
+  return { data: claimed };
+}
+
+async function getAuthenticatedPortalUser(req) {
+  const authorization = req.headers.authorization || '';
+  if (!authorization.startsWith('Bearer ')) return null;
+  const token = authorization.slice('Bearer '.length).trim();
+  if (!token) return null;
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data?.user) return null;
+  return data.user;
 }
 
 function validateFile(buffer, fileName, declaredMimeType) {
@@ -110,6 +204,7 @@ router.get('/clients/:clientId/access', requireAuth, async (req, res) => {
           data?.active
           && String(data.invited_email || '').toLowerCase() === String(client.email || '').trim().toLowerCase()
         ),
+        linked: Boolean(data?.active && data.user_id),
         email: client.email || null,
         createdAt: data?.created_at || null
       }
@@ -120,104 +215,172 @@ router.get('/clients/:clientId/access', requireAuth, async (req, res) => {
   }
 });
 
+router.post('/invitations/validate', async (req, res) => {
+  try {
+    if (!isConnected || !supabase) {
+      return res.status(503).json({ success: false, message: 'Client portal enrollment is temporarily unavailable.' });
+    }
+    if (!(await consumeInvitationRateLimit(req, res, 'validate'))) return;
+    const token = req.body?.token;
+    const email = normalizePortalEmail(req.body?.email);
+    const invite = await findValidPortalInvite(token, email);
+    if (!invite) {
+      return res.status(400).json({ success: false, message: 'This invitation is invalid or expired. Ask your CA to send you a new portal link.' });
+    }
+    return res.json({ success: true, data: { email } });
+  } catch (error) {
+    if (error instanceof RateLimiterUnavailableError) {
+      return res.status(error.status).json({ success: false, message: error.message });
+    }
+    console.error('[Client Portal] Invitation validation failed:', error.message);
+    return res.status(503).json({ success: false, message: 'The invitation could not be checked. Please try again shortly.' });
+  }
+});
+
+router.post('/invitations/register', async (req, res) => {
+  let createdUserId = null;
+  let createdNewUser = false;
+  try {
+    if (!isConnected || !supabase) {
+      return res.status(503).json({ success: false, message: 'Client portal enrollment is temporarily unavailable.' });
+    }
+    if (!(await consumeInvitationRateLimit(req, res, 'register'))) return;
+    const token = req.body?.token;
+    const email = normalizePortalEmail(req.body?.email);
+    const password = req.body?.password;
+    if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
+      return res.status(400).json({ success: false, message: 'Choose a password between 12 and 128 characters.' });
+    }
+    const invite = await findValidPortalInvite(token, email);
+    if (!invite) {
+      return res.status(400).json({ success: false, message: 'This invitation is invalid or expired. Ask your CA to send you a new portal link.' });
+    }
+
+    let { data: created, error: createError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+    if (createError || !created?.user?.id) {
+      if (createError?.status === 422 || createError?.code === 'email_exists' || createError?.code === 'user_already_exists') {
+        const { data: existingUserId, error: lookupError } = await supabase.rpc('find_client_portal_auth_user', {
+          p_email: email,
+        });
+        if (lookupError) {
+          console.error('[Client Portal] Could not verify the existing account for an invitation:', lookupError.message);
+          return res.status(502).json({ success: false, message: 'The existing account could not be verified. Please try again or contact your CA.' });
+        }
+        if (!existingUserId) {
+          return res.status(409).json({ success: false, message: 'This email is already associated with another account. Contact your CA so they can verify your portal access.' });
+        }
+        const { data: existingUserData, error: existingUserError } = await supabase.auth.admin.getUserById(existingUserId);
+        const existingUser = existingUserData?.user;
+        if (existingUserError || !existingUser || existingUser.app_metadata?.taxflow_client_portal !== true) {
+          console.error('[Client Portal] Existing portal account lookup failed:', existingUserError?.message || 'Account metadata did not match.');
+          return res.status(502).json({ success: false, message: 'The existing portal account could not be verified. Please contact your CA.' });
+        }
+        const { data: updated, error: updateError } = await supabase.auth.admin.updateUserById(existingUserId, {
+          password,
+          email_confirm: true,
+          app_metadata: { ...existingUser.app_metadata, taxflow_client_portal: true },
+        });
+        if (updateError || !updated?.user?.id) {
+          console.error('[Client Portal] Could not update the existing invited account password:', updateError?.message || 'Supabase returned no user.');
+          return res.status(502).json({ success: false, message: 'The portal password could not be updated. Please try again or contact your CA.' });
+        }
+        created = updated;
+      } else {
+        console.error('[Client Portal] Could not create the invited client account:', createError?.message || 'Supabase returned no user.');
+        return res.status(502).json({ success: false, message: 'Your account could not be created. Please try again or contact your CA.' });
+      }
+    } else {
+      createdNewUser = true;
+      createdUserId = created.user.id;
+      const { data: marked, error: metadataError } = await supabase.auth.admin.updateUserById(createdUserId, {
+        app_metadata: { ...created.user.app_metadata, taxflow_client_portal: true },
+      });
+      if (metadataError || !marked?.user?.id) {
+        console.error('[Client Portal] Could not mark the new account as a portal identity:', metadataError?.message || 'Supabase returned no user.');
+        const { error: cleanupError } = await supabase.auth.admin.deleteUser(createdUserId);
+        if (cleanupError) console.error('[Client Portal] Failed to clean up an unmarked account:', cleanupError.message);
+        createdUserId = null;
+        return res.status(502).json({ success: false, message: 'Your account could not be secured. Please try again or contact your CA.' });
+      }
+      created = marked;
+    }
+
+    createdUserId = created.user.id;
+    const claim = await claimPortalInvite(created.user, token);
+    if (claim.error) {
+      if (createdNewUser) {
+        const { error: cleanupError } = await supabase.auth.admin.deleteUser(createdUserId);
+        if (cleanupError) console.error('[Client Portal] Failed to clean up an unclaimed account:', cleanupError.message);
+      }
+      createdUserId = null;
+      return res.status(409).json({ success: false, message: claim.error });
+    }
+    createdUserId = null;
+    return res.status(201).json({ success: true, data: { email } });
+  } catch (error) {
+    if (createdUserId && createdNewUser) {
+      const { error: cleanupError } = await supabase.auth.admin.deleteUser(createdUserId);
+      if (cleanupError) console.error('[Client Portal] Failed to clean up an incomplete portal account:', cleanupError.message);
+    }
+    if (error instanceof RateLimiterUnavailableError) {
+      return res.status(error.status).json({ success: false, message: error.message });
+    }
+    console.error('[Client Portal] Client account registration failed:', error.message);
+    return res.status(503).json({ success: false, message: 'Your account could not be created right now. Please try again shortly.' });
+  }
+});
+
+router.post('/invitations/claim', async (req, res) => {
+  try {
+    if (!isConnected || !supabase) {
+      return res.status(503).json({ success: false, message: 'Client portal enrollment is temporarily unavailable.' });
+    }
+    if (!(await consumeInvitationRateLimit(req, res, 'claim'))) return;
+    const user = await getAuthenticatedPortalUser(req);
+    if (!user) return res.status(401).json({ success: false, message: 'Sign in with your invited client account first.' });
+    const claim = await claimPortalInvite(user, req.body?.token);
+    if (claim.error) return res.status(403).json({ success: false, message: claim.error });
+    return res.json({ success: true, data: claim.data });
+  } catch (error) {
+    if (error instanceof RateLimiterUnavailableError) {
+      return res.status(error.status).json({ success: false, message: error.message });
+    }
+    console.error('[Client Portal] Authenticated invitation claim failed:', error.message);
+    return res.status(503).json({ success: false, message: 'Your portal invitation could not be claimed. Please try again shortly.' });
+  }
+});
+
 router.post('/clients/:clientId/invite', requireAuth, async (req, res) => {
-  let reservedAccessId = null;
-  let invitedUserId = null;
   try {
     const client = await requireStaffClient(req, res);
     if (!client) return;
     const email = String(client.email || '').trim().toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.status(422).json({ success: false, message: 'Add a valid email address to this client before sending a portal invitation.' });
+      return res.status(422).json({ success: false, message: 'Add a valid email address to this client before creating a portal invitation.' });
     }
     if (client.status !== 'Active') {
       return res.status(422).json({ success: false, message: 'Only active clients can be invited to the portal.' });
     }
-
-    const { data: previous, error: previousError } = await supabase
-      .from('client_portal_access')
-      .select('id, active, user_id, invited_email')
-      .eq('client_id', client.id)
-      .maybeSingle();
-    if (previousError) throw previousError;
-    if (previous?.active && previous.user_id && String(previous.invited_email || '').toLowerCase() === email) {
-      return res.status(409).json({ success: false, message: 'Portal access is already active. The client can sign in from the portal page.' });
-    }
-
-    if (previous) {
-      let reservationQuery = supabase
-        .from('client_portal_access')
-        .update({
-          user_id: null,
-          invited_email: email,
-          active: false,
-          invitation_pending: true,
-          created_by: req.user.id,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', previous.id);
-      if (previous.active) {
-        reservationQuery = reservationQuery
-          .eq('active', true)
-          .eq('invited_email', previous.invited_email);
-      } else {
-        reservationQuery = reservationQuery.eq('active', false).eq('invitation_pending', false);
-      }
-      const { data: reserved, error } = await reservationQuery.select('id').maybeSingle();
-      if (error) throw error;
-      if (!reserved) return res.status(409).json({ success: false, message: 'Portal access changed at the same time. Refresh and try again.' });
-      reservedAccessId = reserved.id;
-    } else {
-      const { data: reserved, error } = await supabase
-        .from('client_portal_access')
-        .insert({ client_id: client.id, invited_email: email, invitation_pending: true, created_by: req.user.id })
-        .select('id')
-        .single();
-      if (error?.code === '23505') {
-        return res.status(409).json({ success: false, message: 'Portal access is being set up for this client. Refresh and try again.' });
-      }
-      if (error) throw error;
-      reservedAccessId = reserved.id;
-    }
-
-    const redirectTo = `${getPortalBaseUrl()}/portal`;
-    const { data: invite, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, { redirectTo });
-    if (inviteError || !invite?.user?.id) {
-      console.error('[Client Portal] Supabase invitation failed:', inviteError?.message || 'No invited user returned.');
-      const { error: cleanupError } = await supabase.from('client_portal_access')
-        .update({ user_id: null, active: false, invitation_pending: false, updated_at: new Date().toISOString() })
-        .eq('id', reservedAccessId);
-      if (cleanupError) console.error('[Client Portal] Failed invitation reservation cleanup:', cleanupError.message);
-      reservedAccessId = null;
-      return res.status(502).json({ success: false, message: 'The invitation email could not be sent. Check the Supabase Auth email configuration and try again.' });
-    }
-    invitedUserId = invite.user.id;
-
-    const { error: roleError } = await supabase.auth.admin.updateUserById(invitedUserId, {
-      app_metadata: { ...invite.user.app_metadata, taxflow_client_portal: true }
+    const invitation = await createClientPortalInvite({
+      clientId: client.id,
+      email,
+      createdBy: req.user.id,
     });
-    if (roleError) throw roleError;
-
-    const { error: accessError } = await supabase
-      .from('client_portal_access')
-      .update({ user_id: invitedUserId, invited_email: email, active: true, invitation_pending: false, updated_at: new Date().toISOString() })
-      .eq('id', reservedAccessId);
-    if (accessError) throw accessError;
-
-    return res.status(201).json({ success: true, data: { enabled: true, email } });
+    return res.status(201).json({
+      success: true,
+      data: {
+        email,
+        link: `${getPortalBaseUrl()}/portal#invite=${encodeURIComponent(invitation.token)}`,
+        expiresAt: invitation.expiresAt,
+      },
+    });
   } catch (error) {
-    if (reservedAccessId) {
-      const { error: cleanupError } = await supabase.from('client_portal_access')
-        .update({ user_id: null, active: false, invitation_pending: false, updated_at: new Date().toISOString() })
-        .eq('id', reservedAccessId);
-      if (cleanupError) console.error('[Client Portal] Invitation reservation cleanup failed:', cleanupError.message);
-    }
-    if (invitedUserId) {
-      const { error: cleanupError } = await supabase.auth.admin.deleteUser(invitedUserId);
-      if (cleanupError) console.error('[Client Portal] Incomplete invitation account cleanup failed:', cleanupError.message);
-    }
-    console.error('[Client Portal] Invitation failed:', error.message);
-    return res.status(500).json({ success: false, message: 'Could not finish the portal invitation. Please try again or contact support.' });
+    console.error('[Client Portal] Portal invitation creation failed:', error.message);
+    return res.status(500).json({ success: false, message: 'Could not create the portal invitation. Please try again.' });
   }
 });
 
@@ -225,9 +388,10 @@ router.delete('/clients/:clientId/access', requireAuth, async (req, res) => {
   try {
     const client = await requireStaffClient(req, res);
     if (!client) return;
+    await revokeClientPortalInvites(client.id);
     const { data, error } = await supabase
       .from('client_portal_access')
-      .update({ active: false, updated_at: new Date().toISOString() })
+      .update({ user_id: null, active: false, invitation_pending: false, updated_at: new Date().toISOString() })
       .eq('client_id', client.id)
       .eq('active', true)
       .select('id')

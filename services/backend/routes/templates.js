@@ -7,6 +7,7 @@ const DEFAULT_TEMPLATES = [
   { template_key: 'docs', name: 'GST documents request', cat: 'Utility', body: 'Hello {name}, please upload your {period} sales & purchase invoices through your secure client portal: {portalLink}. Deadline: {due}.', protected: true },
   { template_key: 'pending', name: 'Missing document', cat: 'Utility', body: 'Hi {name}, we have not received the {doc} for {period} yet. Please upload it through your secure client portal: {portalLink}.', protected: true },
   { template_key: 'itr', name: 'ITR documents', cat: 'Utility', body: 'Hi {name}, to file your ITR please upload Form 16 / 26AS, bank interest certificates, and investment proofs through your secure client portal: {portalLink}.', protected: true },
+  { template_key: 'portal_invite', name: 'Secure portal invitation', cat: 'Client portal', body: 'Hi {name}, open this private link from your CA to access your documents and upload files using our secure file-transfer service: {portalLink}\n\nUse the same email address your CA has on file. Please do not send tax, financial, identity, or other sensitive documents in Telegram.', protected: true },
 ];
 
 function normalizedBody(body) {

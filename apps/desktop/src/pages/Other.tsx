@@ -23,6 +23,7 @@ export function ClientsPage() {
   const [portalAccessEnabled, setPortalAccessEnabled] = React.useState(false);
   const [portalAccessLoading, setPortalAccessLoading] = React.useState(false);
   const [portalActionLoading, setPortalActionLoading] = React.useState(false);
+  const [portalInviteLink, setPortalInviteLink] = React.useState('');
   const [portalMessage, setPortalMessage] = React.useState('');
   const [portalError, setPortalError] = React.useState('');
   const [editForm, setEditForm] = React.useState({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', countryId: '', filingTypes: [] as string[] });
@@ -34,9 +35,10 @@ export function ClientsPage() {
     setPortalAccessLoading(true);
     setPortalMessage('');
     setPortalError('');
+    setPortalInviteLink('');
     fetchClientPortalAccess(selectedClient.id)
       .then(access => {
-        if (!disposed) setPortalAccessEnabled(access.enabled);
+        if (!disposed) setPortalAccessEnabled(access.linked);
       })
       .catch(err => {
         if (!disposed) setPortalError(err instanceof Error ? err.message : 'Could not load portal access.');
@@ -52,14 +54,26 @@ export function ClientsPage() {
     setPortalActionLoading(true);
     setPortalMessage('');
     setPortalError('');
+    setPortalInviteLink('');
     try {
       const result = await inviteClientToPortal(selectedClient.id);
-      setPortalAccessEnabled(true);
-      setPortalMessage(`A secure sign-in invitation was emailed to ${result.email}.`);
+      setPortalInviteLink(result.link);
+      setPortalMessage(`A private invitation for ${result.email} is ready. Copy it and send it directly to the client.`);
     } catch (err) {
       setPortalError(err instanceof Error ? err.message : 'Could not send the portal invitation.');
     } finally {
       setPortalActionLoading(false);
+    }
+
+  }
+
+  async function copyPortalInviteLink() {
+    if (!portalInviteLink) return;
+    try {
+      await navigator.clipboard.writeText(portalInviteLink);
+      setPortalMessage('Invitation link copied. Send it directly to the client in your private conversation.');
+    } catch {
+      setPortalError('Could not copy the invitation link. Select and copy it manually.');
     }
   }
 
@@ -69,6 +83,7 @@ export function ClientsPage() {
     setPortalActionLoading(true);
     setPortalMessage('');
     setPortalError('');
+    setPortalInviteLink('');
     try {
       await revokeClientPortalAccess(selectedClient.id);
       setPortalAccessEnabled(false);
@@ -201,13 +216,21 @@ export function ClientsPage() {
               {portalMessage && <div className="portal-success-message" role="status">{portalMessage}</div>}
               <div className="row">
                 <span className={`chip ${portalAccessEnabled ? 'green' : 'amber'}`}>
-                  {portalAccessLoading ? 'Checking access…' : portalAccessEnabled ? 'Portal enabled' : 'Portal not enabled'}
+                  {portalAccessLoading ? 'Checking access…' : portalAccessEnabled ? 'Client portal active' : 'Invitation required'}
                 </span>
                 <span className="sp" />
                 {portalAccessEnabled
-                  ? <button className="btn sm danger" disabled={portalActionLoading || portalAccessLoading} onClick={() => void revokeSelectedClientPortalAccess()}>{portalActionLoading ? 'Please wait…' : 'Revoke access'}</button>
-                  : <button className="btn sm pri" disabled={portalActionLoading || portalAccessLoading || !selectedClient.contact.trim()} onClick={() => void inviteSelectedClientToPortal()} title={!selectedClient.contact.trim() ? 'Add an email address to this client first' : undefined}>{portalActionLoading ? 'Sending invitation…' : 'Email portal invitation'}</button>}
+                  && <button className="btn sm danger" disabled={portalActionLoading || portalAccessLoading} onClick={() => void revokeSelectedClientPortalAccess()}>{portalActionLoading ? 'Please wait…' : 'Revoke access'}</button>}
+                <button className="btn sm pri" disabled={portalActionLoading || portalAccessLoading || !selectedClient.contact.trim()} onClick={() => void inviteSelectedClientToPortal()} title={!selectedClient.contact.trim() ? 'Add an email address to this client first' : undefined}>{portalActionLoading ? 'Creating link…' : 'Create secure invite link'}</button>
               </div>
+              {portalInviteLink && <div className="client-portal-invite-link">
+                <label htmlFor="portal-invite-link">Private invitation link · expires in 30 days</label>
+                <div className="row">
+                  <input id="portal-invite-link" value={portalInviteLink} readOnly onFocus={event => event.currentTarget.select()} aria-label="Private portal invitation link" />
+                  <button className="btn sm" onClick={() => void copyPortalInviteLink()}>Copy</button>
+                </div>
+                <small>Anyone holding this one-time link can start enrollment. Send it only to the client through a private channel.</small>
+              </div>}
             </div>
             </>}
           </div>

@@ -6,6 +6,7 @@ process.env.SUPABASE_URL = 'https://portal-tests.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only-placeholder';
 
 const database = require('../db/supabase');
+const { requireAuth } = require('../middleware/requireAuth');
 const { requireClientPortalAuth } = require('../middleware/requireClientPortalAuth');
 const templatesRouter = require('../routes/templates');
 
@@ -69,7 +70,7 @@ async function withServer(app, callback) {
   }
 }
 
-test('portal auth binds a verified matching email to only its assigned client', async () => {
+test('portal auth requires a prior invitation claim and rejects other accounts', async () => {
   const previousFrom = database.supabase.from;
   const previousGetUser = database.supabase.auth.getUser;
   const mock = createDatabaseMock({
@@ -77,7 +78,7 @@ test('portal auth binds a verified matching email to only its assigned client', 
       id: 'access-1',
       client_id: 'client-1',
       invited_email: 'client@example.com',
-      user_id: null,
+      user_id: 'auth-user-1',
       active: true,
     }],
     clients: [{
@@ -88,10 +89,6 @@ test('portal auth binds a verified matching email to only its assigned client', 
     }],
   });
   database.supabase.from = mock.from;
-  database.supabase.auth.getUser = async () => ({
-    data: { user: { id: 'auth-user-1', email: 'client@example.com', email_confirmed_at: '2026-01-01T00:00:00Z' } },
-    error: null,
-  });
   const app = express();
   app.get('/portal', (req, res, next) => {
     req.headers.authorization = 'Bearer test-token';
@@ -100,13 +97,24 @@ test('portal auth binds a verified matching email to only its assigned client', 
 
   try {
     await withServer(app, async (origin) => {
-      const firstLogin = await fetch(`${origin}/portal`);
-      assert.equal(firstLogin.status, 200);
-      assert.deepEqual(await firstLogin.json(), { clientId: 'client-1' });
+      database.supabase.auth.getUser = async () => ({
+        data: { user: { id: 'auth-user-unclaimed', email: 'client@example.com', app_metadata: { taxflow_client_portal: true } } },
+        error: null,
+      });
+      const unclaimedLogin = await fetch(`${origin}/portal`);
+      assert.equal(unclaimedLogin.status, 403);
       assert.equal(mock.tables.client_portal_access[0].user_id, 'auth-user-1');
 
       database.supabase.auth.getUser = async () => ({
-        data: { user: { id: 'auth-user-2', email: 'client@example.com', email_confirmed_at: '2026-01-01T00:00:00Z' } },
+        data: { user: { id: 'auth-user-1', email: 'client@example.com', app_metadata: { taxflow_client_portal: true } } },
+        error: null,
+      });
+      const firstLogin = await fetch(`${origin}/portal`);
+      assert.equal(firstLogin.status, 200);
+      assert.deepEqual(await firstLogin.json(), { clientId: 'client-1' });
+
+      database.supabase.auth.getUser = async () => ({
+        data: { user: { id: 'auth-user-2', email: 'client@example.com', app_metadata: { taxflow_client_portal: true } } },
         error: null,
       });
       const secondLogin = await fetch(`${origin}/portal`);
@@ -120,12 +128,68 @@ test('portal auth binds a verified matching email to only its assigned client', 
         active: true,
       });
       database.supabase.auth.getUser = async () => ({
-        data: { user: { id: 'auth-user-3', email: 'client@example.com', email_confirmed_at: '2026-01-01T00:00:00Z' } },
+        data: { user: { id: 'auth-user-3', email: 'client@example.com' } },
         error: null,
       });
       const ambiguousLogin = await fetch(`${origin}/portal`);
       assert.equal(ambiguousLogin.status, 403);
-      assert.match((await ambiguousLogin.json()).message, /multiple client records/i);
+      assert.match((await ambiguousLogin.json()).message, /not a client portal account/i);
+    });
+  } finally {
+    database.supabase.from = previousFrom;
+    database.supabase.auth.getUser = previousGetUser;
+  }
+});
+
+test('portal identities cannot access staff routes even without an active client binding', async () => {
+  const previousGetUser = database.supabase.auth.getUser;
+  database.supabase.auth.getUser = async () => ({
+    data: { user: { id: 'portal-user-1', email: 'client@example.com', app_metadata: { taxflow_client_portal: true } } },
+    error: null,
+  });
+  const app = express();
+  app.get('/staff', requireAuth, (_req, res) => res.json({ success: true }));
+
+  try {
+    await withServer(app, async (origin) => {
+      const response = await fetch(`${origin}/staff`, {
+        headers: { authorization: 'Bearer portal-token' },
+      });
+      assert.equal(response.status, 403);
+      assert.match((await response.json()).message, /cannot access staff services/i);
+    });
+  } finally {
+    database.supabase.auth.getUser = previousGetUser;
+  }
+});
+
+test('template listing seeds the protected secure portal invitation', async () => {
+  const previousFrom = database.supabase.from;
+  const previousGetUser = database.supabase.auth.getUser;
+  const mock = createDatabaseMock();
+  database.supabase.from = mock.from;
+  database.supabase.auth.getUser = async () => ({
+    data: { user: { id: 'staff-1', email: 'staff@example.com' } },
+    error: null,
+  });
+  const app = express();
+  app.use('/api/v1/templates', templatesRouter);
+
+  try {
+    await withServer(app, async (origin) => {
+      const response = await fetch(`${origin}/api/v1/templates`, {
+        headers: { authorization: 'Bearer staff-token' },
+      });
+      assert.equal(response.status, 200);
+      const templates = (await response.json()).data;
+      const invitation = templates.find((template) => template.template_key === 'portal_invite');
+      assert.ok(invitation);
+      assert.equal(invitation.name, 'Secure portal invitation');
+      assert.equal(invitation.protected, true);
+      assert.match(invitation.body, /\{portalLink\}/);
+      assert.match(invitation.body, /same email address your CA has on file/i);
+      assert.match(invitation.body, /do not send .* documents in Telegram/i);
+      assert.equal(mock.tables.message_templates.length, 4);
     });
   } finally {
     database.supabase.from = previousFrom;

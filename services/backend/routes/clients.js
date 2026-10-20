@@ -7,6 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
+const { revokeClientPortalInvites } = require('../lib/clientPortalInvites');
 const { ensureClientVaultStructure, listClientVaultTree, getClientVaultRoot, deleteClientVaultFile, resolveClientVaultFile, searchClientVaultFiles } = require('../vault/vaultManager');
 const {
   downloadDocument,
@@ -316,6 +317,7 @@ router.patch('/:id', async (req, res) => {
       const updatedEmail = String(data.email || '').trim().toLowerCase();
       if (updates.email !== undefined && previousEmail !== updatedEmail) {
         try {
+          await revokeClientPortalInvites(data.id);
           const { data: existingAccess, error: accessLookupError } = await supabase
             .from('client_portal_access')
             .select('id')
