@@ -498,6 +498,84 @@ async function telegramCall(method, payload) {
   return result.result;
 }
 
+function getClientPortalLink() {
+  const configuredUrl = String(process.env.CLIENT_PORTAL_URL || '').trim();
+  if (!configuredUrl) throw new Error('CLIENT_PORTAL_URL is not configured.');
+  const portalUrl = new URL(configuredUrl);
+  if (process.env.NODE_ENV === 'production' && portalUrl.protocol !== 'https:') {
+    throw new Error('CLIENT_PORTAL_URL must use HTTPS in production.');
+  }
+  if (portalUrl.username || portalUrl.password || portalUrl.search || portalUrl.hash || portalUrl.pathname !== '/') {
+    throw new Error('CLIENT_PORTAL_URL must be the website origin without a path or credentials.');
+  }
+  return `${portalUrl.origin}/portal`;
+}
+
+function createTelegramWelcome(clientName) {
+  let portalInstructions;
+  try {
+    portalInstructions = `1. Open the secure portal: ${getClientPortalLink()}\n2. Enter the same email address you gave your CA.\n3. Select “Email me a sign-in link”. Open the email and tap its sign-in link.\n4. Back in the portal, choose your documents and upload them.`;
+  } catch (error) {
+    console.error('[Telegram] Could not add the client portal link to the welcome message:', error.message);
+    portalInstructions = '1. Ask your CA for the secure client portal website address.\n2. Open it and enter the same email address you gave your CA.\n3. Select “Email me a sign-in link”, then open the email and tap its sign-in link.\n4. Back in the portal, choose your documents and upload them.';
+  }
+  return [
+    `Welcome to TaxFlow, ${clientName}! Your private Telegram chat is connected.`,
+    '',
+    'Privacy reminder: use Telegram for ordinary messages and questions only. Do not send tax, financial, identity, or other sensitive documents here. Upload files only through your secure client portal.',
+    '',
+    'Upload documents in 4 easy steps:',
+    portalInstructions,
+    '',
+    'Use exactly the email address your CA has on file. If you cannot sign in or do not receive the email, check your spam folder or contact your CA. Never share your sign-in link or email verification code with anyone.'
+  ].join('\n');
+}
+
+async function sendTelegramWelcome(client, chatId) {
+  const body = createTelegramWelcome(client.name);
+  const providerMessageId = `taxflow:welcome:${client.id}:${chatId}`;
+  let { data: queuedMessage, error: queueError } = await supabase.from('telegram_messages')
+    .insert({
+      client_id: client.id,
+      provider_message_id: providerMessageId,
+      direction: 'outbound',
+      chat_id: String(chatId),
+      body,
+      delivery_status: 'queued'
+    })
+    .select('*')
+    .single();
+
+  if (queueError?.code === '23505') {
+    const existing = await supabase.from('telegram_messages')
+      .select('*')
+      .eq('provider_message_id', providerMessageId)
+      .eq('direction', 'outbound')
+      .single();
+    if (existing.error) throw existing.error;
+    queuedMessage = existing.data;
+    if (queuedMessage.delivery_status === 'sent') return;
+  } else if (queueError) {
+    throw queueError;
+  }
+
+  try {
+    const sent = await telegramCall('sendMessage', { chat_id: chatId, text: body });
+    const { error: updateError } = await supabase.from('telegram_messages')
+      .update({ delivery_status: 'sent', provider_response_id: String(sent.message_id), sender_user_id: String(sent.from?.id || '') })
+      .eq('provider_message_id', providerMessageId)
+      .eq('direction', 'outbound');
+    if (updateError) console.error('[Telegram] Welcome message was sent but its delivery status could not be saved:', updateError.message);
+  } catch (error) {
+    const { error: statusError } = await supabase.from('telegram_messages')
+      .update({ delivery_status: 'failed' })
+      .eq('provider_message_id', providerMessageId)
+      .eq('direction', 'outbound');
+    if (statusError) console.error('[Telegram] Welcome message failure status could not be saved:', statusError.message);
+    throw error;
+  }
+}
+
 async function telegramFileCall(method, chatId, buffer, fileName, mimeType) {
   if (!botToken()) throw new Error('Telegram bot is not configured.');
   const form = new FormData();
@@ -987,25 +1065,42 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
     if (text.startsWith('/start')) {
       const token = text.replace(/^\/start(?:@[^\s]+)?\s*/i, '').trim();
       if (!token || message.chat.type !== 'private') return res.status(200).json({ ok: true, ignored: true });
-      const { data: link, error: linkLookupError } = await supabase.from('telegram_link_tokens').select('id,client_id').eq('token_hash', hash(token)).is('consumed_at', null).gt('expires_at', new Date().toISOString()).maybeSingle();
+      const { data: link, error: linkLookupError } = await supabase.from('telegram_link_tokens')
+        .select('id,client_id,consumed_at,expires_at')
+        .eq('token_hash', hash(token))
+        .maybeSingle();
       if (linkLookupError) throw linkLookupError;
       if (!link) return res.status(200).json({ ok: true, ignored: true });
-      const { data: client, error: clientLookupError } = await supabase.from('clients').select('id,name').eq('id', link.client_id).single();
+      const { data: client, error: clientLookupError } = await supabase.from('clients')
+        .select('id,name,telegram_chat_id,telegram_user_id')
+        .eq('id', link.client_id)
+        .single();
       if (clientLookupError) throw clientLookupError;
       if (!client) return res.status(200).json({ ok: true, ignored: true });
+      const telegramUserId = message.from?.id ? String(message.from.id) : null;
+      if (link.consumed_at) {
+        if (
+          String(client.telegram_chat_id || '') === String(message.chat.id)
+          && String(client.telegram_user_id || '') === String(telegramUserId || '')
+        ) {
+          await sendTelegramWelcome(client, message.chat.id);
+          return res.status(200).json({ ok: true, duplicate: true });
+        }
+        return res.status(200).json({ ok: true, ignored: true });
+      }
+      if (!link.expires_at || new Date(link.expires_at).getTime() <= Date.now()) {
+        return res.status(200).json({ ok: true, ignored: true });
+      }
       const { data: consumed, error: consumeError } = await supabase.from('telegram_link_tokens').update({ consumed_at: new Date().toISOString() }).eq('id', link.id).is('consumed_at', null).select('id').maybeSingle();
       if (consumeError) throw consumeError;
       if (!consumed) return res.status(200).json({ ok: true, ignored: true });
-      const { error: linkError } = await supabase.from('clients').update({ telegram_user_id: message.from?.id ? String(message.from.id) : null, telegram_chat_id: String(message.chat.id), telegram_linked_at: new Date().toISOString() }).eq('id', client.id);
+      const { error: linkError } = await supabase.from('clients').update({ telegram_user_id: telegramUserId, telegram_chat_id: String(message.chat.id), telegram_linked_at: new Date().toISOString() }).eq('id', client.id);
       if (linkError) {
         const { error: restoreError } = await supabase.from('telegram_link_tokens').update({ consumed_at: null }).eq('id', link.id);
         if (restoreError) console.error('[Telegram] failed to restore consumed link token:', restoreError.message);
         throw linkError;
       }
-      const welcome = `Your Telegram account is connected to TaxFlow for ${client.name}.`;
-      const sent = await telegramCall('sendMessage', { chat_id: message.chat.id, text: welcome });
-      const { error: welcomeError } = await supabase.from('telegram_messages').insert({ client_id: client.id, provider_message_id: `telegram:${message.chat.id}:${sent.message_id}`, direction: 'outbound', chat_id: String(message.chat.id), body: welcome, delivery_status: 'sent' });
-      if (welcomeError) throw welcomeError;
+      await sendTelegramWelcome(client, message.chat.id);
       return res.status(200).json({ ok: true });
     }
     const attachment = getTelegramAttachment(message);

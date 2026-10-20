@@ -12,7 +12,7 @@ const database = require('../db/supabase');
 const { getStorageObjectKey } = require('../lib/documentStorage');
 const telegramRouter = require('../routes/telegram');
 
-const tables = { clients: [], client_portal_access: [], telegram_messages: [], documents_metadata: [], document_sync_receipts: [] };
+const tables = { clients: [], client_portal_access: [], telegram_link_tokens: [], telegram_messages: [], documents_metadata: [], document_sync_receipts: [] };
 
 function matches(row, filters) {
   return filters.every(({ field, operator, value }) => {
@@ -281,6 +281,98 @@ test('Telegram attachment messages are redirected to the secure portal without s
   assert.equal(tables.telegram_messages.length, 1);
   assert.equal(tables.telegram_messages[0].body, 'Hello, I will send the documents through the portal.');
   assert.equal(telegramCalls.length, 2);
+});
+
+test('Telegram sends a secure portal welcome once when a client first starts the linked bot', async (t) => {
+  const oldFrom = database.supabase.from;
+  const oldFetch = global.fetch;
+  const envKeys = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'CLIENT_PORTAL_URL'];
+  const oldEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  const telegramCalls = [];
+  let failFirstWelcome = true;
+  const rawToken = 'first-start-token';
+  Object.values(tables).forEach((rows) => { rows.length = 0; });
+  tables.clients.push({ id: 'client-welcome', name: 'Welcome Client', telegram_chat_id: null, telegram_user_id: null });
+  tables.telegram_link_tokens.push({
+    id: 'link-welcome',
+    client_id: 'client-welcome',
+    token_hash: crypto.createHash('sha256').update(rawToken).digest('hex'),
+    expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    consumed_at: null,
+  });
+  database.supabase.from = (table) => fakeQuery(table);
+  process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
+  process.env.TELEGRAM_WEBHOOK_SECRET = 'test-webhook-secret';
+  process.env.CLIENT_PORTAL_URL = 'https://taxflow.example';
+  global.fetch = async (url, init) => {
+    if (String(url).startsWith('http://127.0.0.1:')) return oldFetch(url, init);
+    telegramCalls.push({ url: String(url), body: JSON.parse(init.body) });
+    if (failFirstWelcome) {
+      failFirstWelcome = false;
+      return new Response(JSON.stringify({ ok: false, description: 'Temporary Telegram failure' }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    return new Response(JSON.stringify({ ok: true, result: { message_id: telegramCalls.length } }), {
+      headers: { 'content-type': 'application/json' }
+    });
+  };
+
+  const app = express();
+  app.use('/telegram', telegramRouter);
+  const server = app.listen(0);
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    database.supabase.from = oldFrom;
+    global.fetch = oldFetch;
+    for (const [key, value] of Object.entries(oldEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  const updateBody = JSON.stringify({
+    update_id: 801,
+    message: {
+      message_id: 91,
+      date: 1792322400,
+      text: `/start ${rawToken}`,
+      chat: { id: 'welcome-chat', type: 'private' },
+      from: { id: 902 },
+    },
+  });
+  const sendUpdate = () => fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': 'test-webhook-secret',
+    },
+    body: updateBody,
+  });
+
+  const firstResponse = await sendUpdate();
+  assert.equal(firstResponse.status, 503);
+  assert.equal(tables.clients[0].telegram_chat_id, 'welcome-chat');
+  assert.equal(tables.clients[0].telegram_user_id, '902');
+  assert.equal(telegramCalls.length, 1);
+  assert.match(telegramCalls[0].body.text, /do not send tax, financial, identity, or other sensitive documents/i);
+  assert.match(telegramCalls[0].body.text, /https:\/\/taxflow\.example\/portal/);
+  assert.match(telegramCalls[0].body.text, /same email address you gave your CA/i);
+  assert.match(telegramCalls[0].body.text, /Email me a sign-in link/);
+  assert.equal(tables.telegram_messages.length, 1);
+  assert.equal(tables.telegram_messages[0].delivery_status, 'failed');
+
+  const retryResponse = await sendUpdate();
+  assert.equal(retryResponse.status, 200);
+  assert.deepEqual(await retryResponse.json(), { ok: true, duplicate: true });
+  assert.equal(telegramCalls.length, 2);
+  assert.equal(tables.telegram_messages[0].delivery_status, 'sent');
+
+  const duplicateResponse = await sendUpdate();
+  assert.equal(duplicateResponse.status, 200);
+  assert.equal(telegramCalls.length, 2);
+  assert.equal(tables.telegram_messages.length, 1);
 });
 
 test('Telegram attachment parsing covers media messages and rejects unsafe formats clearly', () => {
