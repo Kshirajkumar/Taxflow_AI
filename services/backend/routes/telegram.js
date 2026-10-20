@@ -27,6 +27,7 @@ const webhookAutoConfigureEnabled = () => String(process.env.TELEGRAM_WEBHOOK_AU
 const TELEGRAM_FILE_LIMIT_BYTES = 20 * 1024 * 1024;
 const TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
 const TELEGRAM_PHOTO_LIMIT_BYTES = 9 * 1024 * 1024;
+const PORTAL_INVITE_LINK_PATTERN = /https?:\/\/[^\s<>"']+\/portal#invite=[A-Za-z0-9_-]{40,64}/gi;
 const attachmentDownloads = new Map();
 const attachmentDownloadQueue = [];
 let activeAttachmentDownloads = 0;
@@ -43,6 +44,10 @@ const FILE_TYPES = {
   '.wav': 'OTHER', '.heic': 'OTHER', '.heif': 'OTHER', '.tif': 'OTHER', '.tiff': 'OTHER',
   '.tgs': 'OTHER'
 };
+
+function redactPortalInviteLinks(message) {
+  return message.replace(PORTAL_INVITE_LINK_PATTERN, '[private client portal invitation link]');
+}
 const MIME_EXTENSIONS = {
   'application/pdf': '.pdf',
   'image/jpeg': '.jpg',
@@ -572,7 +577,7 @@ async function sendTelegramWelcome(client, chatId, telegramToken, createdBy) {
       provider_message_id: providerMessageId,
       direction: 'outbound',
       chat_id: String(chatId),
-      body,
+      body: redactPortalInviteLinks(body),
       delivery_status: 'queued'
     })
     .select('*')
@@ -956,7 +961,7 @@ router.post('/send', requireAuth, async (req, res) => {
     if (!client.telegram_chat_id) return res.status(422).json({ success: false, message: 'This client has not linked Telegram.' });
     const providerMessageId = `taxflow:${requestId}`;
     const { data: queuedMessage, error: queueError } = await supabase.from('telegram_messages')
-      .insert({ client_id: clientId, provider_message_id: providerMessageId, direction: 'outbound', chat_id: String(client.telegram_chat_id), body: message.trim(), delivery_status: 'queued', approved_by: req.user.id, approved_at: new Date().toISOString() })
+      .insert({ client_id: clientId, provider_message_id: providerMessageId, direction: 'outbound', chat_id: String(client.telegram_chat_id), body: redactPortalInviteLinks(message.trim()), delivery_status: 'queued', approved_by: req.user.id, approved_at: new Date().toISOString() })
       .select('*')
       .single();
     if (queueError?.code === '23505') return res.status(409).json({ success: false, message: 'This message request has already been processed.' });
@@ -1199,7 +1204,7 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
       return res.status(200).json({ ok: true, redirected: true });
     }
     const messageType = attachment?.messageType || (text ? 'text' : getUnrepresentedTelegramMessage(message));
-    const body = text || `Telegram ${messageType} message received; this content is not available as a document.`;
+    const body = redactPortalInviteLinks(text || `Telegram ${messageType} message received; this content is not available as a document.`);
     const telegramDate = Number(message.date);
     const createdAt = Number.isFinite(telegramDate) && telegramDate > 0
       ? new Date(telegramDate * 1000).toISOString()

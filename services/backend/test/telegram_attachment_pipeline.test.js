@@ -363,6 +363,8 @@ test('Telegram sends a secure portal welcome once when a client first starts the
   assert.match(telegramCalls[0].body.text, /Create a password the first time/);
   assert.match(telegramCalls[0].body.text, /#invite=/);
   assert.equal(tables.telegram_messages.length, 1);
+  assert.match(tables.telegram_messages[0].body, /\[private client portal invitation link\]/);
+  assert.doesNotMatch(tables.telegram_messages[0].body, /#invite=/);
   assert.equal(tables.telegram_messages[0].delivery_status, 'failed');
 
   const retryResponse = await sendUpdate();
