@@ -15,6 +15,7 @@ const { saveFileToVault, vaultFileExists, getVaultBaseDir } = require('../vault/
 const { getOwnedClientIds, assertOwnedClient } = require('../lib/ownership');
 const {
   downloadDocument,
+  isExpectedPortalObject,
   isExpectedTelegramObject,
   normalizeMimeType
 } = require('../lib/documentStorage');
@@ -216,14 +217,27 @@ router.get('/:id/serve', async (req, res) => {
       if (error) throw error;
       vaultPath = data.vault_path;
       if (data.storage_bucket && data.storage_object_path) {
-        if (data.source !== 'Telegram' || !isExpectedTelegramObject({
-          bucket: data.storage_bucket,
-          objectKey: data.storage_object_path,
-          userId: req.user.id,
-          clientId: data.client_id,
-          createdAt: data.created_at,
-          fileName: data.file_name
-        })) {
+        const expectedStorageObject = data.source === 'Telegram'
+          ? isExpectedTelegramObject({
+              bucket: data.storage_bucket,
+              objectKey: data.storage_object_path,
+              userId: req.user.id,
+              clientId: data.client_id,
+              createdAt: data.created_at,
+              fileName: data.file_name
+            })
+          : data.source === 'Portal'
+            ? isExpectedPortalObject({
+                bucket: data.storage_bucket,
+                objectKey: data.storage_object_path,
+                userId: req.user.id,
+                clientId: data.client_id,
+                documentId: req.params.id,
+                createdAt: data.created_at,
+                fileName: data.file_name
+              })
+            : false;
+        if (!expectedStorageObject) {
           console.error(`[Documents] Refusing unexpected cloud storage reference for document ${req.params.id}.`);
           return res.status(404).json({ success: false, message: 'The cloud document reference is invalid.' });
         }
@@ -242,7 +256,8 @@ router.get('/:id/serve', async (req, res) => {
       const buffer = await downloadDocument(storageObject.bucket, storageObject.objectKey);
       res.setHeader('Cache-Control', 'private, no-store');
       res.setHeader('Content-Type', storageObject.mimeType);
-      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Disposition', 'attachment');
       return res.send(buffer);
     }
 
@@ -283,8 +298,9 @@ router.get('/sync/pending', async (req, res) => {
           clientName: document.client_name || 'unknown',
           fileName: document.file_name,
           sha256: document.file_sha256,
-          year: String(createdAt.getFullYear()),
-          month: new Intl.DateTimeFormat('en-US', { month: 'long' }).format(createdAt)
+          source: document.source,
+          year: String(createdAt.getUTCFullYear()),
+          month: new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(createdAt)
         };
       });
 

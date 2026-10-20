@@ -466,6 +466,7 @@ export interface PendingLocalDocument {
   sha256: string;
   year: string;
   month: string;
+  source: 'Telegram' | 'Portal';
 }
 
 export async function fetchPendingLocalDocuments(deviceId: string): Promise<PendingLocalDocument[]> {
@@ -506,6 +507,52 @@ export async function acknowledgeLocalDocumentSync(deviceId: string, documentId:
     },
   );
   if (!response.success) throw new Error(response.message || 'Could not record local document sync.');
+}
+
+export interface ClientPortalAccess {
+  enabled: boolean;
+  email: string | null;
+  createdAt: string | null;
+}
+
+export async function fetchClientPortalAccess(clientId: string): Promise<ClientPortalAccess> {
+  const response = await authRequest<{
+    success: boolean;
+    message?: string;
+    data?: ClientPortalAccess;
+  }>(
+    `${API_BASE_URL}/client-portal/clients/${encodeURIComponent(clientId)}/access`,
+    { method: 'GET', headers: authHeaders() },
+  );
+  if (!response.success || !response.data) {
+    throw new Error(response.message || 'Could not load client portal access.');
+  }
+  return response.data;
+}
+
+export async function inviteClientToPortal(clientId: string): Promise<{ email: string }> {
+  const response = await authRequest<{
+    success: boolean;
+    message?: string;
+    data?: { email: string };
+  }>(
+    `${API_BASE_URL}/client-portal/clients/${encodeURIComponent(clientId)}/invite`,
+    { method: 'POST', headers: authHeaders(), body: '{}' },
+  );
+  if (!response.success || !response.data) {
+    throw new Error(response.message || 'Could not send the client portal invitation.');
+  }
+  return response.data;
+}
+
+export async function revokeClientPortalAccess(clientId: string): Promise<void> {
+  const response = await authRequest<{ success: boolean; message?: string }>(
+    `${API_BASE_URL}/client-portal/clients/${encodeURIComponent(clientId)}/access`,
+    { method: 'DELETE', headers: authHeaders() },
+  );
+  if (!response.success) {
+    throw new Error(response.message || 'Could not revoke client portal access.');
+  }
 }
 
 // ─── Client API ────────────────────────────────────────────────
@@ -917,46 +964,11 @@ export async function fetchTelegramMessages(clientId: string): Promise<{ linked:
   return { linked: Boolean(json.linked), messages: json.data || [] };
 }
 
-export async function downloadTelegramMessageFile(clientId: string, messageId: string): Promise<TelegramMessage> {
-  const { response: res, json } = await fetchTelegramJson(
-    `${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/messages/${encodeURIComponent(messageId)}/download`,
-    { method: 'POST', headers: authHeaders() },
-    45000,
-    'Telegram attachment download',
-  );
-  if (!res.ok || !json.success) throw new Error(json.message || `Unable to download the Telegram attachment (HTTP ${res.status}).`);
-  return json.data;
-}
-
 export async function sendTelegramMessage(clientId: string, message: string, requestId: string = crypto.randomUUID()): Promise<TelegramMessage> {
   const { response: res, json } = await fetchTelegramJson(`${API_BASE_URL}/telegram/send`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ clientId, message, approved: true, requestId }) }, 60000, 'Telegram message delivery');
   if (!res.ok || !json.success) throw new Error(json.message || `Unable to send Telegram message (HTTP ${res.status}).`);
   if (!json.data || typeof json.data.id !== 'string') {
     throw new Error('Telegram sent the message, but the backend did not return its saved conversation message.');
-  }
-  return json.data;
-}
-
-export async function sendTelegramAttachment(clientId: string, file: File, requestId: string = crypto.randomUUID()): Promise<TelegramMessage> {
-  const params = new URLSearchParams({
-    approved: 'true',
-    requestId,
-    fileName: file.name,
-    mimeType: file.type || 'application/octet-stream',
-  });
-  const { response: res, json } = await fetchTelegramJson(
-    `${API_BASE_URL}/telegram/clients/${encodeURIComponent(clientId)}/send-file?${params}`,
-    {
-      method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/octet-stream' },
-      body: file,
-    },
-    90000,
-    'Telegram attachment delivery',
-  );
-  if (!res.ok || !json.success) throw new Error(json.message || `Unable to send the Telegram attachment (HTTP ${res.status}).`);
-  if (!json.data || typeof json.data.id !== 'string') {
-    throw new Error('Telegram sent the attachment, but the backend did not return its saved conversation message.');
   }
   return json.data;
 }

@@ -326,6 +326,12 @@ tr:last-child td{border-bottom:0}
 .client-details-grid b{display:block;min-width:0;overflow-wrap:anywhere;font-size:12.5px}
 .client-details-section{margin-top:20px}
 .client-details-filings{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.client-portal-access{padding:14px;border:1px solid color-mix(in srgb,var(--blue) 24%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--blue) 4%,var(--panel))}
+.client-portal-access>p{max-width:490px;margin:7px 0 12px;color:var(--tx3);font-size:12px;line-height:1.55}
+.client-portal-access .ob-error,.client-portal-access .portal-success-message{margin:0 0 10px;padding:9px 11px;border-radius:9px;font-size:12px;line-height:1.45}
+.client-portal-access .portal-success-message{border:1px solid color-mix(in srgb,var(--green) 36%,var(--line));background:color-mix(in srgb,var(--green) 9%,var(--panel));color:var(--green)}
+.client-portal-access .row{gap:9px;flex-wrap:wrap}
+.client-portal-access .btn:disabled{opacity:.6;cursor:wait}
 .client-edit-body{padding-top:2px}
 .client-edit-intro{display:flex;align-items:center;gap:12px;padding:4px 0 17px;border-bottom:1px solid var(--line)}
 .client-edit-intro b{font-size:14px}.client-edit-intro .mut{margin-top:3px;font-size:12px}

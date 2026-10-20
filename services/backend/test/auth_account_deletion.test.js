@@ -11,10 +11,20 @@ const authRouter = require('../routes/auth');
 test('account deletion requires configured cloud storage, exact phrase, and a valid password challenge', async (t) => {
   const previousBucket = process.env.SUPABASE_STORAGE_BUCKET;
   const originalGetUser = database.supabase.auth.getUser;
+  const originalFrom = database.supabase.from;
   database.supabase.auth.getUser = async () => ({
     data: { user: { id: '11752602-62fa-4252-ae1d-23c4fb3b7312', email: 'user@example.com' } },
     error: null
   });
+  database.supabase.from = (table) => {
+    if (table !== 'client_portal_access') return originalFrom(table);
+    return {
+      select() { return this; },
+      eq() { return this; },
+      limit() { return this; },
+      async maybeSingle() { return { data: null, error: null }; }
+    };
+  };
 
   const app = express();
   app.use(express.json());
@@ -25,6 +35,7 @@ test('account deletion requires configured cloud storage, exact phrase, and a va
   t.after(async () => {
     await new Promise((resolve) => server.close(resolve));
     database.supabase.auth.getUser = originalGetUser;
+    database.supabase.from = originalFrom;
     if (previousBucket === undefined) delete process.env.SUPABASE_STORAGE_BUCKET;
     else process.env.SUPABASE_STORAGE_BUCKET = previousBucket;
   });

@@ -90,7 +90,7 @@ function Shell() {
         const vault = await getLocalVaultStatus();
         if (disposed) return;
         if (!vault) {
-          showVaultSyncNotice('Choose a local vault folder to securely receive Telegram files on this device.', 'warning');
+          showVaultSyncNotice('Choose a local vault folder to securely receive client files on this device.', 'warning');
           return;
         }
         const pending = await fetchPendingLocalDocuments(vault.deviceId);
@@ -111,20 +111,20 @@ function Shell() {
         }
         if (!disposed) {
           if (syncedCount) {
-            showVaultSyncNotice(`${syncedCount} Telegram file${syncedCount === 1 ? '' : 's'} synced to the local vault.`, 'success');
+            showVaultSyncNotice(`${syncedCount} secure file${syncedCount === 1 ? '' : 's'} synced to the local vault.`, 'success');
           } else {
             setVaultSyncNotice(null);
           }
         }
       } catch (error) {
-        console.error('[Vault Sync] Incoming Telegram document sync failed:', error);
+        console.error('[Vault Sync] Incoming client document sync failed:', error);
         if (!disposed) {
           const detail = error instanceof Error ? error.message : 'An unexpected sync error occurred.';
           const message = /failed to fetch|networkerror|network request failed/i.test(detail)
             ? 'Could not reach the TaxFlow server. Check your internet connection and backend availability.'
             : /401|unauthori[sz]ed|session.*expir/i.test(detail)
               ? 'Your session may have expired. Sign in again, then retry the file sync.'
-              : `Could not sync incoming Telegram files. ${detail}`;
+              : `Could not sync incoming client files. ${detail}`;
           showVaultSyncNotice(message, 'error');
         }
       } finally {
@@ -148,7 +148,7 @@ function Shell() {
       const selected = await open({ directory: true, multiple: false, title: 'Select Your TaxFlow Local Vault Folder' });
       if (typeof selected !== 'string') return;
       await configureLocalVault(selected);
-      showVaultSyncNotice('Local vault configured. Checking for incoming Telegram files…', 'info');
+      showVaultSyncNotice('Local vault configured. Checking for incoming client files…', 'info');
       syncNowRef.current?.();
     } catch (error) {
       console.error('[Vault Sync] Local vault configuration failed:', error);
@@ -197,11 +197,11 @@ function Shell() {
             <Icon name={vaultSyncNotice.kind === 'success' ? 'check' : vaultSyncNotice.kind === 'warning' ? 'folder' : vaultSyncNotice.kind === 'error' ? 'info' : 'refresh'} size={15} />
           </span>
           <span className="vault-sync-toast-copy">
-            <b>{vaultSyncNotice.kind === 'error' ? 'Telegram file sync needs attention' : vaultSyncNotice.kind === 'warning' ? 'Local vault setup required' : vaultSyncNotice.kind === 'success' ? 'File sync complete' : 'Telegram file sync'}</b>
+            <b>{vaultSyncNotice.kind === 'error' ? 'Secure file sync needs attention' : vaultSyncNotice.kind === 'warning' ? 'Local vault setup required' : vaultSyncNotice.kind === 'success' ? 'File sync complete' : 'Secure file sync'}</b>
             <span>{vaultSyncNotice.message}</span>
           </span>
           {vaultSyncNotice.kind === 'error' && (
-            <button type="button" className="vault-sync-toast-action" onClick={() => { showVaultSyncNotice('Retrying the incoming Telegram file sync…', 'info'); syncNowRef.current?.(); }}>
+            <button type="button" className="vault-sync-toast-action" onClick={() => { showVaultSyncNotice('Retrying the secure client-file sync…', 'info'); syncNowRef.current?.(); }}>
               Retry now
             </button>
           )}

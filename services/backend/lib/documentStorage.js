@@ -43,6 +43,24 @@ function isExpectedTelegramObject({ bucket, objectKey, userId, clientId, created
   }
 }
 
+function isExpectedPortalObject({ bucket, objectKey, userId, clientId, documentId, createdAt, fileName }) {
+  try {
+    const date = new Date(createdAt);
+    if (Number.isNaN(date.getTime())) return false;
+    const expectedKey = getStorageObjectKey({
+      userId,
+      clientId,
+      year: String(date.getUTCFullYear()),
+      month: new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(date),
+      documentId,
+      fileName
+    });
+    return Boolean(getStorageBucket() && bucket === getStorageBucket() && objectKey === expectedKey);
+  } catch {
+    return false;
+  }
+}
+
 function sanitizeStorageFileName(fileName) {
   return String(fileName || 'document').replace(/[\\/]/g, '_').replace(/[^\w.\- ]/g, '_');
 }
@@ -90,6 +108,7 @@ module.exports = {
   getStorageObjectKey,
   isCloudDocumentStorageEnabled,
   isCloudDocumentStorageRequired,
+  isExpectedPortalObject,
   isExpectedTelegramObject,
   normalizeMimeType,
   sha256,

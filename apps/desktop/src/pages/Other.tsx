@@ -3,7 +3,7 @@ import { Icon } from '../components/Icon';
 import { useAppState, useDispatch } from '../state/store';
 import { allTasks, missing } from '../lib/domain';
 import { money, sum } from '../lib/format';
-import { createClient, deleteClient, updateClient } from '../lib/api';
+import { createClient, deleteClient, fetchClientPortalAccess, inviteClientToPortal, revokeClientPortalAccess, updateClient } from '../lib/api';
 import { FilingTypePicker } from '../components/FilingTypePicker';
 
 export function ClientsPage() {
@@ -19,9 +19,65 @@ export function ClientsPage() {
   const [deleteConfirm, setDeleteConfirm] = React.useState(false);
   const [deleteSaving, setDeleteSaving] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState('');
+  const [portalAccessEnabled, setPortalAccessEnabled] = React.useState(false);
+  const [portalAccessLoading, setPortalAccessLoading] = React.useState(false);
+  const [portalActionLoading, setPortalActionLoading] = React.useState(false);
+  const [portalMessage, setPortalMessage] = React.useState('');
+  const [portalError, setPortalError] = React.useState('');
   const [editForm, setEditForm] = React.useState({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', countryId: '', filingTypes: [] as string[] });
   const [form, setForm] = React.useState({ name: '', entityType: 'Individual', pan: '', gstin: '', phone: '', email: '', countryId: '', filingTypes: [] as string[] });
   const update = (key: string, value: any) => setForm(prev => ({ ...prev, [key]: value }));
+  React.useEffect(() => {
+    let disposed = false;
+    if (!selectedClient) return undefined;
+    setPortalAccessLoading(true);
+    setPortalMessage('');
+    setPortalError('');
+    fetchClientPortalAccess(selectedClient.id)
+      .then(access => {
+        if (!disposed) setPortalAccessEnabled(access.enabled);
+      })
+      .catch(err => {
+        if (!disposed) setPortalError(err instanceof Error ? err.message : 'Could not load portal access.');
+      })
+      .finally(() => {
+        if (!disposed) setPortalAccessLoading(false);
+      });
+    return () => { disposed = true; };
+  }, [selectedClient?.id]);
+
+  async function inviteSelectedClientToPortal() {
+    if (!selectedClient || portalActionLoading) return;
+    setPortalActionLoading(true);
+    setPortalMessage('');
+    setPortalError('');
+    try {
+      const result = await inviteClientToPortal(selectedClient.id);
+      setPortalAccessEnabled(true);
+      setPortalMessage(`A secure sign-in invitation was emailed to ${result.email}.`);
+    } catch (err) {
+      setPortalError(err instanceof Error ? err.message : 'Could not send the portal invitation.');
+    } finally {
+      setPortalActionLoading(false);
+    }
+  }
+
+  async function revokeSelectedClientPortalAccess() {
+    if (!selectedClient || portalActionLoading) return;
+    if (!window.confirm(`Revoke client portal access for ${selectedClient.name}?`)) return;
+    setPortalActionLoading(true);
+    setPortalMessage('');
+    setPortalError('');
+    try {
+      await revokeClientPortalAccess(selectedClient.id);
+      setPortalAccessEnabled(false);
+      setPortalMessage('Portal access has been revoked.');
+    } catch (err) {
+      setPortalError(err instanceof Error ? err.message : 'Could not revoke portal access.');
+    } finally {
+      setPortalActionLoading(false);
+    }
+  }
   async function save() {
     if (!form.name.trim()) { setError('Client name is required.'); return; }
     if (!form.countryId) { setError('Please select a supported country.'); return; }
@@ -134,6 +190,21 @@ export function ClientsPage() {
               <div className="full"><span>Email</span><b>{selectedClient.contact || 'Not provided'}</b></div>
             </div>
             <div className="client-details-section"><span className="eyebrow">Selected filings</span><div className="client-details-filings">{(selectedClient.filingTypes?.length ? selectedClient.filingTypes : selectedClient.svc).map(type => <span key={type} className="chip blue">{type}</span>)}</div></div>
+            <div className="client-details-section client-portal-access">
+              <span className="eyebrow">Secure client portal</span>
+              <p>Clients upload documents here. Files are stored privately and delivered to your desktop app’s local vault.</p>
+              {portalError && <div className="ob-error" role="alert">{portalError}</div>}
+              {portalMessage && <div className="portal-success-message" role="status">{portalMessage}</div>}
+              <div className="row">
+                <span className={`chip ${portalAccessEnabled ? 'green' : 'amber'}`}>
+                  {portalAccessLoading ? 'Checking access…' : portalAccessEnabled ? 'Portal enabled' : 'Portal not enabled'}
+                </span>
+                <span className="sp" />
+                {portalAccessEnabled
+                  ? <button className="btn sm danger" disabled={portalActionLoading || portalAccessLoading} onClick={() => void revokeSelectedClientPortalAccess()}>{portalActionLoading ? 'Please wait…' : 'Revoke access'}</button>
+                  : <button className="btn sm pri" disabled={portalActionLoading || portalAccessLoading || !selectedClient.contact.trim()} onClick={() => void inviteSelectedClientToPortal()} title={!selectedClient.contact.trim() ? 'Add an email address to this client first' : undefined}>{portalActionLoading ? 'Sending invitation…' : 'Email portal invitation'}</button>}
+              </div>
+            </div>
             </>}
           </div>
         </div>

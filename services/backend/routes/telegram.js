@@ -435,15 +435,7 @@ async function recoverPendingAttachmentDownloads() {
 }
 
 function startAttachmentDownloadWorker() {
-  if (attachmentWorkerTimer || !isConnected || !supabase || !botToken()) return;
-  const poll = () => {
-    recoverPendingAttachmentDownloads().catch((error) => {
-      console.error('[Telegram] attachment recovery worker failed:', error.message);
-    });
-  };
-  poll();
-  attachmentWorkerTimer = setInterval(poll, ATTACHMENT_DOWNLOAD_INTERVAL_MS);
-  attachmentWorkerTimer.unref?.();
+  return;
 }
 
 function expectedWebhookUrl() {
@@ -805,24 +797,11 @@ router.get('/clients/:clientId/messages', requireAuth, async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
 });
 
-router.post('/clients/:clientId/messages/:messageId/download', requireAuth, async (req, res) => {
-  try {
-    if (!isConnected || !(await assertOwnedClient(req.user.id, req.params.clientId))) return res.status(404).json({ success: false, message: 'Client not found.' });
-    const [{ data: client, error: clientError }, { data: message, error: messageError }] = await Promise.all([
-      supabase.from('clients').select('id,name').eq('id', req.params.clientId).eq('user_id', req.user.id).single(),
-      supabase.from('telegram_messages').select('*').eq('id', req.params.messageId).eq('client_id', req.params.clientId).eq('direction', 'inbound').single(),
-    ]);
-    if (clientError) throw clientError;
-    if (messageError) throw messageError;
-    if (!message.telegram_file_id) return res.status(422).json({ success: false, message: 'This Telegram message has no downloadable attachment.' });
-    if (message.file_download_error && isPermanentAttachmentError(message.file_download_error)) {
-      return res.status(422).json({ success: false, message: message.file_download_error, retryable: false });
-    }
-    const updated = await downloadTelegramAttachment(message, client);
-    if (updated.file_download_error) return res.status(502).json({ success: false, message: updated.file_download_error });
-    if (!updated.vault_file_ref) return res.status(409).json({ success: false, message: 'This attachment is already being downloaded. Refresh the conversation shortly.' });
-    return res.json({ success: true, data: publicTelegramMessage(updated) });
-  } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
+router.post('/clients/:clientId/messages/:messageId/download', requireAuth, (_req, res) => {
+  return res.status(410).json({
+    success: false,
+    message: 'Telegram file downloads are disabled. Ask the client to upload documents through the secure client portal.'
+  });
 });
 
 router.post('/send', requireAuth, async (req, res) => {
@@ -865,6 +844,13 @@ router.post('/send', requireAuth, async (req, res) => {
       throw error;
     }
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
+});
+
+router.post('/clients/:clientId/send-file', requireAuth, (_req, res) => {
+  return res.status(410).json({
+    success: false,
+    message: 'Sending files through Telegram is disabled. Use the secure client portal for document sharing.'
+  });
 });
 
 router.post('/clients/:clientId/send-file', requireAuth, express.raw({ type: '*/*', limit: TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES }), async (req, res) => {
@@ -1033,8 +1019,30 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
       console.warn(`[Telegram] Ignored inbound message from unlinked chat ${message.chat.id}.`);
       return res.status(200).json({ ok: true, ignored: true });
     }
+    if (attachment) {
+      let portalMessage = 'For your privacy, please send documents through the secure TaxFlow client portal. Files sent in Telegram are not downloaded or saved.';
+      try {
+        const configuredUrl = String(process.env.CLIENT_PORTAL_URL || '').trim();
+        if (configuredUrl) {
+          const portalUrl = new URL(configuredUrl);
+          if (portalUrl.protocol === 'https:' || process.env.NODE_ENV !== 'production') {
+            portalMessage += ` Open ${portalUrl.toString().replace(/\/+$/, '')}/portal to upload your file.`;
+          } else {
+            console.error('[Telegram] CLIENT_PORTAL_URL must use HTTPS in production.');
+            portalMessage += ' Please contact the practice for the secure portal address.';
+          }
+        } else {
+          portalMessage += ' Please contact the practice for the secure portal address.';
+        }
+      } catch (error) {
+        console.error('[Telegram] Invalid CLIENT_PORTAL_URL:', error.message);
+        portalMessage += ' Please contact the practice for the secure portal address.';
+      }
+      await telegramCall('sendMessage', { chat_id: message.chat.id, text: portalMessage });
+      return res.status(200).json({ ok: true, redirected: true });
+    }
     const messageType = attachment?.messageType || (text ? 'text' : getUnrepresentedTelegramMessage(message));
-    const body = text || (attachment ? attachment.fileName : `Telegram ${messageType} message received; this content is not available as a document.`);
+    const body = text || `Telegram ${messageType} message received; this content is not available as a document.`;
     const telegramDate = Number(message.date);
     const createdAt = Number.isFinite(telegramDate) && telegramDate > 0
       ? new Date(telegramDate * 1000).toISOString()
@@ -1047,14 +1055,6 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
       sender_user_id: message.from?.id ? String(message.from.id) : null,
       body,
       message_type: messageType,
-      ...(attachment ? {
-        telegram_file_id: attachment.fileId,
-        telegram_file_name: attachment.fileName,
-        mime_type: attachment.mimeType,
-        file_size: attachment.fileSize,
-        attachment_download_status: 'pending',
-        attachment_download_next_attempt_at: new Date().toISOString()
-      } : {}),
       delivery_status: 'received',
       created_at: createdAt
     }).select('*').single();
@@ -1065,16 +1065,9 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
         .eq('direction', 'inbound')
         .single();
       if (duplicateError) throw duplicateError;
-      if (duplicate?.telegram_file_id && !duplicate.vault_file_ref && duplicate.attachment_download_status !== 'downloading') {
-        void downloadTelegramAttachment(duplicate, client);
-      }
       return res.status(200).json({ ok: true, duplicate: true });
     }
     if (error) throw error;
-    if (attachment) {
-      console.log(`[Telegram] Received ${attachment.messageType} attachment for client ${client.id}; queued immediate storage.`);
-      void downloadTelegramAttachment(savedMessage, client);
-    }
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('[Telegram] webhook processing failed; returning a retryable response:', error.message);

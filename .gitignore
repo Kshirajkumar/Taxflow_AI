@@ -4,4 +4,7 @@ node_modules
 dist
 .env.local
 .playwright-mcp/
+
+# Separate repositories — do not push into this repo
+Taxflow.AI Website/
 Render Free Tier Telegram Bot Setup/

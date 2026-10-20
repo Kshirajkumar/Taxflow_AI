@@ -10,6 +10,7 @@ const { supabase, isConnected } = require('../db/supabase');
 const { ensureClientVaultStructure, listClientVaultTree, getClientVaultRoot, deleteClientVaultFile, resolveClientVaultFile, searchClientVaultFiles } = require('../vault/vaultManager');
 const {
   downloadDocument,
+  isExpectedPortalObject,
   isExpectedTelegramObject,
   normalizeMimeType
 } = require('../lib/documentStorage');
@@ -357,33 +358,46 @@ router.get('/:id/vault-file', async (req, res) => {
       if (parts.length === 4 && parts[2] === 'Raw') {
         const { data: documents, error: documentError } = await supabase
           .from('documents_metadata')
-          .select('id, client_id, file_name, created_at, storage_bucket, storage_object_path, mime_type')
+          .select('id, client_id, source, file_name, created_at, storage_bucket, storage_object_path, mime_type')
           .eq('client_id', client.id)
           .eq('file_name', parts[3])
-          .eq('source', 'Telegram')
+          .in('source', ['Telegram', 'Portal'])
           .not('storage_object_path', 'is', null);
         if (documentError) throw documentError;
         const document = (documents || []).find(item => {
           const date = new Date(item.created_at);
           return !Number.isNaN(date.getTime())
-            && String(date.getFullYear()) === parts[0]
-            && new Intl.DateTimeFormat('en-US', { month: 'long' }).format(date) === parts[1];
+            && String(date.getUTCFullYear()) === parts[0]
+            && new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(date) === parts[1];
         });
         if (document) {
-          if (!isExpectedTelegramObject({
+          const safeObject = document.source === 'Portal'
+            ? isExpectedPortalObject({
+                bucket: document.storage_bucket,
+                objectKey: document.storage_object_path,
+                userId: req.user.id,
+                clientId: document.client_id,
+                documentId: document.id,
+                createdAt: document.created_at,
+                fileName: document.file_name
+              })
+            : isExpectedTelegramObject({
             bucket: document.storage_bucket,
             objectKey: document.storage_object_path,
             userId: req.user.id,
             clientId: document.client_id,
             createdAt: document.created_at,
             fileName: document.file_name
-          })) {
+              });
+          if (!safeObject) {
             console.error(`[Clients] Refusing unexpected cloud storage reference for document ${document.id}.`);
             return res.status(404).json({ success: false, message: 'The cloud document reference is invalid.' });
           }
           const buffer = await downloadDocument(document.storage_bucket, document.storage_object_path);
           res.setHeader('Cache-Control', 'private, no-store');
           res.setHeader('Content-Type', normalizeMimeType(document.mime_type));
+          res.setHeader('X-Content-Type-Options', 'nosniff');
+          res.setHeader('Content-Disposition', 'attachment');
           return res.send(buffer);
         }
       }
@@ -475,20 +489,31 @@ router.get('/:id/vault-tree', async (req, res) => {
     if (isConnected) {
       const { data: cloudDocuments, error: documentsError } = await supabase
         .from('documents_metadata')
-        .select('id, file_name, file_size_kb, created_at, storage_bucket, storage_object_path')
+        .select('id, source, file_name, file_size_kb, created_at, storage_bucket, storage_object_path')
         .eq('client_id', client.id)
-        .eq('source', 'Telegram')
+        .in('source', ['Telegram', 'Portal'])
         .not('storage_object_path', 'is', null);
       if (documentsError) throw documentsError;
       for (const document of cloudDocuments || []) {
-        if (!isExpectedTelegramObject({
+        const safeObject = document.source === 'Portal'
+          ? isExpectedPortalObject({
+              bucket: document.storage_bucket,
+              objectKey: document.storage_object_path,
+              userId: req.user.id,
+              clientId: client.id,
+              documentId: document.id,
+              createdAt: document.created_at,
+              fileName: document.file_name
+            })
+          : isExpectedTelegramObject({
           bucket: document.storage_bucket,
           objectKey: document.storage_object_path,
           userId: req.user.id,
           clientId: client.id,
           createdAt: document.created_at,
           fileName: document.file_name
-        })) {
+            });
+        if (!safeObject) {
           console.error(`[Clients] Skipping unexpected cloud storage reference for document ${document.id}.`);
           continue;
         }

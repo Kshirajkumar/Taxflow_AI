@@ -12,6 +12,7 @@ export interface PendingLocalDocument {
   sha256: string;
   year: string;
   month: string;
+  source: 'Telegram' | 'Portal';
 }
 
 export function isDesktopApp(): boolean {

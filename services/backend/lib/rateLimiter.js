@@ -67,4 +67,4 @@ async function enforceChatRateLimit(userId) {
   return day;
 }
 
-module.exports = { enforceChatRateLimit, RateLimiterUnavailableError };
+module.exports = { consume, enforceChatRateLimit, RateLimiterUnavailableError };

@@ -51,6 +51,7 @@ const documentsRouter = require('./routes/documents');
 const extractionRouter = require('./routes/extraction');
 const whatsappRouter = require('./routes/whatsapp');
 const telegramRouter = require('./routes/telegram');
+const clientPortalRouter = require('./routes/clientPortal');
 const deadlinesRouter = require('./routes/deadlines');
 const generateRouter = require('./routes/generate');
 const metadataRouter = require('./routes/metadata');
@@ -67,7 +68,7 @@ if (process.env.NODE_ENV === 'production' && !process.env.VAULT_PATH) {
 }
 
 // ─── Middleware ────────────────────────────────────────────────
-app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'] }));
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization', 'X-File-Name', 'X-File-Mime-Type'] }));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
@@ -82,6 +83,7 @@ initVault();
 
 // ─── Mount Routes ─────────────────────────────────────────────
 app.use('/api/v1/auth', authRouter);
+app.use('/api/v1/client-portal', clientPortalRouter);
 app.use('/api/v1/metadata', requireAuth, metadataRouter);
 app.use('/api/v1/clients', requireAuth, clientsRouter);
 app.use('/api/v1/notifications', requireAuth, require('./routes/notifications'));
@@ -179,7 +181,9 @@ app.use((err, req, res, _next) => {
   if (err.type === 'entity.too.large') {
     const message = req.path.endsWith('/send-file')
       ? 'The attachment exceeds the configured 25 MB upload limit.'
-      : 'The request body is too large.';
+      : req.path.endsWith('/client-portal/documents')
+        ? 'Files must be 20 MB or smaller.'
+        : 'The request body is too large.';
     return res.status(413).json({ success: false, message });
   }
   console.error('[Server Error]', err.message);

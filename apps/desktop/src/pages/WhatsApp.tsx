@@ -7,11 +7,9 @@ import {
   fetchTelegramMessages,
   fetchTelegramStatus,
   sendTelegramMessage,
-  sendTelegramAttachment,
   fetchTelegramUnread,
   fetchTelegramPreviews,
   markTelegramClientRead,
-  downloadTelegramMessageFile,
   fetchDocumentPreview,
   fetchWhatsAppStatus,
   sendWhatsAppManualMessage,
@@ -35,7 +33,6 @@ function fillTpl(body: string, name: string) {
   return body.replace(/\{(\w+)\}/g, (_, k) => (k === 'name' ? name : k === 'period' ? 'August 2026' : k === 'due' ? '20 Sep 2026' : k === 'filing' ? 'GSTR-3B' : k === 'doc' ? 'bank statement' : '—'));
 }
 
-const MAX_TELEGRAM_OUTBOUND_FILE_BYTES = 25 * 1024 * 1024;
 
 function formatAttachmentSize(bytes?: number | null) {
   if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '';
@@ -190,7 +187,6 @@ export function WhatsAppPage() {
   const [telegramConnecting, setTelegramConnecting] = useState(false);
   const [telegramSending, setTelegramSending] = useState(false);
   const [openingTelegramFileId, setOpeningTelegramFileId] = useState('');
-  const [retryingTelegramFileId, setRetryingTelegramFileId] = useState('');
   const [activeTelegramPreview, setActiveTelegramPreview] = useState<{ message: TelegramMessage; file: Blob } | null>(null);
   const [telegramFileOpenError, setTelegramFileOpenError] = useState<{ messageId: string; message: string } | null>(null);
   const [telegramNativeOpenError, setTelegramNativeOpenError] = useState('');
@@ -200,7 +196,6 @@ export function WhatsAppPage() {
   const [contactsCollapsed, setContactsCollapsed] = useState(false);
   const [telegramDraft, setTelegramDraft] = useState('');
   const [telegramRequestId, setTelegramRequestId] = useState('');
-  const [pendingTelegramFile, setPendingTelegramFile] = useState<File | null>(null);
   const [telegramRetry, setTelegramRetry] = useState(0);
   /** Text staged inline in the thread waiting for approval — NOT yet sent */
   const [pendingTelegramMsg, setPendingTelegramMsg] = useState('');
@@ -221,7 +216,6 @@ export function WhatsAppPage() {
   const [whatsAppSending, setWhatsAppSending] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const telegramFileInputRef = useRef<HTMLInputElement>(null);
   const telegramMessageInputRef = useRef<HTMLTextAreaElement>(null);
   const whatsAppMessageInputRef = useRef<HTMLTextAreaElement>(null);
   const telegramTemplateMenuRef = useRef<HTMLDivElement>(null);
@@ -520,20 +514,6 @@ export function WhatsAppPage() {
     }
   }
 
-  async function retryTelegramFile(message: TelegramMessage) {
-    if (!c || retryingTelegramFileId) return;
-    setRetryingTelegramFileId(message.id);
-    setTelegramError('');
-    try {
-      const updated = await downloadTelegramMessageFile(c.id, message.id);
-      setTelegramMessages((current) => current.map((item) => item.id === updated.id ? updated : item));
-    } catch (error) {
-      setTelegramError(error instanceof Error ? error.message : 'Could not download this Telegram attachment.');
-    } finally {
-      setRetryingTelegramFileId('');
-    }
-  }
-
   function requestTelegramSend() {
     const text = input.trim();
     if (!text || telegramSending || pendingTelegramMsg || !c) return;
@@ -551,41 +531,14 @@ export function WhatsAppPage() {
     scrollThreadToLatest();
   }
 
-  function requestTelegramAttachment(file: File) {
-    if (telegramSending || pendingTelegramMsg || !c) return;
-    if (!telegramReady || !isTelegramLinkedForCurrentClient || isTelegramConversationLoading) {
-      setTelegramError('Telegram is not ready or this client is not linked. Please check the connection and try again.');
-      return;
-    }
-    if (file.size === 0) {
-      setTelegramError('The selected attachment is empty.');
-      return;
-    }
-    if (file.size > MAX_TELEGRAM_OUTBOUND_FILE_BYTES) {
-      setTelegramError('Telegram attachments cannot exceed 25 MB.');
-      return;
-    }
-    setTelegramError('');
-    setTelegramInfo('');
-    setTelegramRequestId(crypto.randomUUID());
-    setTelegramDraft('');
-    setPendingTelegramFile(file);
-    setPendingTelegramMsg(file.name);
-    setPendingTelegramClientId(c.id);
-    setIsEditingPending(false);
-    setInput('');
-    scrollThreadToLatest();
-  }
-
   async function confirmTelegramSend() {
-    const file = pendingTelegramFile;
     const messageText = telegramDraft;
-    if ((!messageText && !file) || telegramSending || !c || pendingTelegramClientId !== c.id) return;
+    if (!messageText || telegramSending || !c || pendingTelegramClientId !== c.id) return;
     const targetClientId = pendingTelegramClientId;
     const requestId = telegramRequestId || crypto.randomUUID();
     setTelegramSending(true);
     setTelegramError('');
-    setTelegramInfo('Sending securely through Telegram…');
+    setTelegramInfo('Sending message through Telegram…');
     try {
       const optimisticMessage: TelegramMessage = {
         id: `local-${requestId}`,
@@ -593,13 +546,8 @@ export function WhatsAppPage() {
         provider_message_id: `taxflow:${requestId}`,
         direction: 'outbound',
         chat_id: '',
-        body: file ? file.name : messageText,
-        message_type: file ? 'document' : 'text',
-        ...(file ? {
-          telegram_file_name: file.name,
-          mime_type: file.type || 'application/octet-stream',
-          file_size: file.size,
-        } : {}),
+        body: messageText,
+        message_type: 'text',
         delivery_status: 'sending',
         created_at: new Date().toISOString(),
       };
@@ -613,19 +561,16 @@ export function WhatsAppPage() {
       setPendingTelegramClientId('');
       setTelegramDraft('');
       setTelegramRequestId('');
-      setPendingTelegramFile(null);
       setIsEditingPending(false);
       setEditText('');
 
-      const sentMessage = file
-        ? await sendTelegramAttachment(targetClientId, file, requestId)
-        : await sendTelegramMessage(targetClientId, messageText, requestId);
+      const sentMessage = await sendTelegramMessage(targetClientId, messageText, requestId);
       setTelegramMessages((current) => mergeTelegramMessages([sentMessage], current, targetClientId));
       setPendingTelegramMsg('');
       setPendingTelegramClientId('');
       setTelegramDraft('');
       setTelegramRequestId('');
-      setTelegramInfo(file ? 'Attachment sent through Telegram.' : 'Message sent through Telegram.');
+      setTelegramInfo('Message sent through Telegram.');
       setTelegramSending(false);
 
       try {
@@ -644,7 +589,6 @@ export function WhatsAppPage() {
       setPendingTelegramClientId('');
       setTelegramDraft('');
       setTelegramRequestId('');
-      setPendingTelegramFile(null);
       setIsEditingPending(false);
       setEditText('');
       setTelegramError(error instanceof Error ? error.message : 'Unable to send Telegram message. Please try again.');
@@ -658,7 +602,6 @@ export function WhatsAppPage() {
     setPendingTelegramClientId('');
     setTelegramDraft('');
     setTelegramRequestId('');
-    setPendingTelegramFile(null);
     setTelegramError('');
     setTelegramInfo('');
     setIsEditingPending(false);
@@ -1045,20 +988,10 @@ export function WhatsAppPage() {
                                 : 'Sending through Telegram…'
                             : m.vault_file_ref
                               ? 'Saved securely in the client vault'
-                              : m.file_download_error || (
-                                m.attachment_download_status === 'downloading'
-                                  ? 'Saving to the client vault…'
-                                  : m.file_download_pending
-                                    ? 'Queued for secure saving…'
-                                    : 'Waiting to download…'
-                              )}
+                              : 'Telegram files are not downloaded. Ask the client to upload through their secure portal.'}
                           onOpen={m.vault_file_ref ? () => void openTelegramFile(m) : undefined}
                           openLabel={supportsNativeFileOpen() ? 'Open with default app' : 'Preview file'}
                           opening={openingTelegramFileId === m.id}
-                          onRetry={m.direction === 'inbound' && m.file_download_error && m.file_download_retryable !== false
-                            ? () => void retryTelegramFile(m)
-                            : undefined}
-                          retrying={retryingTelegramFileId === m.id}
                         />
                         {telegramFileOpenError?.messageId === m.id && <small className="tg-file-error">{telegramFileOpenError.message}</small>}
                       </>
@@ -1080,15 +1013,7 @@ export function WhatsAppPage() {
 
                   {/* ── Message bubble (muted while pending / editing) ── */}
                   <div className={`msg me tg-pending-bubble${isEditingPending ? ' tg-pending-bubble--editing' : ''}`}>
-                    {pendingTelegramFile ? (
-                      <div className="tg-file-attachment">
-                        <Icon name="file" size={17} />
-                        <span className="tg-file-attachment-name">
-                          <b>{pendingTelegramFile.name}</b>
-                          <small>{(pendingTelegramFile.size / (1024 * 1024)).toFixed(2)} MB · not sent</small>
-                        </span>
-                      </div>
-                    ) : <div>{pendingTelegramMsg}</div>}
+                    <div>{pendingTelegramMsg}</div>
                     <span className="mt">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ display:'inline', verticalAlign:'middle', marginRight:3 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                       {isEditingPending ? 'Editing…' : 'Pending approval'}
@@ -1161,7 +1086,7 @@ export function WhatsAppPage() {
                           </span>
                           <div className="tg-approval-text">
                             <b>Review before sending via Telegram</b>
-                            <span>{pendingTelegramFile ? 'File not delivered yet. Approve or discard.' : 'Message not delivered yet. Approve, edit, or discard.'}</span>
+                            <span>Message not delivered yet. Approve, edit, or discard.</span>
                           </div>
                         </div>
                         <div className="tg-approval-actions">
@@ -1171,10 +1096,10 @@ export function WhatsAppPage() {
                             Discard
                           </button>
                           {/* Edit */}
-                          {!pendingTelegramFile && <button className="tg-edit-btn" onClick={startEditingPending} disabled={telegramSending}>
+                          <button className="tg-edit-btn" onClick={startEditingPending} disabled={telegramSending}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             Edit
-                          </button>}
+                          </button>
                           {/* Approve & Send */}
                           <button className="tg-approve-btn" onClick={() => void confirmTelegramSend()} disabled={telegramSending}>
                             {telegramSending
@@ -1268,28 +1193,8 @@ export function WhatsAppPage() {
                       </button>
                     ))}
                   </div>
-                  <input
-                    ref={telegramFileInputRef}
-                  type="file"
-                  hidden
-                  onChange={(event) => {
-                    const file = event.currentTarget.files?.[0];
-                    event.currentTarget.value = '';
-                    if (file) requestTelegramAttachment(file);
-                  }}
-                  aria-label="Select a file to send through Telegram"
-                />
                 <div className="telegram-composer-pill">
-                  <button
-                    type="button"
-                    className="telegram-composer-action telegram-composer-attach"
-                    onClick={() => telegramFileInputRef.current?.click()}
-                    disabled={!telegramReady || !isTelegramLinkedForCurrentClient || isTelegramConversationLoading || telegramSending || !!pendingTelegramMsg || isEditingPending}
-                    aria-label="Attach a file for Telegram"
-                    title="Attach a file (up to 25 MB)"
-                  >
-                    <Icon name="plus" size={19} />
-                  </button>
+                  <div className="telegram-file-policy" role="note">Share files through the secure client portal.</div>
                   <div className="telegram-template-anchor" ref={telegramTemplateMenuRef}>
                     <button
                       type="button"
