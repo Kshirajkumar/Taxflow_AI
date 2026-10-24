@@ -12,10 +12,11 @@ Keep the private `taxflow-intake` bucket available to the backend service role f
 
 ## Message and file flow
 
-1. Staff create a one-time Telegram connection link for an active client. The client starts the bot in a private chat; TaxFlow links the Telegram account and can send a welcome message with separate secure portal enrollment instructions.
-2. Telegram sends updates to the standalone relay service. The relay verifies the webhook secret and forwards updates to TaxFlow over HTTPS. It acknowledges Telegram only after a successful backend response; transient failures return HTTP 503 so Telegram can retry. TaxFlow deduplicates retried update IDs.
-3. TaxFlow persists and processes text messages only. Media updates are acknowledged and discarded without downloading, storing, replying with an upload link, or accessing document tables.
-4. Clients upload documents through the secure client portal. Portal documents are stored in private Supabase Storage and can be synced to an authorized desktop local vault.
+1. Staff use **Connect client** to create a one-time Telegram start link. Before returning that link, the backend stores a hashed Telegram connection token and creates a private client-portal invitation in Supabase; only token hashes are stored for the portal invitation.
+2. The client opens the Telegram start link in a private chat. TaxFlow links the Telegram account and sends two separate messages in order: a text-only welcome/privacy message, then the secure client-portal invitation link with enrollment instructions. The portal invitation is derived for that connection, tied to the client's email, and stored by hash in the database.
+3. Telegram sends updates to the standalone relay service. The relay verifies the webhook secret and forwards updates to TaxFlow over HTTPS. It acknowledges Telegram only after a successful backend response; transient failures return HTTP 503 so Telegram can retry. TaxFlow deduplicates retried update IDs.
+4. TaxFlow persists and processes text messages only. Media updates are acknowledged and discarded without downloading, storing, replying with an upload link, or accessing document tables.
+5. Clients upload documents through the secure client portal. Portal documents are stored in private Supabase Storage and can be synced to an authorized desktop local vault.
 
 The authenticated Telegram status endpoint checks the webhook and required messaging/link schema. Portal configuration and document upload readiness are handled separately. Persistent setup warnings remain visible until the underlying configuration or database issue is corrected; short-lived local sync notices dismiss automatically.
 

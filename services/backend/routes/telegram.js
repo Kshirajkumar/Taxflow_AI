@@ -100,53 +100,32 @@ function getClientPortalLink(inviteToken) {
   return `${portalUrl.origin}/portal#invite=${encodeURIComponent(inviteToken)}`;
 }
 
-function createTelegramWelcome(clientName, inviteToken) {
-  let portalInstructions;
-  try {
-    portalInstructions = `1. Open your private portal invitation: ${getClientPortalLink(inviteToken)}\n2. Use the same email address you gave your CA.\n3. Create a password the first time. On future visits, choose “I already have an account” and sign in with that email and password.\n4. Choose your documents and upload them securely.`;
-  } catch (error) {
-    console.error('[Telegram] Could not add the client portal link to the welcome message:', error.message);
-    portalInstructions = '1. Ask your CA to resend your secure client portal invitation.\n2. Open it and use the same email address you gave your CA.\n3. Create a password the first time; use that password for future visits.\n4. Choose your documents and upload them securely.';
-  }
+function createTelegramWelcome(clientName) {
   return [
     `Welcome to TaxFlow, ${clientName}! Your private Telegram chat is connected.`,
     '',
     'Privacy reminder: use Telegram for ordinary messages and questions only. Do not send tax, financial, identity, or other sensitive documents here. Upload files only through your secure client portal.',
     '',
-    'Upload documents in 4 easy steps:',
-    portalInstructions,
-    '',
-    'Use exactly the email address your CA has on file. Your invitation is private and should not be forwarded. If you lose it or cannot access your account, contact your CA for help.'
+    'I will send your private client portal invitation in the next message.',
+    'Use that portal for all document uploads.',
   ].join('\n');
 }
 
-async function sendTelegramWelcome(client, chatId, telegramToken, createdBy) {
-  let portalInviteToken = deriveTelegramPortalInviteToken(telegramToken);
-  const { data: invitation, error: invitationLookupError } = await supabase.from('client_portal_invites')
-    .select('id,invited_email,expires_at,consumed_at,revoked_at')
-    .eq('token_hash', hashInviteToken(portalInviteToken))
-    .maybeSingle();
-  if (invitationLookupError) throw invitationLookupError;
-  if (!invitation) {
-    if (!client.email || client.status !== 'Active') {
-      throw new Error('An active client email is required to create the portal invitation.');
-    }
-    await createClientPortalInvite({
-      clientId: client.id,
-      email: client.email,
-      createdBy,
-      token: portalInviteToken,
-    });
-  } else if (
-    invitation.consumed_at
-    || invitation.revoked_at
-    || new Date(invitation.expires_at).getTime() <= Date.now()
-    || String(invitation.invited_email || '').trim().toLowerCase() !== String(client.email || '').trim().toLowerCase()
-  ) {
-    portalInviteToken = null;
+function createTelegramPortalInvitation(inviteToken) {
+  if (!inviteToken) {
+    return 'Your secure client portal invitation is unavailable or has expired. Please ask your CA to issue a new invitation.';
   }
-  const body = createTelegramWelcome(client.name, portalInviteToken);
-  const providerMessageId = `taxflow:welcome:${client.id}:${chatId}`;
+  return [
+    `Your secure client portal invitation is ready:\n${getClientPortalLink(inviteToken)}`,
+    '',
+    'Open the link and use the same email address you gave your CA.',
+    'Create a password the first time. On future visits, sign in with that email and password.',
+    'Your invitation is private; do not forward it. If you lose access, contact your CA for a new invitation.',
+    'Upload documents only through the secure portal. Do not send documents in Telegram.',
+  ].join('\n');
+}
+
+async function sendTrackedTelegramMessage({ client, chatId, providerMessageId, body, label }) {
   let { data: queuedMessage, error: queueError } = await supabase.from('telegram_messages')
     .insert({
       client_id: client.id,
@@ -178,15 +157,57 @@ async function sendTelegramWelcome(client, chatId, telegramToken, createdBy) {
       .update({ delivery_status: 'sent', provider_response_id: String(sent.message_id), sender_user_id: String(sent.from?.id || '') })
       .eq('provider_message_id', providerMessageId)
       .eq('direction', 'outbound');
-    if (updateError) console.error('[Telegram] Welcome message was sent but its delivery status could not be saved:', updateError.message);
+    if (updateError) console.error(`[Telegram] ${label} was sent but its delivery status could not be saved:`, updateError.message);
   } catch (error) {
     const { error: statusError } = await supabase.from('telegram_messages')
       .update({ delivery_status: 'failed' })
       .eq('provider_message_id', providerMessageId)
       .eq('direction', 'outbound');
-    if (statusError) console.error('[Telegram] Welcome message failure status could not be saved:', statusError.message);
+    if (statusError) console.error(`[Telegram] ${label} failure status could not be saved:`, statusError.message);
     throw error;
   }
+}
+
+async function sendTelegramWelcome(client, chatId, telegramToken, createdBy) {
+  let portalInviteToken = deriveTelegramPortalInviteToken(telegramToken);
+  const { data: invitation, error: invitationLookupError } = await supabase.from('client_portal_invites')
+    .select('id,invited_email,expires_at,consumed_at,revoked_at')
+    .eq('token_hash', hashInviteToken(portalInviteToken))
+    .maybeSingle();
+  if (invitationLookupError) throw invitationLookupError;
+  if (!invitation) {
+    if (!client.email || client.status !== 'Active') {
+      throw new Error('An active client email is required to create the portal invitation.');
+    }
+    await createClientPortalInvite({
+      clientId: client.id,
+      email: client.email,
+      createdBy,
+      token: portalInviteToken,
+    });
+  } else if (
+    invitation.consumed_at
+    || invitation.revoked_at
+    || new Date(invitation.expires_at).getTime() <= Date.now()
+    || String(invitation.invited_email || '').trim().toLowerCase() !== String(client.email || '').trim().toLowerCase()
+  ) {
+    portalInviteToken = null;
+  }
+
+  await sendTrackedTelegramMessage({
+    client,
+    chatId,
+    providerMessageId: `taxflow:welcome:${client.id}:${chatId}`,
+    body: createTelegramWelcome(client.name),
+    label: 'Welcome message',
+  });
+  await sendTrackedTelegramMessage({
+    client,
+    chatId,
+    providerMessageId: `taxflow:portal-invite:${client.id}:${chatId}`,
+    body: createTelegramPortalInvitation(portalInviteToken),
+    label: 'Portal invitation message',
+  });
 }
 
 function expectedWebhookUrl() {
@@ -324,6 +345,8 @@ router.post('/clients/:clientId/link', requireAuth, async (req, res) => {
     }
     const username = botUsername() || (await telegramCall('getMe', {})).username;
     const raw = crypto.randomBytes(32).toString('base64url');
+    const portalInviteToken = deriveTelegramPortalInviteToken(raw);
+    getClientPortalLink(portalInviteToken);
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     const telegramTokenHash = hash(raw);
     const { error } = await supabase.from('telegram_link_tokens').insert({ client_id: req.params.clientId, token_hash: telegramTokenHash, expires_at: expiresAt, created_by: req.user.id });
@@ -333,7 +356,7 @@ router.post('/clients/:clientId/link', requireAuth, async (req, res) => {
         clientId: client.id,
         email: clientEmail,
         createdBy: req.user.id,
-        token: deriveTelegramPortalInviteToken(raw),
+        token: portalInviteToken,
       });
     } catch (inviteError) {
       const { error: cleanupError } = await supabase.from('telegram_link_tokens')

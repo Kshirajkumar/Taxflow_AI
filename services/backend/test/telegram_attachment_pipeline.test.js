@@ -279,13 +279,13 @@ test('Telegram media updates are ignored without storage, database access, or an
   assert.equal(telegramCalls.length, 0);
 });
 
-test('Telegram sends a secure portal welcome once when a client first starts the linked bot', async (t) => {
+test('Telegram sends a welcome then a private portal invitation and retries only the failed message', async (t) => {
   const oldFrom = database.supabase.from;
   const oldFetch = global.fetch;
   const envKeys = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'CLIENT_PORTAL_URL'];
   const oldEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
   const telegramCalls = [];
-  let failFirstWelcome = true;
+  let failFirstPortalInvitation = true;
   const rawToken = 'first-start-token';
   Object.values(tables).forEach((rows) => { rows.length = 0; });
   tables.clients.push({ id: 'client-welcome', name: 'Welcome Client', email: 'client@example.com', status: 'Active', telegram_chat_id: null, telegram_user_id: null });
@@ -303,9 +303,10 @@ test('Telegram sends a secure portal welcome once when a client first starts the
   process.env.CLIENT_PORTAL_URL = 'https://taxflow.example';
   global.fetch = async (url, init) => {
     if (String(url).startsWith('http://127.0.0.1:')) return oldFetch(url, init);
-    telegramCalls.push({ url: String(url), body: JSON.parse(init.body) });
-    if (failFirstWelcome) {
-      failFirstWelcome = false;
+    const call = { url: String(url), body: JSON.parse(init.body) };
+    telegramCalls.push(call);
+    if (call.body.text.includes('#invite=') && failFirstPortalInvitation) {
+      failFirstPortalInvitation = false;
       return new Response(JSON.stringify({ ok: false, description: 'Temporary Telegram failure' }), {
         status: 503,
         headers: { 'content-type': 'application/json' }
@@ -352,27 +353,33 @@ test('Telegram sends a secure portal welcome once when a client first starts the
   assert.equal(firstResponse.status, 503);
   assert.equal(tables.clients[0].telegram_chat_id, 'welcome-chat');
   assert.equal(tables.clients[0].telegram_user_id, '902');
-  assert.equal(telegramCalls.length, 1);
+  assert.equal(telegramCalls.length, 2);
   assert.match(telegramCalls[0].body.text, /do not send tax, financial, identity, or other sensitive documents/i);
-  assert.match(telegramCalls[0].body.text, /https:\/\/taxflow\.example\/portal/);
-  assert.match(telegramCalls[0].body.text, /same email address you gave your CA/i);
-  assert.match(telegramCalls[0].body.text, /Create a password the first time/);
-  assert.match(telegramCalls[0].body.text, /#invite=/);
-  assert.equal(tables.telegram_messages.length, 1);
-  assert.match(tables.telegram_messages[0].body, /\[private client portal invitation link\]/);
+  assert.match(telegramCalls[0].body.text, /next message/i);
+  assert.doesNotMatch(telegramCalls[0].body.text, /#invite=/);
+  assert.match(telegramCalls[1].body.text, /https:\/\/taxflow\.example\/portal/);
+  assert.match(telegramCalls[1].body.text, /same email address you gave your CA/i);
+  assert.match(telegramCalls[1].body.text, /Create a password the first time/);
+  assert.match(telegramCalls[1].body.text, /#invite=/);
+  assert.equal(tables.telegram_messages.length, 2);
   assert.doesNotMatch(tables.telegram_messages[0].body, /#invite=/);
-  assert.equal(tables.telegram_messages[0].delivery_status, 'failed');
+  assert.equal(tables.telegram_messages[0].delivery_status, 'sent');
+  assert.match(tables.telegram_messages[1].body, /\[private client portal invitation link\]/);
+  assert.doesNotMatch(tables.telegram_messages[1].body, /#invite=/);
+  assert.equal(tables.telegram_messages[1].delivery_status, 'failed');
 
   const retryResponse = await sendUpdate();
   assert.equal(retryResponse.status, 200);
   assert.deepEqual(await retryResponse.json(), { ok: true, duplicate: true });
-  assert.equal(telegramCalls.length, 2);
+  assert.equal(telegramCalls.length, 3);
+  assert.equal(telegramCalls[2].body.text, telegramCalls[1].body.text);
   assert.equal(tables.telegram_messages[0].delivery_status, 'sent');
+  assert.equal(tables.telegram_messages[1].delivery_status, 'sent');
 
   const duplicateResponse = await sendUpdate();
   assert.equal(duplicateResponse.status, 200);
-  assert.equal(telegramCalls.length, 2);
-  assert.equal(tables.telegram_messages.length, 1);
+  assert.equal(telegramCalls.length, 3);
+  assert.equal(tables.telegram_messages.length, 2);
 });
 
 test('Telegram diagnostics expect the separate relay when direct webhook registration is disabled', () => {
