@@ -142,6 +142,11 @@ export function ClientsPage() {
       const updated = { ...selectedClient, name: saved.name || editForm.name.trim(), entityType: saved.entity_type || editForm.entityType, countryId: saved.country_id || editForm.countryId, country: saved.country_name || selectedClient.country, short: (saved.name || editForm.name).slice(0, 3).toUpperCase(), gstin: saved.gstin || '', pan: saved.pan || '', svc: Array.isArray(saved.filing_types) ? saved.filing_types : editForm.filingTypes, filingTypes: Array.isArray(saved.filing_types) ? saved.filing_types : editForm.filingTypes, contact: saved.email || '', phone: saved.phone || '' };
       dispatch({ type: 'UPDATE_CLIENT', client: updated });
       setSelectedClient(updated);
+      if (saved.portalAccessReset) {
+        setPortalAccessEnabled(false);
+        setPortalInviteLink('');
+        setPortalMessage('Client email changed. The previous portal login was disconnected. Create a fresh invitation link and send it to the new email; the client must create a new portal account. Existing client documents remain attached to this client record.');
+      }
       setPortalError(saved.portalAccessWarning || '');
       setEditingClient(false);
     } catch (err: any) { setEditError(err.message || 'Could not update client.'); }

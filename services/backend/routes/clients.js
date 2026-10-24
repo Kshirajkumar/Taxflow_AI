@@ -309,53 +309,105 @@ router.patch('/:id', async (req, res) => {
         .maybeSingle();
       if (currentClientError) throw currentClientError;
       if (!currentClient) return res.status(404).json({ success: false, message: 'Client not found.' });
+      const previousEmail = String(currentClient.email || '').trim().toLowerCase();
+      const requestedEmail = updates.email === undefined ? previousEmail : String(updates.email || '').trim().toLowerCase();
+      const emailChanged = updates.email !== undefined && previousEmail !== requestedEmail;
+      let existingAccess = null;
+      if (emailChanged) {
+        const { data, error: accessLookupError } = await supabase
+          .from('client_portal_access')
+          .select('id, user_id')
+          .eq('client_id', req.params.id)
+          .maybeSingle();
+        if (accessLookupError) throw accessLookupError;
+        existingAccess = data;
+      }
       const { data, error } = await supabase
         .from('clients').update(updates).eq('id', req.params.id).eq('user_id', req.user.id).select('*, supported_countries(country_name,currency_code)').single();
       if (error) throw error;
       let portalAccessWarning = '';
-      const previousEmail = String(currentClient.email || '').trim().toLowerCase();
       const updatedEmail = String(data.email || '').trim().toLowerCase();
-      if (updates.email !== undefined && previousEmail !== updatedEmail) {
+      const portalAccessReset = emailChanged && previousEmail !== updatedEmail;
+      if (portalAccessReset) {
+        const warnings = [];
         try {
           await revokeClientPortalInvites(data.id);
-          const { data: existingAccess, error: accessLookupError } = await supabase
-            .from('client_portal_access')
-            .select('id')
-            .eq('client_id', data.id)
-            .maybeSingle();
-          if (accessLookupError) throw accessLookupError;
+        } catch (portalError) {
+          console.error(`[Clients] Could not revoke old portal invitations for ${data.id}:`, portalError.message);
+          warnings.push('Some old invitation links may remain in the database, but they no longer match the client email.');
+        }
+
+        let accessDetached = false;
+        try {
           if (existingAccess && updatedEmail) {
-            const { error: accessUpdateError } = await supabase
+            const { data: updatedAccess, error: accessUpdateError } = await supabase
               .from('client_portal_access')
-              .update({ invited_email: updatedEmail, user_id: null, active: true, invitation_pending: false })
-              .eq('id', existingAccess.id);
+              .update({ invited_email: updatedEmail, user_id: null, active: true, invitation_pending: false, updated_at: new Date().toISOString() })
+              .eq('id', existingAccess.id)
+              .select('id')
+              .maybeSingle();
             if (accessUpdateError) throw accessUpdateError;
+            accessDetached = Boolean(updatedAccess);
           } else if (existingAccess) {
-            const { error: accessRevokeError } = await supabase
+            const { data: updatedAccess, error: accessRevokeError } = await supabase
               .from('client_portal_access')
-              .update({ invited_email: null, user_id: null, active: false, invitation_pending: false })
-              .eq('id', existingAccess.id);
+              .update({ invited_email: null, user_id: null, active: false, invitation_pending: false, updated_at: new Date().toISOString() })
+              .eq('id', existingAccess.id)
+              .select('id')
+              .maybeSingle();
             if (accessRevokeError) throw accessRevokeError;
+            accessDetached = Boolean(updatedAccess);
           } else if (updatedEmail) {
             const { error: accessInsertError } = await supabase
               .from('client_portal_access')
               .insert({ client_id: data.id, invited_email: updatedEmail, active: true, invitation_pending: false, created_by: req.user.id });
             if (accessInsertError) throw accessInsertError;
+            accessDetached = true;
           }
         } catch (portalError) {
-          console.error(`[Clients] Portal access email update failed for ${data.id}:`, portalError.message);
-          portalAccessWarning = 'Client details were updated, but portal access could not be updated. Review this client’s portal access before sending an upload link.';
+          console.error(`[Clients] Portal access reset failed for ${data.id}:`, portalError.message);
+          warnings.push('The client record was updated, but portal access could not be fully reset. Review this client’s portal access before sending an upload link.');
         }
+
+        if (existingAccess?.user_id && accessDetached) {
+          try {
+            const { data: otherAccess, error: otherAccessError } = await supabase
+              .from('client_portal_access')
+              .select('id, client_id')
+              .eq('user_id', existingAccess.user_id)
+              .eq('active', true);
+            if (otherAccessError) throw otherAccessError;
+            if ((otherAccess || []).length > 0) {
+              warnings.push('The previous portal login was retained because it is still linked to another active client.');
+            } else {
+              const { data: oldUserData, error: oldUserError } = await supabase.auth.admin.getUserById(existingAccess.user_id);
+              if (oldUserError) throw oldUserError;
+              const oldUser = oldUserData?.user;
+              if (oldUser?.app_metadata?.taxflow_client_portal === true) {
+                const { error: deleteUserError } = await supabase.auth.admin.deleteUser(existingAccess.user_id);
+                if (deleteUserError) throw deleteUserError;
+              }
+            }
+          } catch (portalError) {
+            console.error(`[Clients] Could not retire the previous portal identity for ${data.id}:`, portalError.message);
+            warnings.push('Previous portal access has been disconnected. The old portal login could not be deleted automatically; contact support if it should be removed.');
+          }
+        }
+        portalAccessWarning = warnings.join(' ');
       }
       invalidateClientsCache(req.user.id);
-      return res.json({ success: true, source: 'supabase', data: { ...data, country_name: data.supported_countries?.country_name, currency_code: data.supported_countries?.currency_code, portalAccessWarning } });
+      return res.json({ success: true, source: 'supabase', data: { ...data, country_name: data.supported_countries?.country_name, currency_code: data.supported_countries?.currency_code, portalAccessReset, portalAccessWarning } });
     }
     const idx = fallbackClients.findIndex(c => c.id === req.params.id);
     if (idx === -1) return res.status(404).json({ success: false, message: 'Not found' });
     fallbackClients[idx] = { ...fallbackClients[idx], ...req.body };
     res.json({ success: true, source: 'demo', data: fallbackClients[idx] });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error(`[Clients] Client update failed for ${req.params.id}:`, err.message);
+    if (err.code === '23505') {
+      return res.status(409).json({ success: false, message: 'That email address or another unique client detail is already assigned.' });
+    }
+    return res.status(500).json({ success: false, message: 'Could not update this client. Please try again; if the problem continues, contact support.' });
   }
 });
 

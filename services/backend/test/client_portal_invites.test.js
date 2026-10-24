@@ -88,6 +88,7 @@ test('portal invitation registration checks the exact email and blocks replayed 
   const passwordUpdates = [];
   const rpcCalls = [];
   let existingAccountMode = false;
+  let existingStaffAccountMode = false;
   database.supabase.from = createDatabaseMock(rows);
   database.supabase.rpc = async (functionName, args) => {
     rpcCalls.push({ functionName, args });
@@ -96,7 +97,9 @@ test('portal invitation registration checks the exact email and blocks replayed 
       if (claimedInvite) claimedInvite.consumed_at = new Date().toISOString();
       return { data: [{ client_id: 'client-1', invited_email: 'client@example.com' }], error: null };
     }
-    if (functionName === 'find_client_portal_auth_user') return { data: 'legacy-portal-user', error: null };
+    if (functionName === 'find_client_portal_auth_user') {
+      return { data: existingStaffAccountMode ? null : 'legacy-portal-user', error: null };
+    }
     assert.equal(functionName, 'consume_api_rate_limit');
     return { data: { allowed: true, retry_after_seconds: 1 }, error: null };
   };
@@ -135,7 +138,7 @@ test('portal invitation registration checks the exact email and blocks replayed 
         body: JSON.stringify({ token }),
       });
       assert.equal(availableStatus.status, 200);
-      assert.deepEqual((await availableStatus.json()).data, { alreadyClaimed: false });
+      assert.deepEqual((await availableStatus.json()).data, { alreadyClaimed: false, clientEmailChanged: false });
 
       const validateResponse = await fetch(`${origin}/api/v1/client-portal/invitations/validate`, {
         method: 'POST',
@@ -193,7 +196,7 @@ test('portal invitation registration checks the exact email and blocks replayed 
         body: JSON.stringify({ token }),
       });
       assert.equal(claimedStatus.status, 200);
-      assert.deepEqual((await claimedStatus.json()).data, { alreadyClaimed: true });
+      assert.deepEqual((await claimedStatus.json()).data, { alreadyClaimed: true, clientEmailChanged: false });
 
       const unknownTokenStatus = await fetch(`${origin}/api/v1/client-portal/invitations/status`, {
         method: 'POST',
@@ -201,7 +204,7 @@ test('portal invitation registration checks the exact email and blocks replayed 
         body: JSON.stringify({ token: crypto.randomBytes(32).toString('base64url') }),
       });
       assert.equal(unknownTokenStatus.status, 200);
-      assert.deepEqual((await unknownTokenStatus.json()).data, { alreadyClaimed: false });
+      assert.deepEqual((await unknownTokenStatus.json()).data, { alreadyClaimed: false, clientEmailChanged: false });
 
       const replayedValidation = await fetch(`${origin}/api/v1/client-portal/invitations/validate`, {
         method: 'POST',
@@ -252,6 +255,43 @@ test('portal invitation registration checks the exact email and blocks replayed 
           app_metadata: { taxflow_client_portal: true },
         },
       }]);
+
+      const staffEmailInviteToken = crypto.randomBytes(32).toString('base64url');
+      rows.client_portal_invites.push({
+        id: 'invite-staff-email',
+        client_id: 'client-1',
+        invited_email: 'client@example.com',
+        token_hash: hashInviteToken(staffEmailInviteToken),
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+        consumed_at: null,
+        revoked_at: null,
+      });
+      existingStaffAccountMode = true;
+      const staffEmailRegistration = await fetch(`${origin}/api/v1/client-portal/invitations/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          token: staffEmailInviteToken,
+          email: 'client@example.com',
+          password: 'another-long-password-789',
+        }),
+      });
+      assert.equal(staffEmailRegistration.status, 409);
+      const staffEmailError = await staffEmailRegistration.json();
+      assert.equal(staffEmailError.code, 'email_in_use_by_non_portal_account');
+      assert.match(staffEmailError.message, /separate email address/i);
+
+      rows.clients[0].email = 'new-client@example.com';
+      const changedEmailStatus = await fetch(`${origin}/api/v1/client-portal/invitations/status`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      assert.equal(changedEmailStatus.status, 200);
+      assert.deepEqual((await changedEmailStatus.json()).data, {
+        alreadyClaimed: false,
+        clientEmailChanged: true,
+      });
     });
   } finally {
     database.supabase.from = oldFrom;

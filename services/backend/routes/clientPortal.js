@@ -132,15 +132,28 @@ router.post('/invitations/status', async (req, res) => {
     if (!(await consumeInvitationRateLimit(req, res, 'status'))) return;
     const token = req.body?.token;
     let alreadyClaimed = false;
+    let clientEmailChanged = false;
     if (typeof token === 'string' && PORTAL_INVITE_TOKEN_PATTERN.test(token)) {
       const { data: invite, error } = await supabase.from('client_portal_invites')
-        .select('consumed_at')
+        .select('client_id, invited_email, consumed_at')
         .eq('token_hash', hashInviteToken(token))
         .maybeSingle();
       if (error) throw error;
-      alreadyClaimed = Boolean(invite?.consumed_at);
+      if (invite) {
+        const { data: client, error: clientError } = await supabase.from('clients')
+          .select('email, status')
+          .eq('id', invite.client_id)
+          .maybeSingle();
+        if (clientError) throw clientError;
+        const emailStillMatches = Boolean(
+          client?.status === 'Active'
+          && normalizePortalEmail(client.email) === normalizePortalEmail(invite.invited_email)
+        );
+        alreadyClaimed = Boolean(invite.consumed_at && emailStillMatches);
+        clientEmailChanged = Boolean(client?.status === 'Active' && !emailStillMatches);
+      }
     }
-    return res.json({ success: true, data: { alreadyClaimed } });
+    return res.json({ success: true, data: { alreadyClaimed, clientEmailChanged } });
   } catch (error) {
     if (error instanceof RateLimiterUnavailableError) {
       return res.status(error.status).json({ success: false, message: error.message });
@@ -310,7 +323,11 @@ router.post('/invitations/register', async (req, res) => {
           return res.status(502).json({ success: false, message: 'The existing account could not be verified. Please try again or contact your CA.' });
         }
         if (!existingUserId) {
-          return res.status(409).json({ success: false, message: 'This email is already associated with another account. Contact your CA so they can verify your portal access.' });
+          return res.status(409).json({
+            success: false,
+            code: 'email_in_use_by_non_portal_account',
+            message: 'This email already belongs to an existing TaxFlow account, such as a CA or staff login. Client portal access requires a separate email address. Ask your CA to use an email that is not already used for a TaxFlow account.',
+          });
         }
         const { data: existingUserData, error: existingUserError } = await supabase.auth.admin.getUserById(existingUserId);
         const existingUser = existingUserData?.user;
@@ -330,7 +347,28 @@ router.post('/invitations/register', async (req, res) => {
         created = updated;
       } else {
         console.error('[Client Portal] Could not create the invited client account:', createError?.message || 'Supabase returned no user.');
-        return res.status(502).json({ success: false, message: 'Your account could not be created. Please try again or contact your CA.' });
+        if (
+          createError?.code === 'email_address_invalid'
+          || /email address.*invalid|invalid.*email/i.test(String(createError?.message || ''))
+        ) {
+          return res.status(400).json({
+            success: false,
+            code: 'invalid_email',
+            message: 'This email address was rejected. Check it for typing errors and confirm it matches the email your CA has on file.',
+          });
+        }
+        if (createError?.status === 429) {
+          return res.status(429).json({
+            success: false,
+            code: 'portal_auth_rate_limited',
+            message: 'Too many account attempts were made. Please wait a few minutes before trying again.',
+          });
+        }
+        return res.status(502).json({
+          success: false,
+          code: 'portal_account_creation_failed',
+          message: 'The portal could not finish creating your account. If this email is already used for a CA or staff TaxFlow login, ask your CA to use a different client email. Otherwise, try again shortly or contact your CA.',
+        });
       }
     } else {
       createdNewUser = true;
