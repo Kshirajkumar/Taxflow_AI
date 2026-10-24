@@ -391,20 +391,6 @@ router.post('/clients/:clientId/link', requireAuth, async (req, res) => {
     const telegramTokenHash = hash(raw);
     const { error } = await supabase.from('telegram_link_tokens').insert({ client_id: req.params.clientId, token_hash: telegramTokenHash, expires_at: expiresAt, created_by: req.user.id });
     if (error) throw error;
-    try {
-      await createClientPortalInvite({
-        clientId: client.id,
-        email: clientEmail,
-        createdBy: req.user.id,
-        token: portalInviteToken,
-      });
-    } catch (inviteError) {
-      const { error: cleanupError } = await supabase.from('telegram_link_tokens')
-        .delete()
-        .eq('token_hash', telegramTokenHash);
-      if (cleanupError) console.error('[Telegram] Failed to remove the incomplete client link token:', cleanupError.message);
-      throw inviteError;
-    }
     return res.status(201).json({ success: true, link: `https://t.me/${username}?start=${encodeURIComponent(raw)}`, expiresAt });
   } catch (error) {
     console.error('[Telegram] Could not create a client connection invitation:', error.message);

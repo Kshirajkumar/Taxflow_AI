@@ -289,6 +289,7 @@ test('Telegram sends a welcome then a private portal invitation and retries only
   let failFirstPortalInvitation = true;
   const rawToken = 'first-start-token';
   Object.values(tables).forEach((rows) => { rows.length = 0; });
+  assert.equal(tables.client_portal_invites.length, 0);
   tables.clients.push({ id: 'client-welcome', name: 'Welcome Client', email: 'client@example.com', status: 'Active', telegram_chat_id: null, telegram_user_id: null });
   tables.telegram_link_tokens.push({
     id: 'link-welcome',
@@ -305,6 +306,8 @@ test('Telegram sends a welcome then a private portal invitation and retries only
   global.fetch = async (url, init) => {
     if (String(url).startsWith('http://127.0.0.1:')) return oldFetch(url, init);
     const call = { url: String(url), body: JSON.parse(init.body) };
+    assert.equal(tables.clients[0].telegram_chat_id, 'welcome-chat');
+    assert.equal(tables.client_portal_invites.length, 1);
     telegramCalls.push(call);
     if (call.body.text.includes('#invite=') && failFirstPortalInvitation) {
       failFirstPortalInvitation = false;
@@ -354,6 +357,9 @@ test('Telegram sends a welcome then a private portal invitation and retries only
   assert.equal(firstResponse.status, 503);
   assert.equal(tables.clients[0].telegram_chat_id, 'welcome-chat');
   assert.equal(tables.clients[0].telegram_user_id, '902');
+  assert.equal(tables.client_portal_invites[0].client_id, 'client-welcome');
+  assert.equal(tables.client_portal_invites[0].invited_email, 'client@example.com');
+  assert.equal(tables.client_portal_invites[0].created_by, 'staff-1');
   assert.equal(telegramCalls.length, 2);
   assert.match(telegramCalls[0].body.text, /do not send tax, financial, identity, or other sensitive documents/i);
   assert.match(telegramCalls[0].body.text, /next message/i);
