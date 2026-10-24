@@ -31,4 +31,10 @@ async function main() {
   }
 }
 
-main().catch((error) => { console.error(error.message || error); process.exitCode = 1; });
+main().catch((error) => {
+  if (error.code === '28P01') {
+    console.error('Supabase rejected the PostgreSQL login. Copy the complete connection string from this project’s Dashboard → Connect and replace only [YOUR-PASSWORD] with the current database password. Do not guess the pooler username: session-pooler usernames include the project reference. URL-encode reserved password characters. This command did not apply the migrations.');
+  }
+  console.error(error.message || error);
+  process.exitCode = 1;
+});

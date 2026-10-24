@@ -13,6 +13,7 @@ const { getStorageObjectKey } = require('../lib/documentStorage');
 const telegramRouter = require('../routes/telegram');
 
 const tables = { clients: [], client_portal_access: [], client_portal_invites: [], telegram_link_tokens: [], telegram_messages: [], documents_metadata: [], document_sync_receipts: [] };
+const missingSchemaTables = new Set();
 
 function matches(row, filters) {
   return filters.every(({ field, operator, value }) => {
@@ -47,6 +48,9 @@ function fakeQuery(table) {
     single() { return this.execute(true); },
     then(resolve, reject) { return this.execute(false).then(resolve, reject); },
     async execute(maybe) {
+      if (missingSchemaTables.has(table)) {
+        return { data: null, error: { code: 'PGRST205', message: `Could not find the table 'public.${table}' in the schema cache` } };
+      }
       const records = tables[table];
       if (operation === 'upsert') {
         const keys = table === 'document_sync_receipts' ? ['user_id', 'device_id', 'document_id'] : [];
@@ -149,14 +153,25 @@ test('Telegram status identifies a competing webhook service and an unavailable 
   assert.equal(body.connected, true);
   assert.equal(body.diagnostics.webhookMatchesThisService, false);
   assert.equal(body.diagnostics.webhookPendingUpdates, 2);
+  assert.equal(body.diagnostics.telegramSchemaReady, true);
+  assert.equal(body.diagnostics.clientPortalInvitesReady, true);
   assert.equal(body.diagnostics.storageBucketReady, false);
   assert.match(body.diagnostics.warnings.join(' '), /different service/i);
   assert.match(body.diagnostics.warnings.join(' '), /missing or inaccessible/i);
+
+  missingSchemaTables.add('client_portal_invites');
+  const missingInviteSchemaResponse = await fetch(`http://127.0.0.1:${server.address().port}/api/v1/telegram/status`);
+  assert.equal(missingInviteSchemaResponse.status, 200);
+  const missingInviteSchema = await missingInviteSchemaResponse.json();
+  assert.equal(missingInviteSchema.diagnostics.clientPortalInvitesReady, false);
+  assert.match(missingInviteSchema.diagnostics.warnings.join(' '), /client_portal_invites migrations/i);
+  missingSchemaTables.delete('client_portal_invites');
+
   assert.deepEqual(await telegramRouter._test.configureWebhook(), {
     configured: false,
     reason: 'auto_configuration_disabled'
   });
-  assert.equal(telegramApiCalls, 2);
+  assert.equal(telegramApiCalls, 4);
 });
 
 test('Telegram attachment messages are redirected to the secure portal without storing file data', async (t) => {

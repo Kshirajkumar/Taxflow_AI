@@ -11,6 +11,14 @@ test('Telegram webhook secret comparison rejects missing and incorrect values', 
   assert.equal(secretMatches('configured-secret', 'configured-secret'), true);
 });
 
+test('Telegram setup recognizes missing Postgres and Supabase REST schema objects', () => {
+  const { isMissingDatabaseSchema } = telegramRouter._test;
+  assert.equal(isMissingDatabaseSchema({ code: '42P01', message: 'relation does not exist' }), true);
+  assert.equal(isMissingDatabaseSchema({ code: 'PGRST205', message: 'table missing from schema cache' }), true);
+  assert.equal(isMissingDatabaseSchema({ code: '28P01', message: 'password authentication failed' }), false);
+  assert.equal(isMissingDatabaseSchema(new Error('Temporary network failure')), false);
+});
+
 test('Telegram attachments retain document metadata and use the highest-resolution photo', () => {
   const { getTelegramAttachment, normalizeTelegramFileName } = telegramRouter._test;
   const document = getTelegramAttachment({

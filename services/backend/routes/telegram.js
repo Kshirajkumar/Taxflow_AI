@@ -84,6 +84,13 @@ const MIME_EXTENSIONS = {
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 function secretMatches(value, expected) { const left = Buffer.from(String(value || '')); const right = Buffer.from(String(expected || '')); return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right); }
 
+function isMissingDatabaseSchema(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  return ['42P01', '42703', 'PGRST202', 'PGRST204', 'PGRST205'].includes(code)
+    || /relation .* does not exist|could not find .* in the schema cache/i.test(message);
+}
+
 function getTelegramAttachment(message) {
   if (Array.isArray(message.photo) && message.photo.length && message.photo[message.photo.length - 1]?.file_id) {
     const photo = message.photo[message.photo.length - 1];
@@ -658,6 +665,8 @@ router.get('/status', requireAuth, async (_req, res) => {
   const warnings = [];
   let bot;
   let webhookInfo = null;
+  let telegramSchemaReady = false;
+  let clientPortalInvitesReady = false;
   try {
     bot = await telegramCall('getMe', {});
     webhookInfo = await telegramCall('getWebhookInfo', {});
@@ -673,18 +682,32 @@ router.get('/status', requireAuth, async (_req, res) => {
     warnings.push('This backend is not connected to Supabase. Telegram messages and attachments cannot be saved.');
   } else {
     try {
-      const [{ error: messagesSchemaError }, { error: documentsSchemaError }] = await Promise.all([
+      const [
+        { error: messagesSchemaError },
+        { error: documentsSchemaError },
+        { error: linkTokensSchemaError },
+        { error: invitesSchemaError },
+      ] = await Promise.all([
         supabase.from('telegram_messages')
           .select('id,telegram_file_id,telegram_file_name,mime_type,file_size,vault_file_ref,file_download_error,attachment_download_status')
           .limit(1),
         supabase.from('documents_metadata')
           .select('id,storage_bucket,storage_object_path,file_sha256,mime_type,telegram_message_id')
-          .limit(1)
+          .limit(1),
+        supabase.from('telegram_link_tokens').select('id').limit(1),
+        supabase.from('client_portal_invites').select('id').limit(1),
       ]);
-      if (messagesSchemaError || documentsSchemaError) throw messagesSchemaError || documentsSchemaError;
+      telegramSchemaReady = !messagesSchemaError && !documentsSchemaError && !linkTokensSchemaError;
+      clientPortalInvitesReady = !invitesSchemaError;
+      if (!telegramSchemaReady) {
+        throw messagesSchemaError || documentsSchemaError || linkTokensSchemaError;
+      }
     } catch (error) {
       console.error('[Telegram] Runtime database schema check failed:', error.message);
       warnings.push('Telegram database migrations are missing or the configured Supabase project is unavailable. Apply the Telegram and storage migrations to the same project used by this backend.');
+    }
+    if (!clientPortalInvitesReady) {
+      warnings.push('Client connection links require the client_portal and client_portal_invites migrations. Apply the Telegram setup migrations to the same Supabase project used by this backend.');
     }
   }
 
@@ -729,6 +752,8 @@ router.get('/status', requireAuth, async (_req, res) => {
         : null,
       webhookPendingUpdates: Number(webhookInfo?.pending_update_count || 0),
       webhookLastError: webhookInfo?.last_error_message || null,
+      telegramSchemaReady,
+      clientPortalInvitesReady,
       storageBucket: storageBucket || null,
       storageBucketReady,
       webhookAutoConfigureEnabled: webhookAutoConfigureEnabled(),
@@ -776,6 +801,18 @@ router.post('/clients/:clientId/link', requireAuth, async (req, res) => {
     return res.status(201).json({ success: true, link: `https://t.me/${username}?start=${encodeURIComponent(raw)}`, expiresAt });
   } catch (error) {
     console.error('[Telegram] Could not create a client connection invitation:', error.message);
+    if (isMissingDatabaseSchema(error)) {
+      return res.status(503).json({
+        success: false,
+        message: 'Telegram database setup is incomplete. Apply the Telegram, client portal, and client portal invitation migrations to the Supabase project configured by this backend, then retry.',
+      });
+    }
+    if (/CLIENT_PORTAL_URL|Portal invitation signing is not configured/i.test(String(error.message || ''))) {
+      return res.status(503).json({
+        success: false,
+        message: 'Secure client invitations are not configured. Set CLIENT_PORTAL_URL and SUPABASE_SERVICE_ROLE_KEY on the backend, then retry.',
+      });
+    }
     return res.status(500).json({ success: false, message: 'Could not create the secure client connection invitation. Please try again.' });
   }
 });
@@ -1244,6 +1281,7 @@ module.exports._test = {
   secretMatches,
   expectedWebhookUrl,
   webhookAutoConfigureEnabled,
+  isMissingDatabaseSchema,
   TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES,
   TELEGRAM_PHOTO_LIMIT_BYTES,
   configureWebhook,
