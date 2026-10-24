@@ -1,29 +1,10 @@
--- Private server-managed object storage for inbound Telegram attachments.
--- The service-role key is used only by the backend; client access is denied.
+-- Private object storage for client-portal uploads.
+-- Telegram attachments are directed to the portal instead of being stored from chat.
 INSERT INTO storage.buckets (id, name, public, file_size_limit)
 VALUES ('taxflow-intake', 'taxflow-intake', FALSE, 20971520)
 ON CONFLICT (id) DO UPDATE
 SET public = FALSE,
     file_size_limit = EXCLUDED.file_size_limit;
-
-DROP POLICY IF EXISTS "TaxFlow intake is server-only" ON storage.objects;
-CREATE POLICY "TaxFlow intake is server-only"
-  ON storage.objects AS RESTRICTIVE
-  FOR ALL TO anon, authenticated
-  USING (bucket_id <> 'taxflow-intake')
-  WITH CHECK (bucket_id <> 'taxflow-intake');
-
-GRANT USAGE ON SCHEMA storage TO service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE storage.objects TO service_role;
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "TaxFlow service role manages intake" ON storage.objects;
-CREATE POLICY "TaxFlow service role manages intake"
-  ON storage.objects
-  FOR ALL
-  TO service_role
-  USING (bucket_id = 'taxflow-intake')
-  WITH CHECK (bucket_id = 'taxflow-intake');
 
 ALTER TABLE public.documents_metadata
   ADD COLUMN IF NOT EXISTS storage_bucket TEXT,
@@ -73,7 +54,9 @@ ALTER TABLE public.document_sync_receipts ENABLE ROW LEVEL SECURITY;
 CREATE INDEX IF NOT EXISTS document_sync_receipts_document_idx
   ON public.document_sync_receipts(document_id);
 
-CREATE OR REPLACE FUNCTION public.list_pending_document_sync(
+DROP FUNCTION IF EXISTS public.list_pending_document_sync(UUID, UUID, INTEGER);
+
+CREATE FUNCTION public.list_pending_document_sync(
   p_user_id UUID,
   p_device_id UUID,
   p_limit INTEGER DEFAULT 20
@@ -83,7 +66,8 @@ RETURNS TABLE (
   client_name TEXT,
   file_name TEXT,
   file_sha256 TEXT,
-  created_at TIMESTAMPTZ
+  created_at TIMESTAMPTZ,
+  source TEXT
 )
 LANGUAGE SQL
 STABLE
@@ -94,11 +78,12 @@ AS $$
          COALESCE(d.client_name, c.name)::TEXT,
          d.file_name::TEXT,
          d.file_sha256::TEXT,
-         d.created_at
+         d.created_at,
+         d.source::TEXT
   FROM public.documents_metadata d
   JOIN public.clients c ON c.id = d.client_id
   WHERE c.user_id = p_user_id
-    AND d.source = 'Telegram'
+    AND d.source IN ('Telegram', 'Portal')
     AND d.storage_object_path IS NOT NULL
     AND d.file_sha256 IS NOT NULL
     AND NOT EXISTS (

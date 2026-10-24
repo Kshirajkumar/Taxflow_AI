@@ -22,7 +22,9 @@ ALTER TABLE public.document_sync_receipts ENABLE ROW LEVEL SECURITY;
 CREATE INDEX IF NOT EXISTS document_sync_receipts_document_idx
   ON public.document_sync_receipts(document_id);
 
-CREATE OR REPLACE FUNCTION public.list_pending_document_sync(
+DROP FUNCTION IF EXISTS public.list_pending_document_sync(UUID, UUID, INTEGER);
+
+CREATE FUNCTION public.list_pending_document_sync(
   p_user_id UUID,
   p_device_id UUID,
   p_limit INTEGER DEFAULT 20
@@ -32,7 +34,8 @@ RETURNS TABLE (
   client_name TEXT,
   file_name TEXT,
   file_sha256 TEXT,
-  created_at TIMESTAMPTZ
+  created_at TIMESTAMPTZ,
+  source TEXT
 )
 LANGUAGE SQL
 STABLE
@@ -43,11 +46,12 @@ AS $$
          COALESCE(d.client_name, c.name)::TEXT,
          d.file_name::TEXT,
          d.file_sha256::TEXT,
-         d.created_at
+         d.created_at,
+         d.source::TEXT
   FROM public.documents_metadata d
   JOIN public.clients c ON c.id = d.client_id
   WHERE c.user_id = p_user_id
-    AND d.source = 'Telegram'
+    AND d.source IN ('Telegram', 'Portal')
     AND d.storage_object_path IS NOT NULL
     AND d.file_sha256 IS NOT NULL
     AND NOT EXISTS (
