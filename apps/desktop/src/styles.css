@@ -583,6 +583,97 @@ button.file-artifact-main:hover .file-artifact-copy>b{color:var(--blue)}
 @media(max-width:1050px){.wa-reminder-card{grid-template-columns:65px minmax(0,1fr)}.wa-reminder-actions{grid-column:2;justify-content:flex-start}.wa-template-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.wa-template-grid{grid-template-columns:1fr}.wa-reminder-card{grid-template-columns:1fr}.wa-reminder-actions{grid-column:1}.wa-reminder-client{flex-wrap:wrap}}
 
+/* Template Skeleton Shimmer Styles */
+@keyframes templateShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.wa-skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--card) 92%, var(--panel)) 0%,
+    color-mix(in srgb, var(--blue) 18%, var(--card)) 50%,
+    color-mix(in srgb, var(--card) 92%, var(--panel)) 100%
+  );
+  background-size: 200% 100%;
+  animation: templateShimmer 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  border-radius: 6px;
+}
+
+.wa-template-skeleton-card {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  min-height: 175px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  gap: 12px;
+}
+
+.wa-template-skeleton-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wa-template-skeleton-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex: none;
+}
+
+.wa-template-skeleton-title {
+  height: 14px;
+  width: 50%;
+  flex: 1;
+}
+
+.wa-template-skeleton-chip {
+  width: 65px;
+  height: 18px;
+  border-radius: 99px;
+  flex: none;
+}
+
+.wa-template-skeleton-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 11px;
+  border-radius: 8px;
+  background: var(--bg2);
+  flex: 1;
+}
+
+.wa-template-skeleton-line {
+  height: 10px;
+}
+
+.wa-template-skeleton-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  gap: 8px;
+}
+
+.wa-template-skeleton-btn {
+  height: 28px;
+  border-radius: 8px;
+}
+
+.wa-dropdown-skeleton-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 48px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 6px;
+  border-radius: 9px;
+}
+
 /* ---------- files ---------- */
 .fgrid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}
 .tree{max-height:calc(100vh - 300px);min-height:420px;overflow:auto;padding:6px 8px 10px}

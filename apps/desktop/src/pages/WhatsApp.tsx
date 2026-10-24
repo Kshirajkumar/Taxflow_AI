@@ -105,6 +105,40 @@ async function fillPortalTemplate(template: MessageTemplate, client: { id: strin
   return fillTpl(template.body, client.contact.split(' ')[0], invitation.link);
 }
 
+function TemplateCardSkeleton() {
+  return (
+    <article className="card tpl wa-template-skeleton-card" aria-hidden="true">
+      <div className="wa-template-skeleton-header">
+        <div className="wa-skeleton-shimmer wa-template-skeleton-icon" />
+        <div className="wa-skeleton-shimmer wa-template-skeleton-title" />
+        <div className="wa-skeleton-shimmer wa-template-skeleton-chip" />
+      </div>
+      <div className="wa-template-skeleton-body">
+        <div className="wa-skeleton-shimmer wa-template-skeleton-line" style={{ width: '92%' }} />
+        <div className="wa-skeleton-shimmer wa-template-skeleton-line" style={{ width: '78%' }} />
+        <div className="wa-skeleton-shimmer wa-template-skeleton-line" style={{ width: '60%' }} />
+      </div>
+      <div className="wa-template-skeleton-footer">
+        <div className="wa-skeleton-shimmer wa-template-skeleton-btn" style={{ width: 64 }} />
+        <div className="wa-skeleton-shimmer wa-template-skeleton-btn" style={{ width: 92 }} />
+      </div>
+    </article>
+  );
+}
+
+function TemplateDropdownSkeleton() {
+  return (
+    <div className="wa-dropdown-skeleton-item" aria-hidden="true">
+      <div className="wa-skeleton-shimmer" style={{ width: 28, height: 28, borderRadius: 8 }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0 }}>
+        <div className="wa-skeleton-shimmer" style={{ height: 11, width: '55%' }} />
+        <div className="wa-skeleton-shimmer" style={{ height: 9, width: '85%' }} />
+      </div>
+      <div className="wa-skeleton-shimmer" style={{ height: 16, width: 44, borderRadius: 99 }} />
+    </div>
+  );
+}
+
 
 function sameTelegramMessages(a: TelegramMessage[], b: TelegramMessage[]) {
   return a.length === b.length && a.every((message, index) => {
@@ -892,7 +926,14 @@ export function WhatsAppPage() {
         aria-label="Search message templates"
         autoFocus
       />
-      {templatesLoading && <div className="telegram-template-empty" role="status">Loading saved templates…</div>}
+      {templatesLoading && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 0' }} role="status" aria-label="Loading templates">
+          <TemplateDropdownSkeleton />
+          <TemplateDropdownSkeleton />
+          <TemplateDropdownSkeleton />
+          <TemplateDropdownSkeleton />
+        </div>
+      )}
       {templateError && <div className="telegram-template-empty error" role="alert">{templateError}</div>}
       {!templatesLoading && !templateError && templates.filter((template) => `${template.name} ${template.cat}`.toLowerCase().includes(templateSearch.trim().toLowerCase())).map((template) => (
         <button
@@ -1604,9 +1645,16 @@ export function WhatsAppPage() {
               </div>
             </section>
           ) : null}
-          {templatesLoading && <div className="empty" role="status">Loading templates…</div>}
+          {templatesLoading && (
+            <div className="wa-template-grid" role="status" aria-label="Loading templates">
+              {[...Array(6)].map((_, i) => (
+                <TemplateCardSkeleton key={i} />
+              ))}
+            </div>
+          )}
           {!templatesLoading && !templates.length && !templateError && <div className="empty">No templates are available yet.</div>}
-          <div className="wa-template-grid">
+          {!templatesLoading && templates.length > 0 && (
+            <div className="wa-template-grid">
           {templates.map((template) => (
             <article className="card tpl wa-template-card" key={template.id}>
               <div className="row" style={{ alignItems: 'center', gap: 8 }}>
@@ -1635,7 +1683,8 @@ export function WhatsAppPage() {
               </div>
             </article>
           ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
