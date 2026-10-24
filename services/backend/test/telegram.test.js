@@ -11,13 +11,22 @@ test('Telegram webhook secret comparison rejects missing and incorrect values', 
 });
 
 test('Telegram setup recognizes missing Postgres and Supabase REST schema objects', () => {
-  const { isMissingDatabaseSchema, getMissingDatabaseTable } = telegramRouter._test;
+  const { isMissingDatabaseSchema, getMissingDatabaseTable, getMissingDatabaseColumn } = telegramRouter._test;
   assert.equal(isMissingDatabaseSchema({ code: '42P01', message: 'relation does not exist' }), true);
   assert.equal(isMissingDatabaseSchema({ code: 'PGRST205', message: 'table missing from schema cache' }), true);
+  assert.equal(isMissingDatabaseSchema({ code: 'PGRST204', message: "Could not find the 'created_by' column of 'telegram_link_tokens' in the schema cache" }), true);
   assert.equal(isMissingDatabaseSchema({ code: '28P01', message: 'password authentication failed' }), false);
   assert.equal(isMissingDatabaseSchema(new Error('Temporary network failure')), false);
   assert.equal(getMissingDatabaseTable({ code: '42P01', message: 'relation "public.telegram_link_tokens" does not exist' }), 'telegram_link_tokens');
   assert.equal(getMissingDatabaseTable({ code: 'PGRST205', message: "Could not find the table 'public.client_portal_invites' in the schema cache" }), 'client_portal_invites');
+  assert.deepEqual(
+    getMissingDatabaseColumn({ code: 'PGRST204', message: "Could not find the 'created_by' column of 'telegram_link_tokens' in the schema cache" }),
+    { column: 'created_by', table: 'telegram_link_tokens' }
+  );
+  assert.deepEqual(
+    getMissingDatabaseColumn({ code: '42703', message: 'column telegram_link_tokens.created_by does not exist' }),
+    { table: 'telegram_link_tokens', column: 'created_by' }
+  );
 });
 
 test('Telegram setup derives only a valid HTTPS relay webhook URL', () => {

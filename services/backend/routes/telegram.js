@@ -53,6 +53,14 @@ function getMissingDatabaseTable(error) {
   return relationMatch?.[1] || restMatch?.[1] || null;
 }
 
+function getMissingDatabaseColumn(error) {
+  const message = String(error?.message || '');
+  const postgrestMatch = message.match(/could not find the ['"]([a-z_][a-z0-9_]*)['"] column of ['"](?:public\.)?([a-z_][a-z0-9_]*)['"]/i);
+  if (postgrestMatch) return { column: postgrestMatch[1], table: postgrestMatch[2] };
+  const postgresMatch = message.match(/column\s+["']?(?:public\.)?([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)["']?\s+does not exist/i);
+  return postgresMatch ? { table: postgresMatch[1], column: postgresMatch[2] } : null;
+}
+
 function getRecentWebhookError(webhookInfo, now = Date.now()) {
   const message = String(webhookInfo?.last_error_message || '').trim();
   if (!message) return null;
@@ -524,11 +532,14 @@ router.post('/clients/:clientId/link', requireAuth, async (req, res) => {
     console.error('[Telegram] Could not create a client connection invitation:', error.message);
     if (isMissingDatabaseSchema(error)) {
       const missingTable = getMissingDatabaseTable(error);
+      const missingColumn = getMissingDatabaseColumn(error);
       return res.status(503).json({
         success: false,
-        message: missingTable
-          ? `Required database table public.${missingTable} is missing. Apply the Telegram setup migrations to the Supabase project used by this backend, then retry.`
-          : 'A required Telegram database object is missing. Apply the Telegram setup migrations to the Supabase project used by this backend, then retry.',
+        message: missingColumn
+          ? `Database column public.${missingColumn.table}.${missingColumn.column} is missing. Apply the Telegram setup migrations to the Supabase project used by this backend, then retry.`
+          : missingTable
+            ? `Required database table public.${missingTable} is missing. Apply the Telegram setup migrations to the Supabase project used by this backend, then retry.`
+            : 'A required Telegram database table or column is missing. Apply the Telegram setup migrations to the Supabase project used by this backend, then retry.',
       });
     }
     if (String(error.code || '') === '42501') {
@@ -894,6 +905,7 @@ module.exports._test = {
   webhookAutoConfigureEnabled,
   isMissingDatabaseSchema,
   getMissingDatabaseTable,
+  getMissingDatabaseColumn,
   getRecentWebhookError,
   configureWebhook,
   getUnsupportedTelegramMessageType,
