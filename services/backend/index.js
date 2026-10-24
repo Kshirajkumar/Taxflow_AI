@@ -210,5 +210,4 @@ app.listen(PORT, () => {
   telegramRouter.configureWebhook().catch((error) => {
     console.error(`[Telegram] Webhook auto-configuration failed: ${error.message}`);
   });
-  telegramRouter.startAttachmentDownloadWorker();
 });

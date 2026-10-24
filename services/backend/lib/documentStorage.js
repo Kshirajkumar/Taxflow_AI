@@ -31,18 +31,6 @@ function getMetadataStorageObjectKey({ userId, clientId, createdAt, fileName }) 
   return `${userId}/${clientId}/${year}/${month}/${sanitizeStorageFileName(fileName)}`;
 }
 
-function isExpectedTelegramObject({ bucket, objectKey, userId, clientId, createdAt, fileName }) {
-  try {
-    return Boolean(
-      getStorageBucket()
-      && bucket === getStorageBucket()
-      && objectKey === getMetadataStorageObjectKey({ userId, clientId, createdAt, fileName })
-    );
-  } catch {
-    return false;
-  }
-}
-
 function isExpectedPortalObject({ bucket, objectKey, userId, clientId, documentId, createdAt, fileName }) {
   try {
     const date = new Date(createdAt);
@@ -109,7 +97,6 @@ module.exports = {
   isCloudDocumentStorageEnabled,
   isCloudDocumentStorageRequired,
   isExpectedPortalObject,
-  isExpectedTelegramObject,
   normalizeMimeType,
   sha256,
   uploadDocument

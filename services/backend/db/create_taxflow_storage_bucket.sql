@@ -1,5 +1,4 @@
 -- Private object storage for client-portal uploads.
--- Telegram attachments are directed to the portal instead of being stored from chat.
 INSERT INTO storage.buckets (id, name, public, file_size_limit)
 VALUES ('taxflow-intake', 'taxflow-intake', FALSE, 20971520)
 ON CONFLICT (id) DO UPDATE
@@ -25,7 +24,7 @@ CREATE POLICY documents_metadata_service_role
 
 CREATE INDEX IF NOT EXISTS documents_metadata_pending_local_sync_idx
   ON public.documents_metadata(created_at, id)
-  WHERE source = 'Telegram' AND storage_object_path IS NOT NULL AND file_sha256 IS NOT NULL;
+  WHERE source = 'Portal' AND storage_object_path IS NOT NULL AND file_sha256 IS NOT NULL;
 
 UPDATE public.user_profiles
 SET vault_path = 'desktop-local'
@@ -83,7 +82,7 @@ AS $$
   FROM public.documents_metadata d
   JOIN public.clients c ON c.id = d.client_id
   WHERE c.user_id = p_user_id
-    AND d.source IN ('Telegram', 'Portal')
+    AND d.source = 'Portal'
     AND d.storage_object_path IS NOT NULL
     AND d.file_sha256 IS NOT NULL
     AND NOT EXISTS (

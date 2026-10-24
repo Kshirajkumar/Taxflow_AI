@@ -1,5 +1,5 @@
--- Repairs the backend RPC used to list Telegram files awaiting local sync.
--- Run after telegram.sql and telegram_document_storage.sql.
+-- Repairs the backend RPC used to list secure client-portal uploads awaiting local sync.
+-- Telegram file transfers are disabled; this queue intentionally returns Portal documents only.
 
 BEGIN;
 
@@ -51,7 +51,7 @@ AS $$
   FROM public.documents_metadata d
   JOIN public.clients c ON c.id = d.client_id
   WHERE c.user_id = p_user_id
-    AND d.source IN ('Telegram', 'Portal')
+    AND d.source = 'Portal'
     AND d.storage_object_path IS NOT NULL
     AND d.file_sha256 IS NOT NULL
     AND NOT EXISTS (

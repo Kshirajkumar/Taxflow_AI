@@ -91,6 +91,29 @@ function isMissingDatabaseSchema(error) {
     || /relation .* does not exist|could not find .* in the schema cache/i.test(message);
 }
 
+function getUnsupportedTelegramMessageType(message) {
+  const unsupportedTypes = [
+    ['photo', message.photo],
+    ['document', message.document],
+    ['video', message.video],
+    ['animation', message.animation],
+    ['video_note', message.video_note],
+    ['audio', message.audio],
+    ['voice', message.voice],
+    ['sticker', message.sticker],
+    ['contact', message.contact],
+    ['location', message.location],
+    ['venue', message.venue],
+    ['poll', message.poll],
+    ['dice', message.dice],
+    ['game', message.game],
+    ['story', message.story],
+    ['paid_media', message.paid_media],
+    ['checklist', message.checklist],
+  ];
+  return unsupportedTypes.find(([, value]) => value)?.[0] || null;
+}
+
 function getTelegramAttachment(message) {
   if (Array.isArray(message.photo) && message.photo.length && message.photo[message.photo.length - 1]?.file_id) {
     const photo = message.photo[message.photo.length - 1];
@@ -475,12 +498,29 @@ function expectedWebhookUrl() {
 }
 
 function publicTelegramMessage(message) {
-  const { telegram_file_id, ...visibleMessage } = message;
+  const {
+    telegram_file_id,
+    telegram_file_name,
+    mime_type,
+    file_size,
+    vault_file_ref,
+    file_download_error,
+    attachment_download_status,
+    attachment_download_attempts,
+    attachment_download_next_attempt_at,
+    attachment_download_started_at,
+    file_download_pending,
+    file_download_retryable,
+    ...visibleMessage
+  } = message;
+  const hasLegacyAttachment = Boolean(
+    telegram_file_id || telegram_file_name || vault_file_ref || file_download_pending
+  );
+  if (!hasLegacyAttachment) return visibleMessage;
   return {
     ...visibleMessage,
-    file_download_retryable: message.file_download_error
-      ? !isPermanentAttachmentError(message.file_download_error)
-      : undefined
+    body: 'Telegram supports text messages only. This file was not processed; use the secure client portal for document uploads.',
+    message_type: 'unsupported',
   };
 }
 
@@ -679,7 +719,7 @@ router.get('/status', requireAuth, async (_req, res) => {
     ? 'direct'
     : process.env.TELEGRAM_WEBHOOK_RELAY_URL ? 'relay' : 'unconfigured';
   if (!isConnected || !supabase) {
-    warnings.push('This backend is not connected to Supabase. Telegram messages and attachments cannot be saved.');
+    warnings.push('This backend is not connected to Supabase. Telegram messages cannot be saved.');
   } else {
     try {
       const [
@@ -689,10 +729,10 @@ router.get('/status', requireAuth, async (_req, res) => {
         { error: invitesSchemaError },
       ] = await Promise.all([
         supabase.from('telegram_messages')
-          .select('id,telegram_file_id,telegram_file_name,mime_type,file_size,vault_file_ref,file_download_error,attachment_download_status')
+          .select('id,body')
           .limit(1),
         supabase.from('documents_metadata')
-          .select('id,storage_bucket,storage_object_path,file_sha256,mime_type,telegram_message_id')
+          .select('id,source')
           .limit(1),
         supabase.from('telegram_link_tokens').select('id').limit(1),
         supabase.from('client_portal_invites').select('id').limit(1),
@@ -714,7 +754,7 @@ router.get('/status', requireAuth, async (_req, res) => {
   const storageBucket = String(process.env.SUPABASE_STORAGE_BUCKET || '').trim();
   let storageBucketReady = false;
   if (!storageBucket) {
-    warnings.push('SUPABASE_STORAGE_BUCKET is not configured on this backend. Production Telegram files cannot be saved to Supabase Storage.');
+  warnings.push('SUPABASE_STORAGE_BUCKET is not configured on this backend. Client portal uploads cannot be saved to private Supabase Storage.');
   } else if (supabase && isConnected) {
     try {
       const { error } = await supabase.storage.from(storageBucket).list('', { limit: 1 });
@@ -722,7 +762,7 @@ router.get('/status', requireAuth, async (_req, res) => {
       storageBucketReady = true;
     } catch (error) {
       console.error('[Telegram] Storage bucket check failed:', error.message);
-      warnings.push(`Supabase Storage bucket "${storageBucket}" is missing or inaccessible. Verify this backend's service-role key targets the same Supabase project, then apply db/fix_telegram_attachment_rls.sql.`);
+      warnings.push(`Supabase Storage bucket "${storageBucket}" is missing or inaccessible. Verify the backend service-role key targets the same Supabase project and that the private client-portal Storage migration was applied.`);
     }
   }
 
@@ -1155,17 +1195,21 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
     return res.status(503).json({ ok: false, message: 'Telegram webhook is not configured.' });
   }
   if (!secretMatches(req.headers['x-telegram-bot-api-secret-token'], webhookSecret())) return res.sendStatus(401);
+  const update = req.body || {};
+  const message = update.message || update.edited_message;
+  const unsupportedType = message ? getUnsupportedTelegramMessageType(message) : null;
+  if (unsupportedType) {
+    console.info(`[Telegram] Ignored ${unsupportedType} update ${update.update_id ?? 'unknown'}; file transfers are disabled.`);
+    return res.status(200).json({ ok: true, ignored: true, reason: 'text_messages_only' });
+  }
   if (!isConnected || !supabase) {
     console.error('[Telegram] Webhook request rejected: Supabase is not configured.');
     return res.status(503).json({ ok: false, message: 'Message storage is unavailable; Telegram should retry this update.' });
   }
 
   try {
-    const update = req.body || {}; const message = update.message || update.edited_message;
     if (!message?.chat?.id) return res.status(200).json({ ok: true, ignored: true });
-    const text = typeof message.text === 'string'
-      ? message.text.trim()
-      : typeof message.caption === 'string' ? message.caption.trim() : '';
+    const text = typeof message.text === 'string' ? message.text.trim() : '';
     if (text.startsWith('/start')) {
       const token = text.replace(/^\/start(?:@[^\s]+)?\s*/i, '').trim();
       if (!token || message.chat.type !== 'private') return res.status(200).json({ ok: true, ignored: true });
@@ -1207,7 +1251,6 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
       await sendTelegramWelcome(client, message.chat.id, token, link.created_by);
       return res.status(200).json({ ok: true });
     }
-    const attachment = getTelegramAttachment(message);
     if (message.chat.type !== 'private') {
       console.warn(`[Telegram] Ignored message ${message.message_id} from unsupported ${message.chat.type} chat ${message.chat.id}.`);
       return res.status(200).json({ ok: true, ignored: true, reason: 'private_chat_required' });
@@ -1218,30 +1261,8 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
       console.warn(`[Telegram] Ignored inbound message from unlinked chat ${message.chat.id}.`);
       return res.status(200).json({ ok: true, ignored: true });
     }
-    if (attachment) {
-      let portalMessage = 'For your privacy, please send documents through the secure TaxFlow client portal. Files sent in Telegram are not downloaded or saved.';
-      try {
-        const configuredUrl = String(process.env.CLIENT_PORTAL_URL || '').trim();
-        if (configuredUrl) {
-          const portalUrl = new URL(configuredUrl);
-          if (portalUrl.protocol === 'https:' || process.env.NODE_ENV !== 'production') {
-            portalMessage += ` Open ${portalUrl.toString().replace(/\/+$/, '')}/portal to upload your file.`;
-          } else {
-            console.error('[Telegram] CLIENT_PORTAL_URL must use HTTPS in production.');
-            portalMessage += ' Please contact the practice for the secure portal address.';
-          }
-        } else {
-          portalMessage += ' Please contact the practice for the secure portal address.';
-        }
-      } catch (error) {
-        console.error('[Telegram] Invalid CLIENT_PORTAL_URL:', error.message);
-        portalMessage += ' Please contact the practice for the secure portal address.';
-      }
-      await telegramCall('sendMessage', { chat_id: message.chat.id, text: portalMessage });
-      return res.status(200).json({ ok: true, redirected: true });
-    }
-    const messageType = attachment?.messageType || (text ? 'text' : getUnrepresentedTelegramMessage(message));
-    const body = redactPortalInviteLinks(text || `Telegram ${messageType} message received; this content is not available as a document.`);
+    if (!text) return res.status(200).json({ ok: true, ignored: true, reason: 'text_messages_only' });
+    const body = redactPortalInviteLinks(text);
     const telegramDate = Number(message.date);
     const createdAt = Number.isFinite(telegramDate) && telegramDate > 0
       ? new Date(telegramDate * 1000).toISOString()
@@ -1253,7 +1274,7 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
       chat_id: String(message.chat.id),
       sender_user_id: message.from?.id ? String(message.from.id) : null,
       body,
-      message_type: messageType,
+      message_type: 'text',
       delivery_status: 'received',
       created_at: createdAt
     }).select('*').single();
@@ -1286,6 +1307,7 @@ module.exports._test = {
   TELEGRAM_PHOTO_LIMIT_BYTES,
   configureWebhook,
   getTelegramAttachment,
+  getUnsupportedTelegramMessageType,
   getUnrepresentedTelegramMessage,
   normalizeTelegramFileName,
   getTelegramMessageDate,

@@ -78,7 +78,7 @@ AS $$
   FROM public.documents_metadata d
   JOIN public.clients c ON c.id = d.client_id
   WHERE c.user_id = p_user_id
-    AND d.source IN ('Telegram', 'Portal')
+    AND d.source = 'Portal'
     AND d.storage_object_path IS NOT NULL
     AND d.file_sha256 IS NOT NULL
     AND NOT EXISTS (

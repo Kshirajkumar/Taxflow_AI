@@ -18,6 +18,7 @@ const missingSchemaTables = new Set();
 function matches(row, filters) {
   return filters.every(({ field, operator, value }) => {
     if (operator === 'eq') return row[field] === value;
+    if (operator === 'neq') return row[field] !== value;
     if (operator === 'lt') return row[field] < value;
     if (operator === 'lte') return row[field] <= value;
     if (operator === 'is') return row[field] === value;
@@ -37,6 +38,7 @@ function fakeQuery(table) {
     upsert(value) { operation = 'upsert'; payload = value; return this; },
     update(value) { operation = 'update'; payload = value; return this; },
     eq(field, value) { filters.push({ field, operator: 'eq', value }); return this; },
+    neq(field, value) { filters.push({ field, operator: 'neq', value }); return this; },
     lt(field, value) { filters.push({ field, operator: 'lt', value }); return this; },
     lte(field, value) { filters.push({ field, operator: 'lte', value }); return this; },
     is(field, value) { filters.push({ field, operator: 'is', value }); return this; },
@@ -174,26 +176,27 @@ test('Telegram status identifies a competing webhook service and an unavailable 
   assert.equal(telegramApiCalls, 4);
 });
 
-test('Telegram attachment messages are redirected to the secure portal without storing file data', async (t) => {
+test('Telegram media updates are ignored without storage, database access, or an automatic portal link', async (t) => {
   const oldFrom = database.supabase.from;
   const oldStorageFrom = database.supabase.storage.from;
   const oldFetch = global.fetch;
   const oldBucket = process.env.SUPABASE_STORAGE_BUCKET;
   const oldBotToken = process.env.TELEGRAM_BOT_TOKEN;
   const oldSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  const oldPortalUrl = process.env.CLIENT_PORTAL_URL;
   const telegramCalls = [];
+  let databaseCalls = 0;
   let storageUploads = 0;
   Object.values(tables).forEach((rows) => { rows.length = 0; });
-  tables.clients.push({ id: 'client-1', name: 'Example Client', telegram_chat_id: 'chat-1' });
-  database.supabase.from = (table) => fakeQuery(table);
+  database.supabase.from = () => {
+    databaseCalls += 1;
+    throw new Error('Media updates must not query the database.');
+  };
   database.supabase.storage.from = () => ({
     async upload() { storageUploads += 1; return { data: null, error: null }; }
   });
   process.env.SUPABASE_STORAGE_BUCKET = 'taxflow-intake';
   process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
   process.env.TELEGRAM_WEBHOOK_SECRET = 'test-webhook-secret';
-  process.env.CLIENT_PORTAL_URL = 'https://taxflow.example';
   global.fetch = async (url, init) => {
     if (String(url).startsWith('http://127.0.0.1:')) return oldFetch(url, init);
     telegramCalls.push({ url: String(url), body: JSON.parse(init.body) });
@@ -210,71 +213,55 @@ test('Telegram attachment messages are redirected to the secure portal without s
     database.supabase.from = oldFrom;
     database.supabase.storage.from = oldStorageFrom;
     global.fetch = oldFetch;
-    if (oldPortalUrl === undefined) delete process.env.CLIENT_PORTAL_URL; else process.env.CLIENT_PORTAL_URL = oldPortalUrl;
     if (oldBucket === undefined) delete process.env.SUPABASE_STORAGE_BUCKET; else process.env.SUPABASE_STORAGE_BUCKET = oldBucket;
     if (oldBotToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN; else process.env.TELEGRAM_BOT_TOKEN = oldBotToken;
     if (oldSecret === undefined) delete process.env.TELEGRAM_WEBHOOK_SECRET; else process.env.TELEGRAM_WEBHOOK_SECRET = oldSecret;
   });
 
-  const response = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-telegram-bot-api-secret-token': 'test-webhook-secret'
-    },
-    body: JSON.stringify({
-      update_id: 501,
-      message: {
-        message_id: 72,
-        date: 1792322400,
-        chat: { id: 'chat-1', type: 'private' },
-        from: { id: 88 },
-        document: {
-          file_id: 'telegram-file-1',
-          file_name: 'client-invoice.pdf',
-          mime_type: 'application/pdf',
-          file_size: 1024
-        }
-      }
-    })
-  });
+  const mediaUpdates = [
+    { photo: [{ file_id: 'photo-file' }] },
+    { document: { file_id: 'document-file', file_name: 'private.pdf' } },
+    { video: { file_id: 'video-file' } },
+    { audio: { file_id: 'audio-file' } },
+    { voice: { file_id: 'voice-file' } },
+    { sticker: { file_id: 'sticker-file' } },
+    { document: { file_id: 'caption-command-file' }, caption: '/start one-time-link' },
+  ];
 
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true, redirected: true });
-  assert.equal(telegramCalls.length, 1);
-  assert.match(telegramCalls[0].url, /\/sendMessage$/);
-  assert.match(telegramCalls[0].body.text, /https:\/\/taxflow\.example\/portal/);
+  for (const [index, media] of mediaUpdates.entries()) {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-telegram-bot-api-secret-token': 'test-webhook-secret'
+      },
+      body: JSON.stringify({
+        update_id: 501 + index,
+        message: {
+          message_id: 72 + index,
+          date: 1792322400 + index,
+          chat: { id: 'chat-1', type: 'private' },
+          from: { id: 88 },
+          ...media
+        }
+      })
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      ignored: true,
+      reason: 'text_messages_only'
+    });
+  }
+
+  assert.equal(databaseCalls, 0);
+  assert.equal(telegramCalls.length, 0);
   assert.equal(storageUploads, 0);
   assert.equal(tables.telegram_messages.length, 0);
   assert.equal(tables.documents_metadata.length, 0);
 
-  const unsupportedResponse = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-telegram-bot-api-secret-token': 'test-webhook-secret'
-    },
-    body: JSON.stringify({
-      update_id: 502,
-      message: {
-        message_id: 73,
-        date: 1792322401,
-        chat: { id: 'chat-1', type: 'private' },
-        document: {
-          file_id: 'unsafe-file',
-          file_name: 'payload.exe',
-          mime_type: 'application/octet-stream',
-          file_size: 100
-        }
-      }
-    })
-  });
-  assert.equal(unsupportedResponse.status, 200);
-  assert.deepEqual(await unsupportedResponse.json(), { ok: true, redirected: true });
-  assert.equal(storageUploads, 0);
-  assert.equal(tables.telegram_messages.length, 0);
-  assert.equal(tables.documents_metadata.length, 0);
-
+  database.supabase.from = (table) => fakeQuery(table);
+  tables.clients.push({ id: 'client-1', name: 'Example Client', telegram_chat_id: 'chat-1' });
   const textResponse = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
     method: 'POST',
     headers: {
@@ -282,7 +269,7 @@ test('Telegram attachment messages are redirected to the secure portal without s
       'x-telegram-bot-api-secret-token': 'test-webhook-secret'
     },
     body: JSON.stringify({
-      update_id: 503,
+      update_id: 600,
       message: {
         message_id: 74,
         date: 1792322402,
@@ -295,7 +282,7 @@ test('Telegram attachment messages are redirected to the secure portal without s
   assert.deepEqual(await textResponse.json(), { ok: true });
   assert.equal(tables.telegram_messages.length, 1);
   assert.equal(tables.telegram_messages[0].body, 'Hello, I will send the documents through the portal.');
-  assert.equal(telegramCalls.length, 2);
+  assert.equal(telegramCalls.length, 0);
 });
 
 test('Telegram sends a secure portal welcome once when a client first starts the linked bot', async (t) => {
@@ -394,61 +381,6 @@ test('Telegram sends a secure portal welcome once when a client first starts the
   assert.equal(tables.telegram_messages.length, 1);
 });
 
-test('Telegram attachment parsing covers media messages and rejects unsafe formats clearly', () => {
-  const { getTelegramAttachment, normalizeTelegramFileName, getUnrepresentedTelegramMessage } = telegramRouter._test;
-  const voice = getTelegramAttachment({ message_id: 4, voice: { file_id: 'voice-id', mime_type: 'audio/ogg' } });
-  assert.equal(voice.messageType, 'voice');
-  assert.equal(voice.fileName, 'telegram-voice-4.ogg');
-
-  const animation = getTelegramAttachment({ message_id: 5, animation: { file_id: 'animation-id', mime_type: 'video/mp4' } });
-  assert.equal(animation.fileName, 'telegram-animation-5.mp4');
-  assert.equal(getUnrepresentedTelegramMessage({ contact: {} }), 'contact');
-  assert.deepEqual(normalizeTelegramFileName('client-data.zip', 'application/zip'), {
-    fileName: 'client-data.zip',
-    fileType: 'OTHER'
-  });
-  assert.throws(() => normalizeTelegramFileName('payload.exe', 'application/octet-stream'), /not supported/i);
-  assert.throws(() => normalizeTelegramFileName('unknown-document', 'application/octet-stream'), /identified safely/i);
-});
-
-test('Telegram attachment RLS errors identify the blocked production stage and repair steps', () => {
-  const { getAttachmentErrorMessage } = telegramRouter._test;
-  const storageError = getAttachmentErrorMessage(
-    new Error('new row violates row-level security policy'),
-    'private Storage upload'
-  );
-  assert.match(storageError, /private Storage upload/);
-  assert.match(storageError, /SUPABASE_SERVICE_ROLE_KEY/);
-  assert.match(storageError, /db\/fix_telegram_attachment_rls\.sql/);
-
-  const metadataError = getAttachmentErrorMessage(
-    new Error('new row violates row-level security policy for table "documents_metadata"'),
-    'document metadata insert'
-  );
-  assert.match(metadataError, /document metadata insert/);
-
-  assert.equal(
-    getAttachmentErrorMessage(new Error('Telegram timed out'), 'Telegram download'),
-    'Telegram timed out'
-  );
-});
-
-test('outbound Telegram attachment limit includes the approved size buffer', () => {
-  assert.equal(telegramRouter._test.TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES, 25 * 1024 * 1024);
-  assert.equal(telegramRouter._test.TELEGRAM_PHOTO_LIMIT_BYTES, 9 * 1024 * 1024);
-});
-
-test('private Telegram object keys require UUID ownership identifiers', () => {
-  assert.throws(() => getStorageObjectKey({
-    userId: undefined,
-    clientId: '20314145-9020-45f0-85a0-68bc63eb359e',
-    year: '2026',
-    month: 'October',
-    documentId: crypto.randomUUID(),
-    fileName: 'photo.jpg'
-  }), /valid user UUID/i);
-});
-
 test('Telegram diagnostics expect the separate relay when direct webhook registration is disabled', () => {
   const oldRelayUrl = process.env.TELEGRAM_WEBHOOK_RELAY_URL;
   const oldAutoConfigure = process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE;
@@ -475,8 +407,8 @@ test('Authenticated desktop sync lists only pending owned files and acknowledges
   const oldStorageBucket = process.env.SUPABASE_STORAGE_BUCKET;
   const fileBytes = Buffer.from('%PDF-1.7 sync download');
   const checksum = crypto.createHash('sha256').update(fileBytes).digest('hex');
-  const ownerId = 'owner-1';
-  const clientId = 'client-sync';
+  const ownerId = '11752602-62fa-4252-ae1d-23c4fb3b7312';
+  const clientId = '20314145-9020-45f0-85a0-68bc63eb359e';
   const documentId = crypto.randomUUID();
   const deviceId = crypto.randomUUID();
   const localServerVault = fs.mkdtempSync(path.join(os.tmpdir(), 'taxflow-sync-vault-'));
@@ -485,15 +417,24 @@ test('Authenticated desktop sync lists only pending owned files and acknowledges
   tables.documents_metadata.push({
     id: documentId,
     client_id: clientId,
-    source: 'Telegram',
+    source: 'Portal',
     file_name: 'inbound.pdf',
     file_size_kb: fileBytes.length / 1024,
     file_sha256: checksum,
     created_at: '2026-10-18T12:00:00.000Z',
     storage_bucket: 'taxflow-intake',
-    storage_object_path: 'owner-1/client-sync/2026/October/inbound.pdf',
+    storage_object_path: `${ownerId}/${clientId}/2026/October/${documentId}_inbound.pdf`,
     mime_type: 'application/pdf',
     vault_path: 'supabase://taxflow-intake/owner/client/2026/October/inbound.pdf'
+  });
+  const legacyTelegramDocumentId = crypto.randomUUID();
+  tables.documents_metadata.push({
+    id: legacyTelegramDocumentId,
+    client_id: clientId,
+    source: 'Telegram',
+    file_name: 'legacy-telegram.pdf',
+    created_at: '2026-10-18T11:00:00.000Z',
+    vault_path: 'legacy-local-file.pdf'
   });
   database.supabase.from = (table) => fakeQuery(table);
   database.supabase.rpc = async (name, args) => {
@@ -506,7 +447,8 @@ test('Authenticated desktop sync lists only pending owned files and acknowledges
         client_name: 'Sync Client',
         file_name: 'inbound.pdf',
         file_sha256: checksum,
-        created_at: '2026-10-18T12:00:00.000Z'
+        created_at: '2026-10-18T12:00:00.000Z',
+        source: 'Portal'
       }],
       error: null
     };
@@ -514,7 +456,7 @@ test('Authenticated desktop sync lists only pending owned files and acknowledges
   database.supabase.storage.from = (bucket) => ({
     async download(key) {
       assert.equal(bucket, 'taxflow-intake');
-      assert.equal(key, 'owner-1/client-sync/2026/October/inbound.pdf');
+      assert.equal(key, `${ownerId}/${clientId}/2026/October/${documentId}_inbound.pdf`);
       return { data: new Blob([fileBytes]), error: null };
     }
   });
@@ -546,14 +488,23 @@ test('Authenticated desktop sync lists only pending owned files and acknowledges
     clientName: 'Sync Client',
     fileName: 'inbound.pdf',
     sha256: checksum,
+    source: 'Portal',
     year: '2026',
     month: 'October'
   }]);
+
+  const listResponse = await fetch(baseUrl);
+  assert.equal(listResponse.status, 200);
+  const listedDocuments = await listResponse.json();
+  assert.deepEqual(listedDocuments.data.map((document) => document.file_name), ['inbound.pdf']);
 
   const downloadResponse = await fetch(`${baseUrl}/${documentId}/serve`);
   assert.equal(downloadResponse.status, 200);
   assert.equal(Buffer.from(await downloadResponse.arrayBuffer()).toString(), fileBytes.toString());
   assert.equal(downloadResponse.headers.get('content-type'), 'application/pdf');
+
+  const legacyTelegramDownload = await fetch(`${baseUrl}/${legacyTelegramDocumentId}/serve`);
+  assert.equal(legacyTelegramDownload.status, 404);
 
   const clientBaseUrl = `http://127.0.0.1:${server.address().port}/api/v1/clients/${clientId}`;
   const treeResponse = await fetch(`${clientBaseUrl}/vault-tree`);

@@ -16,7 +16,6 @@ const { getOwnedClientIds, assertOwnedClient } = require('../lib/ownership');
 const {
   downloadDocument,
   isExpectedPortalObject,
-  isExpectedTelegramObject,
   normalizeMimeType
 } = require('../lib/documentStorage');
 
@@ -62,7 +61,10 @@ router.get('/', async (req, res) => {
   try {
     if (isConnected) {
       const ownedClientIds = await getOwnedClientIds(req.user.id);
-      let query = supabase.from('documents_metadata').select('*').in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000']).order('created_at', { ascending: false });
+      let query = supabase.from('documents_metadata').select('*')
+        .in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000'])
+        .neq('source', 'Telegram')
+        .order('created_at', { ascending: false });
       if (req.query.clientId) query = query.eq('client_id', req.query.clientId);
       if (req.query.status) query = query.eq('status', req.query.status);
       if (req.query.category) query = query.eq('category', req.query.category);
@@ -85,6 +87,7 @@ router.get('/:id', async (req, res) => {
       const { data, error } = await supabase
         .from('documents_metadata').select('*').eq('id', req.params.id).in('client_id', (await getOwnedClientIds(req.user.id)).length ? await getOwnedClientIds(req.user.id) : ['00000000-0000-0000-0000-000000000000']).single();
       if (error) throw error;
+      if (data.source === 'Telegram') return res.status(404).json({ success: false, message: 'Document not found' });
       return res.json({ success: true, source: 'supabase', data });
     }
     const doc = fallbackDocuments.find(d => d.id === req.params.id);
@@ -215,28 +218,21 @@ router.get('/:id/serve', async (req, res) => {
         .in('client_id', ownedClientIds.length ? ownedClientIds : ['00000000-0000-0000-0000-000000000000'])
         .single();
       if (error) throw error;
+      if (data.source === 'Telegram') {
+        return res.status(404).json({ success: false, message: 'Telegram files are not available. Use the secure client portal for document uploads.' });
+      }
       vaultPath = data.vault_path;
       if (data.storage_bucket && data.storage_object_path) {
-        const expectedStorageObject = data.source === 'Telegram'
-          ? isExpectedTelegramObject({
-              bucket: data.storage_bucket,
-              objectKey: data.storage_object_path,
-              userId: req.user.id,
-              clientId: data.client_id,
-              createdAt: data.created_at,
-              fileName: data.file_name
-            })
-          : data.source === 'Portal'
-            ? isExpectedPortalObject({
-                bucket: data.storage_bucket,
-                objectKey: data.storage_object_path,
-                userId: req.user.id,
-                clientId: data.client_id,
-                documentId: req.params.id,
-                createdAt: data.created_at,
-                fileName: data.file_name
-              })
-            : false;
+        const expectedStorageObject = data.source === 'Portal'
+          && isExpectedPortalObject({
+            bucket: data.storage_bucket,
+            objectKey: data.storage_object_path,
+            userId: req.user.id,
+            clientId: data.client_id,
+            documentId: req.params.id,
+            createdAt: data.created_at,
+            fileName: data.file_name
+          });
         if (!expectedStorageObject) {
           console.error(`[Documents] Refusing unexpected cloud storage reference for document ${req.params.id}.`);
           return res.status(404).json({ success: false, message: 'The cloud document reference is invalid.' });

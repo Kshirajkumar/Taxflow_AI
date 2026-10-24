@@ -20,7 +20,7 @@ const { supabase, isConnected } = require('../db/supabase');
 const { vaultFileExists, saveTextFileToVault } = require('../vault/vaultManager');
 const { getGeminiConfig } = require('../lib/aiProvider');
 const { getOwnedClientIds } = require('../lib/ownership');
-const { downloadDocument, isExpectedTelegramObject } = require('../lib/documentStorage');
+const { downloadDocument, isExpectedPortalObject } = require('../lib/documentStorage');
 
 // Prompt templates for different document types
 const EXTRACTION_PROMPTS = {
@@ -90,15 +90,20 @@ router.post('/process', async (req, res) => {
       });
     }
 
+    if (doc.source === 'Telegram') {
+      return res.status(404).json({ success: false, message: 'Telegram files are not available for extraction. Use the secure client portal for document uploads.' });
+    }
+
     // Step 2: Read from private object storage or the legacy local vault.
     const vaultPath = doc.vault_path;
     let fileBuffer = null;
     if (doc.storage_bucket && doc.storage_object_path) {
-      if (doc.source !== 'Telegram' || !isExpectedTelegramObject({
+      if (doc.source !== 'Portal' || !isExpectedPortalObject({
         bucket: doc.storage_bucket,
         objectKey: doc.storage_object_path,
         userId: req.user.id,
         clientId: doc.client_id,
+        documentId: doc.id,
         createdAt: doc.created_at,
         fileName: doc.file_name
       })) {

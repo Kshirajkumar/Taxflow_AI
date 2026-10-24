@@ -328,16 +328,6 @@ export interface TelegramMessage {
   message_type: string;
   delivery_status: string;
   created_at: string;
-  telegram_file_name?: string | null;
-  mime_type?: string | null;
-  file_size?: number | null;
-  vault_file_ref?: string | null;
-  file_download_error?: string | null;
-  file_download_pending?: boolean;
-  attachment_download_status?: 'pending' | 'downloading' | 'failed' | 'saved' | string;
-  attachment_download_attempts?: number;
-  attachment_download_next_attempt_at?: string | null;
-  file_download_retryable?: boolean;
 }
 
 export interface ComplianceTask {
@@ -466,7 +456,7 @@ export interface PendingLocalDocument {
   sha256: string;
   year: string;
   month: string;
-  source: 'Telegram' | 'Portal';
+  source: 'Portal';
 }
 
 export async function fetchPendingLocalDocuments(deviceId: string): Promise<PendingLocalDocument[]> {
