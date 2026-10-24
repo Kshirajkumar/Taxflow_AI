@@ -24,6 +24,21 @@ DROP POLICY IF EXISTS client_portal_access_service_role ON public.client_portal_
 CREATE POLICY client_portal_access_service_role ON public.client_portal_access
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+INSERT INTO public.client_portal_access (
+  client_id, invited_email, active, invitation_pending, created_by
+)
+SELECT
+  client.id,
+  lower(btrim(client.email)),
+  TRUE,
+  FALSE,
+  client.user_id
+FROM public.clients AS client
+WHERE client.status = 'Active'
+  AND client.email IS NOT NULL
+  AND btrim(client.email) <> ''
+ON CONFLICT (client_id) DO NOTHING;
+
 ALTER TABLE public.documents_metadata
   ALTER COLUMN vault_path DROP NOT NULL,
   ADD COLUMN IF NOT EXISTS storage_bucket TEXT,

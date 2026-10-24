@@ -11,6 +11,14 @@ test('portal invitation migration adds server-encrypted token storage for privat
   assert.match(sql, /authenticated-encrypted invitation token/i);
 });
 
+test('portal migration enables existing active clients with email without reactivating prior access records', () => {
+  const sql = fs.readFileSync(path.join(migrationDirectory, 'client_portal.sql'), 'utf8');
+  assert.match(sql, /INSERT INTO public\.client_portal_access/i);
+  assert.match(sql, /client\.status = 'Active'/i);
+  assert.match(sql, /lower\(btrim\(client\.email\)\)/i);
+  assert.match(sql, /ON CONFLICT \(client_id\) DO NOTHING/i);
+});
+
 test('storage migration replaces the sync RPC with the portal-only result shape', () => {
   const sql = fs.readFileSync(path.join(migrationDirectory, 'create_taxflow_storage_bucket.sql'), 'utf8');
   const dropIndex = sql.indexOf('DROP FUNCTION IF EXISTS public.list_pending_document_sync(UUID, UUID, INTEGER);');

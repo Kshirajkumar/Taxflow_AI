@@ -400,6 +400,7 @@ router.get('/status', requireAuth, async (_req, res) => {
   let bot;
   let webhookInfo = null;
   let telegramSchemaReady = false;
+  let clientPortalAccessReady = false;
   let clientPortalInvitesReady = false;
   try {
     bot = await telegramCall('getMe', {});
@@ -419,15 +420,18 @@ router.get('/status', requireAuth, async (_req, res) => {
       const [
         { error: messagesSchemaError },
         { error: linkTokensSchemaError },
+        { error: portalAccessSchemaError },
         { error: invitesSchemaError },
       ] = await Promise.all([
         supabase.from('telegram_messages')
           .select('id,body')
           .limit(1),
         supabase.from('telegram_link_tokens').select('id').limit(1),
+        supabase.from('client_portal_access').select('id,invited_email,active').limit(1),
         supabase.from('client_portal_invites').select('id,token_ciphertext').limit(1),
       ]);
       telegramSchemaReady = !messagesSchemaError && !linkTokensSchemaError;
+      clientPortalAccessReady = !portalAccessSchemaError;
       clientPortalInvitesReady = !invitesSchemaError;
       if (!telegramSchemaReady) {
         if (messagesSchemaError) {
@@ -442,6 +446,10 @@ router.get('/status', requireAuth, async (_req, res) => {
       if (invitesSchemaError) {
         console.error('[Telegram] client_portal_invites schema check failed:', invitesSchemaError.message);
         warnings.push(databaseSetupWarning('client_portal_invites', invitesSchemaError));
+      }
+      if (portalAccessSchemaError) {
+        console.error('[Telegram] client_portal_access schema check failed:', portalAccessSchemaError.message);
+        warnings.push(databaseSetupWarning('client_portal_access', portalAccessSchemaError));
       }
     } catch (error) {
       console.error('[Telegram] Runtime database schema check failed:', error.message);
@@ -479,6 +487,7 @@ router.get('/status', requireAuth, async (_req, res) => {
       webhookLastError: recentWebhookError?.message || null,
       webhookLastErrorAt: recentWebhookError?.occurredAt || null,
       telegramSchemaReady,
+      clientPortalAccessReady,
       clientPortalInvitesReady,
       webhookAutoConfigureEnabled: webhookAutoConfigureEnabled(),
       webhookIngress,

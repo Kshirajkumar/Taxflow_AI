@@ -124,8 +124,8 @@ function Shell() {
           const message = /failed to fetch|networkerror|network request failed/i.test(detail)
             ? 'Could not reach the TaxFlow server. Check your internet connection and backend availability.'
             : /401|unauthori[sz]ed|session.*expir/i.test(detail)
-              ? 'Your session may have expired. Sign in again, then retry the file sync.'
-              : `Could not sync incoming client files. ${detail}`;
+              ? 'Your session may have expired. Sign in again, then retry syncing client-portal uploads.'
+              : `Could not sync client-portal uploads to this device. ${detail}`;
           showVaultSyncNotice(message, 'error');
         }
       } finally {
@@ -198,11 +198,11 @@ function Shell() {
             <Icon name={vaultSyncNotice.kind === 'success' ? 'check' : vaultSyncNotice.kind === 'warning' ? 'folder' : vaultSyncNotice.kind === 'error' ? 'info' : 'refresh'} size={15} />
           </span>
           <span className="vault-sync-toast-copy">
-            <b>{vaultSyncNotice.kind === 'error' ? 'Secure file sync needs attention' : vaultSyncNotice.kind === 'warning' ? 'Local vault setup required' : vaultSyncNotice.kind === 'success' ? 'File sync complete' : 'Secure file sync'}</b>
+            <b>{vaultSyncNotice.kind === 'error' ? 'Client portal sync needs attention' : vaultSyncNotice.kind === 'warning' ? 'Local vault setup required' : vaultSyncNotice.kind === 'success' ? 'Client portal files synced' : 'Client portal file sync'}</b>
             <span>{vaultSyncNotice.message}</span>
           </span>
           {vaultSyncNotice.kind === 'error' && (
-            <button type="button" className="vault-sync-toast-action" onClick={() => { showVaultSyncNotice('Retrying the secure client-file sync…', 'info'); syncNowRef.current?.(); }}>
+            <button type="button" className="vault-sync-toast-action" onClick={() => { showVaultSyncNotice('Retrying client-portal file sync…', 'info'); syncNowRef.current?.(); }}>
               Retry now
             </button>
           )}

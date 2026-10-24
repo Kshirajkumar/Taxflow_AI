@@ -200,6 +200,13 @@ function isMissingDocumentsMetadataTable(error) {
   return text.includes('pgrst205') || (text.includes('documents_metadata') && text.includes('schema cache'));
 }
 
+function isMissingPortalDocumentSyncFunction(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  return ['PGRST202', '42883'].includes(code)
+    || /list_pending_document_sync.*(?:does not exist|schema cache)|could not find the function/i.test(message);
+}
+
 /**
  * GET /api/v1/documents/:id/serve
  * Stream/serve the physical file from Local Vault Storage to the browser/UI
@@ -303,7 +310,13 @@ router.get('/sync/pending', async (req, res) => {
     return res.json({ success: true, data: pending });
   } catch (error) {
     console.error('[Documents] Local sync queue error:', error.message);
-    return res.status(500).json({ success: false, message: 'Could not load the local document sync queue.' });
+    if (isMissingPortalDocumentSyncFunction(error)) {
+      return res.status(503).json({
+        success: false,
+        message: 'Client-portal file sync is not set up in this Supabase project. Apply the Telegram setup migrations to the database used by this backend, then retry.',
+      });
+    }
+    return res.status(503).json({ success: false, message: 'Could not load the client-portal file sync queue. Check the backend database connection and retry.' });
   }
 });
 

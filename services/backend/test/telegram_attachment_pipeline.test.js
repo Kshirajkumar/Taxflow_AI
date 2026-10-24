@@ -152,6 +152,7 @@ test('Telegram status reports messaging diagnostics without checking portal Stor
   assert.equal(body.diagnostics.webhookMatchesThisService, false);
   assert.equal(body.diagnostics.webhookPendingUpdates, 2);
   assert.equal(body.diagnostics.telegramSchemaReady, true);
+  assert.equal(body.diagnostics.clientPortalAccessReady, true);
   assert.equal(body.diagnostics.clientPortalInvitesReady, true);
   assert.equal(Object.hasOwn(body.diagnostics, 'storageBucketReady'), false);
   assert.match(body.diagnostics.warnings.join(' '), /different service/i);
@@ -166,11 +167,18 @@ test('Telegram status reports messaging diagnostics without checking portal Stor
   assert.match(missingInviteSchema.diagnostics.warnings.join(' '), /Supabase project used by this backend/i);
   missingSchemaTables.delete('client_portal_invites');
 
+  missingSchemaTables.add('client_portal_access');
+  const missingPortalAccessResponse = await fetch(`http://127.0.0.1:${server.address().port}/api/v1/telegram/status`);
+  const missingPortalAccess = await missingPortalAccessResponse.json();
+  assert.equal(missingPortalAccess.diagnostics.clientPortalAccessReady, false);
+  assert.match(missingPortalAccess.diagnostics.warnings.join(' '), /Required database table public\.client_portal_access is missing/i);
+  missingSchemaTables.delete('client_portal_access');
+
   assert.deepEqual(await telegramRouter._test.configureWebhook(), {
     configured: false,
     reason: 'auto_configuration_disabled'
   });
-  assert.equal(telegramApiCalls, 4);
+  assert.equal(telegramApiCalls, 6);
 });
 
 test('Telegram media updates receive a private portal link without downloading or storing file bytes', async (t) => {
@@ -667,6 +675,29 @@ test('Authenticated desktop sync lists only pending owned files and acknowledges
     year: '2026',
     month: 'October'
   }]);
+
+  database.supabase.rpc = async () => ({
+    data: null,
+    error: { code: 'PGRST202', message: 'Could not find the function public.list_pending_document_sync in the schema cache' }
+  });
+  const missingSyncMigrationResponse = await fetch(`${baseUrl}/sync/pending?deviceId=${deviceId}&limit=20`);
+  assert.equal(missingSyncMigrationResponse.status, 503);
+  assert.match((await missingSyncMigrationResponse.json()).message, /Client-portal file sync is not set up/i);
+  database.supabase.rpc = async (_name, args) => {
+    assert.equal(args.p_user_id, ownerId);
+    assert.equal(args.p_device_id, deviceId);
+    return {
+      data: [{
+        document_id: documentId,
+        client_name: 'Sync Client',
+        file_name: 'inbound.pdf',
+        file_sha256: checksum,
+        created_at: '2026-10-18T12:00:00.000Z',
+        source: 'Portal'
+      }],
+      error: null
+    };
+  };
 
   const listResponse = await fetch(baseUrl);
   assert.equal(listResponse.status, 200);
