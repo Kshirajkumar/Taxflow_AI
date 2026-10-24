@@ -1037,6 +1037,7 @@ export async function generateNoticeResponse(payload: {
 export interface MessageTemplate {
   id: string;
   template_key?: string | null;
+  user_id?: string | null;
   name: string;
   cat: string;
   body: string;
@@ -1076,6 +1077,88 @@ export async function deleteTemplate(templateId: string): Promise<void> {
     { method: 'DELETE', headers: authHeaders() },
   );
   if (!response.success) throw new Error(response.message || 'Could not delete template.');
+}
+
+export interface SupportedCountryTimezone {
+  country_id: string;
+  country_code: string;
+  country_name: string;
+  timezone_name: string;
+  is_default: boolean;
+}
+
+export interface TelegramMessageSchedule {
+  id: string;
+  client_id: string;
+  template_id: string | null;
+  message_body: string;
+  repeat_mode: 'once' | 'daily';
+  timezone_name: string;
+  scheduled_at: string | null;
+  local_time: string | null;
+  next_run_at: string | null;
+  status: 'active' | 'completed' | 'cancelled' | 'failed';
+  attempt_count: number;
+  occurrence_count: number;
+  last_sent_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  client?: { id: string; name: string; country_id: string };
+}
+
+export async function fetchSupportedCountryTimezones(): Promise<SupportedCountryTimezone[]> {
+  const response = await authRequest<{ success: boolean; message?: string; data?: SupportedCountryTimezone[] }>(
+    `${API_BASE_URL}/schedules/timezones`,
+    { method: 'GET', headers: authHeaders() },
+  );
+  if (!response.success) throw new Error(response.message || 'Could not load country time zones.');
+  return response.data || [];
+}
+
+export async function fetchTelegramSchedules(): Promise<TelegramMessageSchedule[]> {
+  const response = await authRequest<{ success: boolean; message?: string; data?: TelegramMessageSchedule[] }>(
+    `${API_BASE_URL}/schedules`,
+    { method: 'GET', headers: authHeaders() },
+  );
+  if (!response.success) throw new Error(response.message || 'Could not load scheduled reminders.');
+  return response.data || [];
+}
+
+export async function createTelegramSchedule(data: {
+  clientId: string;
+  templateId?: string;
+  messageBody: string;
+  repeatMode: 'once' | 'daily';
+  timezoneName: string;
+  scheduledLocal?: string;
+  localTime?: string;
+}): Promise<TelegramMessageSchedule> {
+  const response = await authRequest<{ success: boolean; message?: string; data?: TelegramMessageSchedule }>(
+    `${API_BASE_URL}/schedules`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    },
+  );
+  if (!response.success || !response.data) throw new Error(response.message || 'Could not create scheduled reminder.');
+  return response.data;
+}
+
+export async function cancelTelegramSchedule(scheduleId: string): Promise<void> {
+  const response = await authRequest<{ success: boolean; message?: string }>(
+    `${API_BASE_URL}/schedules/${encodeURIComponent(scheduleId)}`,
+    { method: 'DELETE', headers: authHeaders() },
+  );
+  if (!response.success) throw new Error(response.message || 'Could not cancel scheduled reminder.');
+}
+
+export async function retryTelegramSchedule(scheduleId: string): Promise<void> {
+  const response = await authRequest<{ success: boolean; message?: string }>(
+    `${API_BASE_URL}/schedules/${encodeURIComponent(scheduleId)}/retry`,
+    { method: 'POST', headers: authHeaders() },
+  );
+  if (!response.success) throw new Error(response.message || 'Could not retry scheduled reminder.');
 }
 
 export async function getHealthStatus() {

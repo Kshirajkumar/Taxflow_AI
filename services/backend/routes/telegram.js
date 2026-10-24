@@ -338,6 +338,39 @@ async function notifyClientPortalEmailChanged(client, { previousEmail, updatedEm
   return { sent: true };
 }
 
+async function sendScheduledTelegramReminder(client, schedule) {
+  if (client.status !== 'Active' || !client.telegram_chat_id) {
+    throw new Error('The client is inactive or has no linked Telegram chat.');
+  }
+  const hasPortalAccount = await hasActiveClientPortalAccount(client);
+  const portalLink = hasPortalAccount
+    ? getClientPortalBaseUrl()
+    : getClientPortalLink(await getOrCreateTelegramPortalInvite(client, { createdBy: schedule.owner_user_id }));
+  const replacements = {
+    name: String(client.name || 'there'),
+    portalLink,
+    period: new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric', timeZone: schedule.timezone_name }).format(new Date()),
+    due: 'as soon as possible',
+    filing: 'your upcoming filing',
+    doc: 'requested documents',
+  };
+  let body = String(schedule.message_body || '').replace(/\{(\w+)\}/g, (_match, key) => replacements[key] || '');
+  if (!body.includes(portalLink)) {
+    body = `${body.trim()}\n\nUpload your documents through your secure client portal: ${portalLink}`;
+  }
+  if (!hasPortalAccount) {
+    body = `${body.trim()}\n\nYour portal account is not set up yet. Create it with the email address registered with your CA, then sign in to upload your requested documents.`;
+  }
+  const providerMessageId = `taxflow:schedule:${schedule.id}:${schedule.occurrence_count || 0}`;
+  await sendTrackedTelegramMessage({
+    client,
+    chatId: client.telegram_chat_id,
+    providerMessageId,
+    body,
+    label: 'Scheduled Telegram reminder',
+  });
+}
+
 async function isTelegramMessageSent(providerMessageId) {
   const { data, error } = await supabase.from('telegram_messages')
     .select('delivery_status')
@@ -952,6 +985,7 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
 module.exports = router;
 module.exports.configureWebhook = configureWebhook;
 module.exports.notifyClientPortalEmailChanged = notifyClientPortalEmailChanged;
+module.exports.sendScheduledTelegramReminder = sendScheduledTelegramReminder;
 module.exports._test = {
   secretMatches,
   expectedWebhookUrl,

@@ -4,6 +4,8 @@ const { supabase, isConnected } = require('../db/supabase');
 const { requireAuth } = require('../middleware/requireAuth');
 
 const DEFAULT_TEMPLATES = [
+  { template_key: 'website_link', name: 'Website link', cat: 'Links', body: 'Hello {name}, you can visit our client portal and website at: {portalLink}', protected: true },
+  { template_key: 'portal_link', name: 'Client portal website link', cat: 'Client portal', body: 'Hello {name}, you can sign in to your TaxFlow client portal and upload your requested documents here: {portalLink}', protected: true },
   { template_key: 'docs', name: 'GST documents request', cat: 'Utility', body: 'Hello {name}, please upload your {period} sales & purchase invoices through your secure client portal: {portalLink}. Deadline: {due}.', protected: true },
   { template_key: 'pending', name: 'Missing document', cat: 'Utility', body: 'Hi {name}, we have not received the {doc} for {period} yet. Please upload it through your secure client portal: {portalLink}.', protected: true },
   { template_key: 'itr', name: 'ITR documents', cat: 'Utility', body: 'Hi {name}, to file your ITR please upload Form 16 / 26AS, bank interest certificates, and investment proofs through your secure client portal: {portalLink}.', protected: true },
@@ -11,10 +13,7 @@ const DEFAULT_TEMPLATES = [
 ];
 
 function normalizedBody(body) {
-  const value = body.trim();
-  return value.includes('{portalLink}')
-    ? value
-    : `${value}\n\nUpload documents securely after signing in: {portalLink}`;
+  return typeof body === 'string' ? body.trim() : '';
 }
 
 function validateTemplateFields({ name, cat, body }, { partial = false } = {}) {
@@ -30,34 +29,23 @@ function validateTemplateFields({ name, cat, body }, { partial = false } = {}) {
   return '';
 }
 
-async function ensureDefaultTemplates(userId) {
-  const { data: existing, error: selectError } = await supabase
-    .from('message_templates')
-    .select('template_key')
-    .eq('user_id', userId)
-    .not('template_key', 'is', null);
-  if (selectError) throw selectError;
-  const existingKeys = new Set((existing || []).map((item) => item.template_key));
-  for (const template of DEFAULT_TEMPLATES.filter((item) => !existingKeys.has(item.template_key))) {
-    const { error } = await supabase.from('message_templates').insert({ ...template, user_id: userId });
-    if (error && error.code !== '23505') throw error;
-  }
-}
-
 // GET /api/v1/templates — List all message templates
 router.get('/', requireAuth, async (req, res) => {
   try {
     if (isConnected) {
-      await ensureDefaultTemplates(req.user.id);
       const { data, error } = await supabase
         .from('message_templates')
         .select('*')
-        .eq('user_id', req.user.id)
+        .or(`user_id.is.null,user_id.eq.${req.user.id}`)
         .order('created_at', { ascending: true });
       if (error) throw error;
       return res.json({ success: true, source: 'supabase', data: data || [] });
     }
-    return res.json({ success: true, source: 'demo', data: [] });
+    return res.json({
+      success: true,
+      source: 'demo',
+      data: DEFAULT_TEMPLATES.map((template) => ({ ...template, id: `demo-${template.template_key}`, user_id: null })),
+    });
   } catch (err) {
     console.error('[Templates] Could not list templates:', err.message);
     res.status(500).json({ success: false, message: 'Templates could not be loaded.' });
@@ -87,7 +75,7 @@ router.post('/', requireAuth, async (req, res) => {
       if (error) throw error;
       return res.status(201).json({ success: true, source: 'supabase', data });
     }
-    return res.status(201).json({ success: true, source: 'demo', data: { id: 'demo_' + Date.now(), name: name.trim(), cat: category || 'Utility', body: normalizedBody(body), protected: false } });
+    return res.status(201).json({ success: true, source: 'demo', data: { id: 'demo_' + Date.now(), user_id: req.user.id, name: name.trim(), cat: category || 'Utility', body: normalizedBody(body), protected: false } });
   } catch (err) {
     console.error('[Templates] Could not create template:', err.message);
     res.status(500).json({ success: false, message: 'Template could not be created.' });
@@ -113,13 +101,15 @@ router.patch('/:id', requireAuth, async (req, res) => {
     if (isConnected) {
       const { data: existing, error: existingError } = await supabase
         .from('message_templates')
-        .select('protected')
+        .select('protected,user_id')
         .eq('id', templateId)
-        .eq('user_id', req.user.id)
         .maybeSingle();
       if (existingError) throw existingError;
-      if (!existing) {
+      if (!existing || (existing.user_id && existing.user_id !== req.user.id)) {
         return res.status(404).json({ success: false, message: 'Template not found.' });
+      }
+      if (existing.user_id === null) {
+        return res.status(403).json({ success: false, message: 'Shared templates are managed centrally and cannot be changed here.' });
       }
       const { data, error } = await supabase
         .from('message_templates')
@@ -149,13 +139,15 @@ router.delete('/:id', requireAuth, async (req, res) => {
     if (isConnected) {
       const { data: existing, error: existingError } = await supabase
         .from('message_templates')
-        .select('protected')
+        .select('protected,user_id')
         .eq('id', templateId)
-        .eq('user_id', req.user.id)
         .maybeSingle();
       if (existingError) throw existingError;
-      if (!existing) {
+      if (!existing || (existing.user_id && existing.user_id !== req.user.id)) {
         return res.status(404).json({ success: false, message: 'Template not found.' });
+      }
+      if (existing.user_id === null) {
+        return res.status(403).json({ success: false, message: 'Shared templates cannot be deleted.' });
       }
       if (existing.protected) {
         return res.status(403).json({ success: false, message: 'This template is protected and cannot be deleted.' });

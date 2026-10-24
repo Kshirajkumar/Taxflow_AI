@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
 
@@ -30,6 +30,7 @@ function createDatabaseMock(initialRows = {}) {
       eq(field, value) { filters.push((row) => row[field] === value); return this; },
       is(field, value) { filters.push((row) => row[field] === value); return this; },
       not(field, _operator, value) { filters.push((row) => row[field] !== value); return this; },
+      or() { filters.push((row) => row.user_id === null || row.user_id === 'staff-1'); return this; },
       limit() { return this; },
       order() { return this; },
       maybeSingle() { return this.execute(true); },
@@ -190,10 +191,33 @@ test('staff routes do not require a client portal access-table lookup', async ()
   }
 });
 
-test('template listing seeds the protected secure portal invitation', async () => {
+test('template listing returns shared defaults and only the current userâ€™s private templates', async () => {
   const previousFrom = database.supabase.from;
   const previousGetUser = database.supabase.auth.getUser;
-  const mock = createDatabaseMock();
+  const mock = createDatabaseMock({
+    message_templates: [
+      {
+        id: 'shared-invite',
+        user_id: null,
+        template_key: 'portal_invite',
+        name: 'Secure portal invitation',
+        cat: 'Client portal',
+        body: 'Open {portalLink}. Use the same email address your CA has on file. Do not send tax documents in Telegram.',
+        protected: true,
+      },
+      {
+        id: 'shared-link',
+        user_id: null,
+        template_key: 'portal_link',
+        name: 'Client portal website link',
+        cat: 'Client portal',
+        body: 'Sign in here: {portalLink}',
+        protected: true,
+      },
+      { id: 'private-template', user_id: 'staff-1', name: 'Private', cat: 'Custom', body: 'Hello {name}', protected: false },
+      { id: 'other-template', user_id: 'staff-2', name: 'Other private', cat: 'Custom', body: 'Not for you', protected: false },
+    ],
+  });
   database.supabase.from = mock.from;
   database.supabase.auth.getUser = async () => ({
     data: { user: { id: 'staff-1', email: 'staff@example.com' } },
@@ -213,9 +237,13 @@ test('template listing seeds the protected secure portal invitation', async () =
       assert.ok(invitation);
       assert.equal(invitation.name, 'Secure portal invitation');
       assert.equal(invitation.protected, true);
+      assert.equal(invitation.user_id, null);
       assert.match(invitation.body, /\{portalLink\}/);
       assert.match(invitation.body, /same email address your CA has on file/i);
       assert.match(invitation.body, /do not send .* documents in Telegram/i);
+      assert.ok(templates.some((template) => template.template_key === 'portal_link'));
+      assert.ok(templates.some((template) => template.id === 'private-template'));
+      assert.ok(!templates.some((template) => template.id === 'other-template'));
       assert.equal(mock.tables.message_templates.length, 4);
     });
   } finally {
@@ -224,13 +252,13 @@ test('template listing seeds the protected secure portal invitation', async () =
   }
 });
 
-test('template creation adds the portal link and protected defaults cannot be deleted', async () => {
+test('template creation saves private templates and protected defaults cannot be deleted', async () => {
   const previousFrom = database.supabase.from;
   const previousGetUser = database.supabase.auth.getUser;
   const mock = createDatabaseMock({
     message_templates: [{
       id: 'core-template',
-      user_id: 'staff-1',
+      user_id: null,
       name: 'Protected core',
       cat: 'Utility',
       body: 'Upload here: {portalLink}',
@@ -255,7 +283,7 @@ test('template creation adds the portal link and protected defaults cannot be de
       });
       assert.equal(createdResponse.status, 201);
       const created = (await createdResponse.json()).data;
-      assert.match(created.body, /\{portalLink\}/);
+      assert.equal(created.body, 'Hello {name}.');
       assert.equal(created.protected, false);
       assert.equal(created.user_id, 'staff-1');
 

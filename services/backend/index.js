@@ -53,6 +53,7 @@ const whatsappRouter = require('./routes/whatsapp');
 const telegramRouter = require('./routes/telegram');
 const clientPortalRouter = require('./routes/clientPortal');
 const templatesRouter = require('./routes/templates');
+const schedulesRouter = require('./routes/schedules');
 const deadlinesRouter = require('./routes/deadlines');
 const generateRouter = require('./routes/generate');
 const metadataRouter = require('./routes/metadata');
@@ -86,6 +87,7 @@ initVault();
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/client-portal', clientPortalRouter);
 app.use('/api/v1/templates', templatesRouter);
+app.use('/api/v1/schedules', requireAuth, schedulesRouter);
 app.use('/api/v1/metadata', requireAuth, metadataRouter);
 app.use('/api/v1/clients', requireAuth, clientsRouter);
 app.use('/api/v1/notifications', requireAuth, require('./routes/notifications'));
@@ -210,4 +212,5 @@ app.listen(PORT, () => {
   telegramRouter.configureWebhook().catch((error) => {
     console.error(`[Telegram] Webhook auto-configuration failed: ${error.message}`);
   });
+  require('./lib/telegramScheduleWorker').startTelegramScheduleWorker();
 });

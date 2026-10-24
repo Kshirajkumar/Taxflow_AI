@@ -16,13 +16,14 @@ async function main() {
       'client_portal.sql',
       'client_portal_invites.sql',
       'create_api_rate_limits.sql',
+      'inbox_automation.sql',
       'decommission_telegram_file_transfer.sql',
     ]) {
       const sql = await fs.readFile(path.join(__dirname, migration), 'utf8');
       await client.query(sql);
     }
     await client.query('commit');
-    console.log('Telegram text/link, private client-portal Storage, and rate-limit migrations applied successfully.');
+    console.log('Telegram text/link, client portal, inbox automation, private Storage, and rate-limit migrations applied successfully.');
   } catch (error) {
     await client.query('rollback').catch(() => {});
     throw error;

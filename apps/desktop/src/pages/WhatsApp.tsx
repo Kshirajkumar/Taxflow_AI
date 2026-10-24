@@ -15,9 +15,16 @@ import {
   updateTemplate,
   deleteTemplate,
   inviteClientToPortal,
+  fetchSupportedCountryTimezones,
+  fetchTelegramSchedules,
+  createTelegramSchedule,
+  cancelTelegramSchedule,
+  retryTelegramSchedule,
   type TelegramMessage,
   type TelegramPreview,
   type MessageTemplate,
+  type SupportedCountryTimezone,
+  type TelegramMessageSchedule,
 } from '../lib/api';
 import { useAppState, useDispatch } from '../state/store';
 import { nextMsgId } from '../lib/messageIds';
@@ -49,18 +56,45 @@ function dayLabel(d: Date) {
   return n === 0 ? 'Today' : n === 1 ? 'Yesterday' : fDate(d);
 }
 
+function scheduledTimeLabel(schedule: TelegramMessageSchedule) {
+  const value = schedule.next_run_at || schedule.scheduled_at;
+  if (!value) return 'No upcoming send';
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: schedule.timezone_name,
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+
+const DEFAULT_CLIENT_TEMPLATES: MessageTemplate[] = [
+  { id: 'default-website-link', template_key: 'website_link', name: 'Website link', cat: 'Links', body: 'Hello {name}, you can visit our client portal and website at: {portalLink}', protected: true },
+  { id: 'default-portal-link', template_key: 'portal_link', name: 'Client portal website link', cat: 'Client portal', body: 'Hello {name}, you can sign in to your TaxFlow client portal and upload your requested documents here: {portalLink}', protected: true },
+  { id: 'default-docs', template_key: 'docs', name: 'GST documents request', cat: 'Utility', body: 'Hello {name}, please upload your {period} sales & purchase invoices through your secure client portal: {portalLink}. Deadline: {due}.', protected: true },
+  { id: 'default-pending', template_key: 'pending', name: 'Missing document', cat: 'Utility', body: 'Hi {name}, we have not received the {doc} for {period} yet. Please upload it through your secure client portal: {portalLink}.', protected: true },
+  { id: 'default-itr', template_key: 'itr', name: 'ITR documents', cat: 'Utility', body: 'Hi {name}, to file your ITR please upload Form 16 / 26AS, bank interest certificates, and investment proofs through your secure client portal: {portalLink}.', protected: true },
+  { id: 'default-portal-invite', template_key: 'portal_invite', name: 'Secure portal invitation', cat: 'Client portal', body: 'Hi {name}, open this private link from your CA to access your documents and upload files using our secure file-transfer service: {portalLink}\n\nUse the same email address your CA has on file. Please do not send tax, financial, identity, or other sensitive documents in Telegram.', protected: true },
+];
+
+function getTemplateIcon(template: MessageTemplate) {
+  if (template.template_key === 'website_link' || template.template_key === 'portal_link') return 'globe';
+  if (template.template_key === 'portal_invite') return 'lock';
+  if (template.template_key === 'docs') return 'scan';
+  if (template.template_key === 'pending') return 'info';
+  if (template.template_key === 'itr') return 'table';
+  return 'file';
+}
+
 function fillTpl(body: string, name: string, portalLink?: string) {
   const link = portalLink || 'https://taxflowaiwebsite.vercel.app/portal';
-  const filled = body.replace(/\{(\w+)\}/g, (_, k) => {
+  return body.replace(/\{(\w+)\}/g, (_, k) => {
     if (k === 'name') return name;
     if (k === 'period') return 'August 2026';
     if (k === 'due') return '20 Sep 2026';
     if (k === 'filing') return 'GSTR-3B';
     if (k === 'doc') return 'bank statement';
-    if (k === 'portalLink') return link;
+    if (k === 'portalLink' || k === 'websiteLink' || k === 'link') return link;
     return '—';
   });
-  return filled.includes(link) ? filled : `${filled.trim()}\n\nUpload documents securely after signing in: ${link}`;
 }
 
 async function fillPortalTemplate(template: MessageTemplate, client: { id: string; contact: string }) {
@@ -137,7 +171,7 @@ export function WhatsAppPage() {
   const [telegramConnecting, setTelegramConnecting] = useState(false);
   const [telegramSending, setTelegramSending] = useState(false);
   const [telegramTemplatesOpen, setTelegramTemplatesOpen] = useState(false);
-  const [composerExpanded, setComposerExpanded] = useState(false);
+  const [composerExpanded, setComposerExpanded] = useState(true);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templateError, setTemplateError] = useState('');
@@ -147,6 +181,15 @@ export function WhatsAppPage() {
   const [templateEditorOpen, setTemplateEditorOpen] = useState(false);
   const [templateForm, setTemplateForm] = useState({ name: '', cat: 'Utility', body: '' });
   const [templateSaving, setTemplateSaving] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState('');
+  const [countryTimezones, setCountryTimezones] = useState<SupportedCountryTimezone[]>([]);
+  const [countryTimezonesError, setCountryTimezonesError] = useState('');
+  const [telegramSchedules, setTelegramSchedules] = useState<TelegramMessageSchedule[]>([]);
+  const [schedulesLoading, setSchedulesLoading] = useState(false);
+  const [scheduleError, setScheduleError] = useState('');
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [scheduleNotice, setScheduleNotice] = useState('');
+  const [scheduleActionId, setScheduleActionId] = useState('');
   const [contactsCollapsed, setContactsCollapsed] = useState(false);
   const [telegramDraft, setTelegramDraft] = useState('');
   const [telegramRequestId, setTelegramRequestId] = useState('');
@@ -224,6 +267,44 @@ export function WhatsAppPage() {
       console.warn('Failed to refresh unread Telegram counts', error);
     }
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchSupportedCountryTimezones()
+      .then((timezones) => {
+        if (active) {
+          setCountryTimezones(timezones);
+          setCountryTimezonesError('');
+        }
+      })
+      .catch((error) => {
+        if (active) setCountryTimezonesError(error instanceof Error ? error.message : 'Country time zones could not be loaded.');
+      });
+    return () => { active = false; };
+  }, []);
+
+  const loadTelegramSchedules = useCallback(async () => {
+    setSchedulesLoading(true);
+    setScheduleError('');
+    try {
+      const data = await fetchTelegramSchedules();
+      setTelegramSchedules(data);
+    } catch (error) {
+      setScheduleError(error instanceof Error ? error.message : 'Scheduled reminders could not be loaded.');
+    } finally {
+      setSchedulesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadTelegramSchedules();
+  }, [loadTelegramSchedules]);
+
+  useEffect(() => {
+    if (s.ui.wa.tab !== 'reminders') return undefined;
+    const timer = window.setInterval(() => void loadTelegramSchedules(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [s.ui.wa.tab, loadTelegramSchedules]);
 
   useEffect(() => {
     void loadUnreadCounts();
@@ -402,10 +483,10 @@ export function WhatsAppPage() {
       setTemplateError('');
       try {
         const data = await fetchTemplates();
-        if (active) setTemplates(data);
+        if (active) setTemplates(data.length ? data : DEFAULT_CLIENT_TEMPLATES);
       } catch (error) {
         if (active) {
-          setTemplateError(error instanceof Error ? error.message : 'Could not load templates.');
+          setTemplates(DEFAULT_CLIENT_TEMPLATES);
         }
       } finally {
         if (active) setTemplatesLoading(false);
@@ -437,8 +518,11 @@ export function WhatsAppPage() {
         scrollThreadToLatest('smooth');
       }
       requestAnimationFrame(() => {
-        if (channel === 'telegram') telegramMessageInputRef.current?.focus();
-        else whatsAppMessageInputRef.current?.focus();
+        const el = channel === 'telegram' ? telegramMessageInputRef.current : whatsAppMessageInputRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
       });
     } catch (error) {
       const message = error instanceof Error
@@ -659,13 +743,9 @@ export function WhatsAppPage() {
   }
 
   const scheduled = s.reminders.filter((r) => r.status === 'scheduled').sort((a, b) => a.at.getTime() - b.at.getTime());
-  const reminderGroups = scheduled.reduce<{ label: string; items: Reminder[] }[]>((groups, reminder) => {
-    const label = dayLabel(reminder.at);
-    const lastGroup = groups[groups.length - 1];
-    if (lastGroup?.label === label) lastGroup.items.push(reminder);
-    else groups.push({ label, items: [reminder] });
-    return groups;
-  }, []);
+  const activeTelegramSchedules = telegramSchedules
+    .filter((schedule) => schedule.status === 'active')
+    .sort((a, b) => new Date(a.next_run_at || '').getTime() - new Date(b.next_run_at || '').getTime());
 
   if (!c) {
     return (
@@ -739,6 +819,119 @@ export function WhatsAppPage() {
     }
   }
 
+  async function saveTelegramReminder(input: {
+    clientId: string;
+    templateId?: string;
+    messageBody: string;
+    repeatMode: 'once' | 'daily';
+    timezoneName: string;
+    scheduledLocal?: string;
+    localTime?: string;
+  }) {
+    setScheduleSaving(true);
+    setScheduleError('');
+    setScheduleNotice('');
+    try {
+      const created = await createTelegramSchedule(input);
+      setTelegramSchedules((current) => [created, ...current]);
+      setScheduleNotice(`Telegram reminder saved for ${created.client?.name || 'the client'} in ${created.timezone_name}. The backend will send it automatically.`);
+      setShowSchedule(false);
+      dispatch({ type: 'WA_TAB', tab: 'reminders' });
+    } catch (error) {
+      setScheduleError(error instanceof Error ? error.message : 'The reminder could not be saved.');
+    } finally {
+      setScheduleSaving(false);
+    }
+  }
+
+  async function cancelTelegramReminder(schedule: TelegramMessageSchedule) {
+    if (scheduleActionId) return;
+    setScheduleActionId(schedule.id);
+    setScheduleError('');
+    try {
+      await cancelTelegramSchedule(schedule.id);
+      setTelegramSchedules((current) => current.map((item) => item.id === schedule.id ? { ...item, status: 'cancelled' } : item));
+      setScheduleNotice('Scheduled Telegram reminder cancelled.');
+    } catch (error) {
+      setScheduleError(error instanceof Error ? error.message : 'The reminder could not be cancelled.');
+    } finally {
+      setScheduleActionId('');
+    }
+  }
+
+  async function retryTelegramReminder(schedule: TelegramMessageSchedule) {
+    if (scheduleActionId) return;
+    setScheduleActionId(schedule.id);
+    setScheduleError('');
+    try {
+      await retryTelegramSchedule(schedule.id);
+      await loadTelegramSchedules();
+      setScheduleNotice('Reminder retry queued. The backend will attempt delivery shortly.');
+    } catch (error) {
+      setScheduleError(error instanceof Error ? error.message : 'The reminder could not be retried.');
+    } finally {
+      setScheduleActionId('');
+    }
+  }
+
+  const renderTemplateDropdown = () => (
+    <div className="telegram-template-menu" id="message-template-menu" role="menu" aria-label="Message templates">
+      <div className="telegram-template-menu-heading">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <b>Message templates</b>
+          <span className="chip sm blue">{templates.length}</span>
+        </div>
+        <small>Click any template to type it into the chat message</small>
+      </div>
+      <input
+        className="telegram-template-search"
+        type="search"
+        value={templateSearch}
+        onChange={(event) => setTemplateSearch(event.target.value)}
+        placeholder="Search templates (e.g. website link, GST)..."
+        aria-label="Search message templates"
+        autoFocus
+      />
+      {templatesLoading && <div className="telegram-template-empty" role="status">Loading saved templates…</div>}
+      {templateError && <div className="telegram-template-empty error" role="alert">{templateError}</div>}
+      {!templatesLoading && !templateError && templates.filter((template) => `${template.name} ${template.cat}`.toLowerCase().includes(templateSearch.trim().toLowerCase())).map((template) => (
+        <button
+          key={template.id}
+          type="button"
+          role="menuitem"
+          className="telegram-template-option"
+          onClick={() => {
+            void applyTemplate(template);
+            setTelegramTemplatesOpen(false);
+          }}
+          disabled={!!applyingTemplateId}
+        >
+          <span className="telegram-template-option-icon"><Icon name={getTemplateIcon(template)} size={14} /></span>
+          <span>
+            <b>{applyingTemplateId === template.id ? 'Preparing…' : template.name}</b>
+            <small>{fillTpl(template.body, c.contact.split(' ')[0])}</small>
+          </span>
+          <span className={`chip sm ${template.user_id ? 'violet' : 'blue'}`}>{template.user_id ? 'My template' : 'Shared'}</span>
+        </button>
+      ))}
+      {!templatesLoading && !templateError && !templates.some((template) => `${template.name} ${template.cat}`.toLowerCase().includes(templateSearch.trim().toLowerCase())) && (
+        <div className="telegram-template-empty">No matching templates found.</div>
+      )}
+      <div className="telegram-template-menu-footer">
+        <button
+          type="button"
+          className="btn sm gh"
+          onClick={() => {
+            setTelegramTemplatesOpen(false);
+            dispatch({ type: 'WA_TAB', tab: 'templates' });
+          }}
+        >
+          Manage all templates in Templates tab →
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="inbox-page">
       <div className="ph inbox-page-head">
@@ -788,7 +981,7 @@ export function WhatsAppPage() {
               className={s.ui.wa.tab === tab ? 'on' : ''}
               onClick={() => dispatch({ type: 'WA_TAB', tab })}
             >
-              {tab === 'chats' ? 'Chats' : tab === 'reminders' ? `Scheduled reminders (${scheduled.length})` : 'Templates'}
+              {tab === 'chats' ? 'Chats' : tab === 'reminders' ? `Scheduled reminders (${activeTelegramSchedules.length})` : 'Templates'}
             </button>
           ))}
         </div>
@@ -1204,61 +1397,21 @@ export function WhatsAppPage() {
                   </div>
                   {channel === 'telegram' ? (
                 <div className="wa-f telegram-composer">
-                  <div className="wa-shortcuts" aria-label="Message shortcuts">
-                    <span className="wa-shortcuts-label"><Icon name="bolt" size={11} />Shortcuts</span>
-                    {templates.slice(0, 4).map((template) => (
-                      <button
-                        key={template.id}
-                        type="button"
-                        className="wa-shortcut"
-                        onClick={() => void applyTemplate(template)}
-                        disabled={telegramSending || !!pendingTelegramMsg || isEditingPending || !!applyingTemplateId}
-                        title={`Insert ${template.name}`}
-                      >
-                        {applyingTemplateId === template.id ? 'Preparing invite…' : template.name}
-                      </button>
-                    ))}
-                  </div>
                 <div className="telegram-composer-pill">
-                  <div className="telegram-file-policy" role="note">Share files through the secure client portal.</div>
                   <div className="telegram-template-anchor" ref={telegramTemplateMenuRef}>
                     <button
                       type="button"
                       className="telegram-composer-action telegram-template-trigger"
                       aria-label="Insert a message template"
                       aria-expanded={telegramTemplatesOpen}
-                      aria-controls="telegram-template-menu"
+                      aria-controls="message-template-menu"
                       title="Choose a message template"
                       onClick={() => setTelegramTemplatesOpen((open) => !open)}
                       disabled={telegramSending || !!pendingTelegramMsg || isEditingPending}
                     >
                       <Icon name="file" size={17} />
                     </button>
-                    {telegramTemplatesOpen && (
-                      <div className="telegram-template-menu" id="telegram-template-menu" role="menu" aria-label="Telegram message templates">
-                        <div className="telegram-template-menu-heading">
-                          <b>Message templates</b>
-                          <small>Choose a prepared message to edit</small>
-                        </div>
-                        {templates.map((template) => (
-                          <button
-                            key={template.id}
-                            type="button"
-                            role="menuitem"
-                            className="telegram-template-option"
-                            onClick={() => {
-                              void applyTemplate(template);
-                              setTelegramTemplatesOpen(false);
-                            }}
-                            disabled={!!applyingTemplateId}
-                          >
-                            <span className="telegram-template-option-icon"><Icon name="file" size={14} /></span>
-                            <span><b>{applyingTemplateId === template.id ? 'Preparing invite…' : template.name}</b><small>{fillTpl(template.body, c.contact.split(' ')[0])}</small></span>
-                            <span className="chip blue">{template.cat}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    {telegramTemplatesOpen && renderTemplateDropdown()}
                   </div>
                     <textarea
                     ref={telegramMessageInputRef}
@@ -1300,22 +1453,21 @@ export function WhatsAppPage() {
               </div>
             ) : (
               <div className="wa-f">
-                <label className="wa-template-picker">
-                  <Icon name="file" size={14} />
-                  <select
-                    className="sel"
-                    aria-label="Insert template"
-                    value=""
-                    onChange={(event) => {
-                      const template = templates.find((item) => item.id === event.target.value);
-                      if (template) void applyTemplate(template);
-                    }}
-                    disabled={!!applyingTemplateId}
+                <div className="telegram-template-anchor" ref={telegramTemplateMenuRef}>
+                  <button
+                    type="button"
+                    className="telegram-composer-action telegram-template-trigger wa-template-trigger"
+                    aria-label="Insert a message template"
+                    aria-expanded={telegramTemplatesOpen}
+                    aria-controls="message-template-menu"
+                    title="Choose a message template"
+                    onClick={() => setTelegramTemplatesOpen((open) => !open)}
+                    disabled={!!applyingTemplateId || whatsAppSending}
                   >
-                    <option value="">Insert template</option>
-                    {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-                  </select>
-                </label>
+                    <Icon name="file" size={17} />
+                  </button>
+                  {telegramTemplatesOpen && renderTemplateDropdown()}
+                </div>
                 <textarea
                   ref={whatsAppMessageInputRef}
                   className="inp wa-compose-input"
@@ -1371,52 +1523,47 @@ export function WhatsAppPage() {
 
       {s.ui.wa.tab === 'reminders' && (
         <div className="wa-reminders" id="inbox-panel-reminders" role="tabpanel" aria-labelledby="inbox-tab-reminders">
-          {whatsAppLoading
-            ? <div className="wa-reminder-notice"><span className="spin" />Checking WhatsApp connection…</div>
-            : !whatsAppReady && <div className="wa-reminder-notice"><Icon name="info" size={14} />Connect WhatsApp to send reminders. You can still review and approve scheduled messages.</div>}
-          {scheduled.length === 0 ? (
+          <div className="wa-reminder-notice"><Icon name="clock" size={14} />Scheduled reminders are delivered automatically through the client’s linked Telegram chat, using the client-country time zone.</div>
+          {scheduleNotice && <div className="portal-success-message" role="status">{scheduleNotice}</div>}
+          {scheduleError && <div className="ob-error" role="alert">{scheduleError}</div>}
+          {countryTimezonesError && <div className="ob-error" role="alert">{countryTimezonesError}</div>}
+          <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <button className="btn sm" onClick={() => void loadTelegramSchedules()} disabled={schedulesLoading}><Icon name="refresh" size={13} />Refresh</button>
+            <button className="btn sm pri" onClick={() => { setScheduleError(''); setScheduleNotice(''); setShowSchedule(true); }}><Icon name="plus" size={13} />Schedule Telegram reminder</button>
+          </div>
+          {schedulesLoading && !telegramSchedules.length && <div className="wa-reminder-notice"><span className="spin" />Loading saved schedules…</div>}
+          {!schedulesLoading && !telegramSchedules.length ? (
             <div className="card wa-tab-empty">
               <Icon name="clock" size={22} />
-              <b>No scheduled reminders</b>
-              <span>Plan a follow-up and it will appear here.</span>
-              <button className="btn sm" onClick={() => setShowSchedule(true)}><Icon name="plus" size={13} />Schedule reminder</button>
+              <b>No saved Telegram reminders</b>
+              <span>Choose a client, message and client-local send time to schedule a one-time or daily reminder.</span>
             </div>
-          ) : reminderGroups.map((group) => (
-            <section className="wa-reminder-group" key={group.label}>
-              <h2 className="wa-reminder-day">{group.label}</h2>
-              <div className="wa-reminder-list">
-                {group.items.map((reminder) => {
-                  const reminderClient = s.clients.find((client) => client.id === reminder.client);
-                  if (!reminderClient) return null;
-                  return (
-                    <article className="card wa-reminder-card" key={reminder.id}>
-                      <div className="wa-reminder-time">
-                        <b>{fTime(reminder.at)}</b>
-                        <small>{until(reminder.at)}</small>
-                      </div>
-                      <div className="wa-reminder-content">
-                        <div className="wa-reminder-client">
-                          <span className="av" style={{ ['--t' as any]: reminderClient.tone }}>{reminderClient.short.slice(0, 2).toUpperCase()}</span>
-                          <b>{reminderClient.name}</b>
-                          <span className="chip blue">{templates.find((template) => template.id === reminder.tpl)?.name || 'Reminder'}</span>
-                        </div>
-                        <p>{reminder.text}</p>
-                        {reminderSendErrors[reminder.id] && <small className="wa-reminder-error">{reminderSendErrors[reminder.id]}</small>}
-                      </div>
-                      <div className="wa-reminder-actions">
-                        <span className={`chip ${reminder.approve ? 'amber' : 'green'}`}>{reminder.approve ? 'Needs approval' : 'Approved'}</span>
-                        {reminder.approve && <button className="btn sm" onClick={() => dispatch({ type: 'REM_APPROVE', id: reminder.id })}>Approve</button>}
-                        <button className="btn sm" onClick={() => void sendReminder(reminder)} disabled={sendingReminderId === reminder.id || whatsAppLoading || !whatsAppReady}>
-                          {sendingReminderId === reminder.id ? 'Sending…' : 'Send now'}
-                        </button>
-                        <button className="btn sm gh" onClick={() => dispatch({ type: 'REM_CANCEL', id: reminder.id })} aria-label={`Cancel reminder for ${reminderClient.name}`} title="Cancel reminder"><Icon name="x" size={13} /></button>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+          ) : <div className="wa-reminder-list">
+            {telegramSchedules.map((schedule) => (
+              <article className="card wa-reminder-card" key={schedule.id}>
+                <div className="wa-reminder-time">
+                  <b>{schedule.repeat_mode === 'daily' ? schedule.local_time?.slice(0, 5) : scheduledTimeLabel(schedule)}</b>
+                  <small>{schedule.repeat_mode === 'daily' ? 'Every day' : schedule.status === 'active' ? 'One-time send' : schedule.status}</small>
+                </div>
+                <div className="wa-reminder-content">
+                  <div className="wa-reminder-client">
+                    <span className="av"><Icon name="users" size={13} /></span>
+                    <b>{schedule.client?.name || 'Client'}</b>
+                    <span className="chip blue">{schedule.repeat_mode === 'daily' ? 'Daily' : 'One time'}</span>
+                    <span className="chip">{schedule.timezone_name}</span>
+                  </div>
+                  <small className="mut">Next send: {scheduledTimeLabel(schedule)} · {schedule.occurrence_count} sent</small>
+                  <p>{schedule.message_body}</p>
+                  {schedule.last_error && <small className="wa-reminder-error">{schedule.last_error}</small>}
+                </div>
+                <div className="wa-reminder-actions">
+                  <span className={`chip ${schedule.status === 'active' ? 'green' : schedule.status === 'failed' ? 'red' : 'blue'}`}>{schedule.status}</span>
+                  {schedule.status === 'active' && <button className="btn sm gh" onClick={() => void cancelTelegramReminder(schedule)} disabled={scheduleActionId === schedule.id}>Cancel</button>}
+                  {schedule.status === 'failed' && <button className="btn sm" onClick={() => void retryTelegramReminder(schedule)} disabled={scheduleActionId === schedule.id}>{scheduleActionId === schedule.id ? 'Retrying…' : 'Retry'}</button>}
+                </div>
+              </article>
+            ))}
+          </div>}
         </div>
       )}
 
@@ -1462,21 +1609,28 @@ export function WhatsAppPage() {
           <div className="wa-template-grid">
           {templates.map((template) => (
             <article className="card tpl wa-template-card" key={template.id}>
-              <div className="row">
-                <b>{template.name}</b><span className="sp" /><span className="chip blue">{template.cat}</span>
-                {template.protected && <span className="chip green">Protected</span>}
+              <div className="row" style={{ alignItems: 'center', gap: 8 }}>
+                <span className="telegram-template-option-icon" style={{ width: 28, height: 28, flex: 'none' }}>
+                  <Icon name={getTemplateIcon(template)} size={14} />
+                </span>
+                <b style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{template.name}</b>
+                <span className="chip blue sm">{template.cat}</span>
+                {template.user_id ? <span className="chip violet sm">Private to you</span> : <span className="chip green sm">Shared default</span>}
               </div>
-              <p>{template.body}</p>
-              <div className="wa-template-footer">
-                <button className="btn sm" onClick={() => startTemplateEdit(template)}>Edit</button>
-                <button className="btn sm gh" onClick={() => void removeTemplate(template)} disabled={template.protected} title={template.protected ? 'Core templates cannot be deleted' : 'Delete template'}>Delete</button>
+              <p style={{ marginTop: 10, fontSize: 11.5, color: 'var(--tx2)', lineHeight: 1.5 }}>
+                {fillTpl(template.body, c.contact.split(' ')[0])}
+              </p>
+              <div className="wa-template-footer" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {template.user_id && <button className="btn sm" onClick={() => startTemplateEdit(template)}><Icon name="pencil" size={12} />Edit</button>}
+                {template.user_id && <button className="btn sm gh" onClick={() => void removeTemplate(template)} disabled={template.protected} title={template.protected ? 'Protected templates cannot be deleted' : 'Delete template'}><Icon name="trash" size={12} />Delete</button>}
                 <span className="sp" />
                 <button
-                  className="btn sm"
+                  className="btn sm pri"
                   onClick={() => void applyTemplate(template, true)}
                   disabled={!!applyingTemplateId}
                 >
-                  {applyingTemplateId === template.id ? 'Preparing invite…' : 'Use template'}
+                  <Icon name="send" size={12} />
+                  {applyingTemplateId === template.id ? 'Preparing invite…' : 'Use in Chat'}
                 </button>
               </div>
             </article>
@@ -1485,56 +1639,173 @@ export function WhatsAppPage() {
         </div>
       )}
 
-      {showSchedule && <ScheduleModal onClose={() => setShowSchedule(false)} defaultClient={c.id} templates={templates} />}
+      {showSchedule && (
+        <ScheduleModal
+          onClose={() => setShowSchedule(false)}
+          defaultClient={c.id}
+          clients={s.clients}
+          templates={templates}
+          timezones={countryTimezones}
+          error={scheduleError}
+          saving={scheduleSaving}
+          onSave={saveTelegramReminder}
+        />
+      )}
 
     </div>
   );
 }
 
-function ScheduleModal({ onClose, defaultClient, templates }: { onClose: () => void; defaultClient: string; templates: MessageTemplate[] }) {
-  const s = useAppState();
-  const dispatch = useDispatch();
-  const [client, setClient] = useState(defaultClient);
-  const [tpl, setTpl] = useState(templates[0]?.id || '');
-  const d = new Date(vnow()); d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0);
-  const [when, setWhen] = useState(toInput(d));
-  const c = s.clients.find((x) => x.id === client)!;
-  const t = templates.find((x) => x.id === tpl);
-  const [text, setText] = useState(t ? fillTpl(t.body, c.contact.split(' ')[0]) : '');
+function localDateTimeInput(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}T10:00`;
+}
+
+function ScheduleModal({
+  onClose,
+  defaultClient,
+  clients,
+  templates,
+  timezones,
+  error,
+  saving,
+  onSave,
+}: {
+  onClose: () => void;
+  defaultClient: string;
+  clients: Array<{ id: string; name: string; contact: string; countryId?: string }>;
+  templates: MessageTemplate[];
+  timezones: SupportedCountryTimezone[];
+  error: string;
+  saving: boolean;
+  onSave: (data: {
+    clientId: string;
+    templateId?: string;
+    messageBody: string;
+    repeatMode: 'once' | 'daily';
+    timezoneName: string;
+    scheduledLocal?: string;
+    localTime?: string;
+  }) => Promise<void>;
+}) {
+  const [clientId, setClientId] = useState(defaultClient || clients[0]?.id || '');
+  const [templateId, setTemplateId] = useState(templates[0]?.id || '');
+  const [repeatMode, setRepeatMode] = useState<'once' | 'daily'>('once');
+  const [timezoneName, setTimezoneName] = useState('');
+  const [localTime, setLocalTime] = useState('10:00');
+  const [now, setNow] = useState(() => new Date());
+  const selectedClient = clients.find((client) => client.id === clientId);
+  const availableTimezones = timezones.filter((timezone) => timezone.country_id === selectedClient?.countryId);
+  const selectedTemplate = templates.find((template) => template.id === templateId);
+  const [scheduledLocal, setScheduledLocal] = useState(() => localDateTimeInput(new Date(Date.now() + 86_400_000), 'UTC'));
+  const [messageBody, setMessageBody] = useState(selectedTemplate?.body || '');
+
+  useEffect(() => {
+    const countryTimezone = availableTimezones.find((timezone) => timezone.timezone_name === timezoneName)
+      || availableTimezones.find((timezone) => timezone.is_default)
+      || availableTimezones[0];
+    if (countryTimezone && timezoneName !== countryTimezone.timezone_name) {
+      setTimezoneName(countryTimezone.timezone_name);
+      setScheduledLocal(localDateTimeInput(new Date(Date.now() + 86_400_000), countryTimezone.timezone_name));
+    }
+  }, [availableTimezones, timezoneName]);
+
+  useEffect(() => {
+    if (selectedTemplate) setMessageBody(selectedTemplate.body);
+  }, [selectedTemplate]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   return (
-    <div className="modal" role="dialog" aria-label="Schedule reminder" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="mbox">
-        <h2>Schedule a WhatsApp reminder</h2>
+    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="schedule-modal-title" onClick={(event) => event.target === event.currentTarget && !saving && onClose()}>
+      <div className="mbox wa-schedule-modal">
+        <div className="wa-schedule-heading">
+          <span className="wa-schedule-icon"><Icon name="clock" size={18} /></span>
+          <div><h2 id="schedule-modal-title">Schedule a Telegram reminder</h2><p>Saved on the server and sent automatically in the client’s country time.</p></div>
+        </div>
         <div className="mgrid">
           <div className="mrow">
-            <label className="f">Client</label>
-            <select className="sel" value={client} onChange={(e) => { setClient(e.target.value); const cc = s.clients.find((x) => x.id === e.target.value)!; const selectedTemplate = templates.find((item) => item.id === tpl); if (selectedTemplate) setText(fillTpl(selectedTemplate.body, cc.contact.split(' ')[0])); }}>
-              {s.clients.map((cl) => <option key={cl.id} value={cl.id}>{cl.name}</option>)}
+            <label className="f" htmlFor="schedule-client">Client</label>
+            <select id="schedule-client" className="sel" value={clientId} onChange={(event) => setClientId(event.target.value)}>
+              {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
             </select>
           </div>
           <div className="mrow">
-            <label className="f">Template</label>
-            <select className="sel" value={tpl} onChange={(e) => { setTpl(e.target.value); const tt = templates.find((x) => x.id === e.target.value); if (tt) setText(fillTpl(tt.body, c.contact.split(' ')[0])); }}>
-              {templates.map((tt) => <option key={tt.id} value={tt.id}>{tt.name}</option>)}
+            <label className="f" htmlFor="schedule-template">Message template</label>
+            <select id="schedule-template" className="sel" value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
+              <option value="">Write a custom reminder</option>
+              {templates.map((template) => <option key={template.id} value={template.id}>{template.name}{template.user_id ? ' · Private' : ' · Shared'}</option>)}
             </select>
           </div>
-          <div className="mrow"><label className="f">Send on</label><input className="inp" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></div>
         </div>
-        <div className="mrow"><label className="f">Message preview</label><textarea className="inp" rows={4} value={text} onChange={(e) => setText(e.target.value)} /></div>
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <button className="btn gh" onClick={onClose}>Cancel</button>
+        <div className="wa-schedule-repeat" role="group" aria-label="Repeat schedule">
+          <button type="button" className={repeatMode === 'once' ? 'on' : ''} onClick={() => setRepeatMode('once')}><Icon name="cal" size={14} />One time</button>
+          <button type="button" className={repeatMode === 'daily' ? 'on' : ''} onClick={() => setRepeatMode('daily')}><Icon name="refresh" size={14} />Every day</button>
+        </div>
+        <div className="mgrid">
+          <div className="mrow">
+            <label className="f" htmlFor="schedule-timezone">Client time zone</label>
+            <select id="schedule-timezone" className="sel" value={timezoneName} onChange={(event) => setTimezoneName(event.target.value)} disabled={!availableTimezones.length}>
+              {availableTimezones.map((timezone) => <option key={timezone.timezone_name} value={timezone.timezone_name}>{timezone.timezone_name}{timezone.is_default ? ' · Country default' : ''}</option>)}
+            </select>
+            {selectedClient && <small>Country: {timezones.find((timezone) => timezone.country_id === selectedClient.countryId)?.country_name || 'Not configured'}</small>}
+          </div>
+          <div className="mrow">
+            <label className="f" htmlFor={repeatMode === 'once' ? 'schedule-datetime' : 'schedule-daily-time'}>{repeatMode === 'once' ? 'Send at client local time' : 'Send every day at'}</label>
+            {repeatMode === 'once'
+              ? <input id="schedule-datetime" className="inp" type="datetime-local" value={scheduledLocal} onChange={(event) => setScheduledLocal(event.target.value)} />
+              : <input id="schedule-daily-time" className="inp" type="time" value={localTime} onChange={(event) => setLocalTime(event.target.value)} />}
+            {timezoneName && <small>Current client time: {new Intl.DateTimeFormat(undefined, { timeZone: timezoneName, dateStyle: 'medium', timeStyle: 'medium' }).format(now)}</small>}
+          </div>
+        </div>
+        <details className="wa-timezone-clocks">
+          <summary>Live clocks for supported client countries</summary>
+          <div className="wa-timezone-table-wrap">
+            <table className="wa-timezone-table">
+              <thead><tr><th>Country</th><th>Time zone</th><th>Local time</th></tr></thead>
+              <tbody>{timezones.map((timezone) => (
+                <tr key={timezone.timezone_name}>
+                  <td>{timezone.country_name}</td>
+                  <td>{timezone.timezone_name}{timezone.is_default ? ' · Default' : ''}</td>
+                  <td><time dateTime={now.toISOString()}>{new Intl.DateTimeFormat(undefined, { timeZone: timezone.timezone_name, dateStyle: 'medium', timeStyle: 'medium' }).format(now)}</time></td>
+                </tr>
+              ))}</tbody>
+            </table>
+            {!timezones.length && <p className="mut">Apply the inbox automation SQL migration to load country time zones.</p>}
+          </div>
+        </details>
+        <div className="mrow">
+          <label className="f" htmlFor="schedule-message-body">Message</label>
+          <textarea id="schedule-message-body" className="inp" rows={4} maxLength={4096} value={messageBody} onChange={(event) => setMessageBody(event.target.value)} />
+          <small>Use {'{name}'} for the client name. At send time, the server adds the portal sign-in link for enrolled clients or creates a private enrollment invitation for clients who have not enrolled yet.</small>
+        </div>
+        {error && <div className="ob-error" role="alert">{error}</div>}
+        <div className="row wa-schedule-actions">
+          <span className="wa-reminder-notice"><Icon name="lock" size={12} />Private to this CA · Telegram only</span>
+          <span className="sp" />
+          <button className="btn gh" onClick={onClose} disabled={saving}>Cancel</button>
           <button
             className="btn pri"
-            disabled={!templates.length || !text.trim()}
-            onClick={() => {
-              const at = new Date(when);
-              const reminder: Reminder = { id: 'r' + Date.now(), client, tpl, at, repeat: 'Once', approve: true, status: 'scheduled', text };
-              dispatch({ type: 'REM_SCHEDULE', reminder });
-              onClose();
-            }}
+            disabled={saving || !clientId || !messageBody.trim() || !timezoneName || !availableTimezones.length || (repeatMode === 'once' && !scheduledLocal)}
+            onClick={() => void onSave({
+              clientId,
+              ...(templateId ? { templateId } : {}),
+              messageBody: messageBody.trim(),
+              repeatMode,
+              timezoneName,
+              ...(repeatMode === 'once' ? { scheduledLocal } : { localTime }),
+            })}
           >
-            <Icon name="clock" size={14} />Schedule reminder
+            {saving ? <><span className="spin spin-light" />Saving…</> : <><Icon name="clock" size={14} />Save schedule</>}
           </button>
         </div>
       </div>

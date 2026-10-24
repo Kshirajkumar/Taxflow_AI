@@ -521,6 +521,11 @@ button.file-artifact-main:hover .file-artifact-copy>b{color:var(--blue)}
 .telegram-template-menu-heading{display:flex;flex-direction:column;gap:3px;padding:10px 10px 9px;border-bottom:1px solid var(--line)}
 .telegram-template-menu-heading>b{color:var(--tx);font-size:11.5px}
 .telegram-template-menu-heading>small{color:var(--tx3);font-size:9.5px}
+.telegram-template-search{flex:none;width:100%;height:34px;margin:8px 0 5px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg2);color:var(--tx);font:inherit;font-size:10px}
+.telegram-template-search:focus{border-color:var(--blue);outline:0;box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 10%,transparent)}
+.telegram-template-empty{padding:12px 10px;color:var(--tx3);font-size:10px;line-height:1.45}
+.telegram-template-empty.error{color:var(--red)}
+.wa-template-trigger{width:38px;height:38px;border:1px solid var(--line2);border-radius:10px;background:color-mix(in srgb,var(--card) 80%,var(--panel));color:var(--blue)}
 .telegram-template-option{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px;align-items:center;width:100%;padding:9px 8px;border:0;border-radius:9px;background:transparent;color:var(--tx);text-align:left;cursor:pointer;transition:background .15s ease,transform .15s ease}
 .telegram-template-option:hover,.telegram-template-option:focus-visible{background:color-mix(in srgb,var(--blue) 8%,var(--card));outline:0}
 .telegram-template-option:active{transform:scale(.99)}
@@ -529,6 +534,8 @@ button.file-artifact-main:hover .file-artifact-copy>b{color:var(--blue)}
 .telegram-template-option b{overflow:hidden;font-size:10.5px;text-overflow:ellipsis;white-space:nowrap}
 .telegram-template-option small{display:-webkit-box;overflow:hidden;color:var(--tx3);font-size:9px;line-height:1.35;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 .telegram-template-option .chip{padding:3px 6px;font-size:8.5px}
+.telegram-template-menu-footer{display:flex;align-items:center;justify-content:center;padding:8px 4px 4px;border-top:1px solid var(--line);margin-top:6px}
+.telegram-template-menu-footer button{width:100%;justify-content:center;font-size:10px;color:var(--blue);font-weight:600}
 @keyframes tgTemplateMenuIn{from{opacity:0;transform:translateY(5px) scale(.99)}to{opacity:1;transform:none}}
 .telegram-state{display:flex;align-items:center;gap:8px;flex-direction:column}.telegram-state>span:not(.spin){max-width:420px;line-height:1.45}.telegram-state.error{color:var(--red)}.telegram-state.error b{color:var(--red)}.telegram-state.error .btn{margin-top:5px}.telegram-migration-help{width:min(520px,100%);padding:10px 12px;border:1px solid var(--line2);border-radius:10px;background:var(--panel);color:var(--tx2);text-align:left;font-size:11px;line-height:1.5}.telegram-migration-help summary{color:var(--tx);font-weight:700;cursor:pointer}.telegram-migration-help p{margin:9px 0}.telegram-migration-command{display:block;overflow-wrap:anywhere;padding:8px;border-radius:7px;background:var(--bg2);color:var(--tx);font-family:monospace}.telegram-migration-help>span[role=status]{display:block;margin-top:6px}.telegram-notice{align-self:center;max-width:min(560px,90%);padding:7px 12px;border:1px solid color-mix(in srgb,var(--green) 30%,var(--line));border-radius:10px;background:color-mix(in srgb,var(--green) 8%,transparent);color:var(--tx2);font-size:11.5px;text-align:center}.telegram-approval{z-index:150}.telegram-approval-box{width:min(520px,100%);padding:24px}.telegram-approval-box h2{margin:4px 0 7px;font-size:18px}.telegram-approval-copy{color:var(--tx2);font-size:12px;line-height:1.5}.telegram-approval-message{margin:16px 0;padding:13px 14px;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-word;border:1px solid var(--line2);border-radius:10px;background:var(--panel);color:var(--tx);font-size:13px;line-height:1.55}.telegram-approval-actions{display:flex;justify-content:flex-end;gap:8px}.spin-light{border-color:rgba(255,255,255,.38);border-top-color:#fff}
 .tline{position:relative;padding-left:22px}
@@ -1720,6 +1727,28 @@ pre.code{margin:0;background:var(--panel);border:1px solid var(--line);border-ra
   backdrop-filter: blur(8px);
   animation: accountDeleteFade 160ms ease-out;
 }
+
+.wa-schedule-modal{width:min(760px,calc(100vw - 32px));max-height:min(92vh,900px);overflow:auto;padding:22px}
+.wa-schedule-heading{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.wa-schedule-heading h2{margin:0;color:var(--tx);font-size:17px}
+.wa-schedule-heading p{margin:4px 0 0;color:var(--tx3);font-size:11px}
+.wa-schedule-icon{display:grid;width:40px;height:40px;flex:none;place-items:center;border:1px solid color-mix(in srgb,var(--blue) 24%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--blue) 10%,var(--card));color:var(--blue)}
+.wa-schedule-repeat{display:flex;gap:8px;margin:14px 0}
+.wa-schedule-repeat button{display:flex;min-height:36px;align-items:center;gap:7px;padding:0 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--tx2);font:inherit;font-size:11px;cursor:pointer}
+.wa-schedule-repeat button.on{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 10%,var(--card));color:var(--blue)}
+.wa-timezone-clocks{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--card2) 55%,var(--panel))}
+.wa-timezone-clocks summary{color:var(--tx2);font-size:10px;font-weight:700;cursor:pointer}
+.wa-timezone-table-wrap{max-height:190px;overflow:auto;margin-top:8px}
+.wa-timezone-table{width:100%;border-collapse:collapse;color:var(--tx2);font-size:9px}
+.wa-timezone-table th,.wa-timezone-table td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.wa-timezone-table th{position:sticky;top:0;background:var(--panel);color:var(--tx3);font-size:8px;text-transform:uppercase}
+.wa-timezone-table td:last-child{color:var(--tx);font-variant-numeric:tabular-nums}
+.wa-schedule-actions{margin-top:16px}
+.wa-schedule-actions .wa-reminder-notice{display:flex;align-items:center;gap:5px;color:var(--tx3);font-size:9px}
+.wa-reminder-content .mut{display:block;margin-top:5px;font-size:9px}
+.wa-reminder-card .wa-reminder-time{min-width:108px}
+.wa-reminder-card .wa-reminder-client .chip{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:680px){.wa-schedule-modal{padding:16px}.wa-schedule-modal .mgrid{grid-template-columns:1fr}.wa-schedule-actions{flex-wrap:wrap}.wa-schedule-actions>.wa-reminder-notice{width:100%}.wa-timezone-table th,.wa-timezone-table td{padding:6px 4px}}
 
 .account-delete-dialog {
   width: min(100%, 480px);
