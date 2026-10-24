@@ -58,10 +58,12 @@ test('portal invitation tokens are authenticated-encrypted for server-side reuse
   assert.notEqual(encrypted, token);
   assert.match(encrypted, /^v1\./);
   assert.equal(decryptPortalInviteToken(encrypted), token);
-  assert.throws(() => decryptPortalInviteToken(`${encrypted.slice(0, -1)}x`));
+  const [version, iv, authTag, ciphertext] = encrypted.split('.');
+  const tamperedCiphertext = `${ciphertext[0] === 'A' ? 'B' : 'A'}${ciphertext.slice(1)}`;
+  assert.throws(() => decryptPortalInviteToken([version, iv, authTag, tamperedCiphertext].join('.')));
 });
 
-test('portal invitation validation and registration require the exact client email', async () => {
+test('portal invitation registration checks the exact email and blocks replayed invitations', async () => {
   const oldFrom = database.supabase.from;
   const oldRpc = database.supabase.rpc;
   const oldCreateUser = database.supabase.auth.admin.createUser;
@@ -90,6 +92,8 @@ test('portal invitation validation and registration require the exact client ema
   database.supabase.rpc = async (functionName, args) => {
     rpcCalls.push({ functionName, args });
     if (functionName === 'claim_client_portal_invite') {
+      const claimedInvite = rows.client_portal_invites.find((invite) => invite.token_hash === args.p_token_hash);
+      if (claimedInvite) claimedInvite.consumed_at = new Date().toISOString();
       return { data: [{ client_id: 'client-1', invited_email: 'client@example.com' }], error: null };
     }
     if (functionName === 'find_client_portal_auth_user') return { data: 'legacy-portal-user', error: null };
@@ -125,6 +129,14 @@ test('portal invitation validation and registration require the exact client ema
   app.use('/api/v1/client-portal', portalRouter);
   try {
     await withServer(app, async (origin) => {
+      const availableStatus = await fetch(`${origin}/api/v1/client-portal/invitations/status`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      assert.equal(availableStatus.status, 200);
+      assert.deepEqual((await availableStatus.json()).data, { alreadyClaimed: false });
+
       const validateResponse = await fetch(`${origin}/api/v1/client-portal/invitations/validate`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -175,11 +187,61 @@ test('portal invitation validation and registration require the exact client ema
       }]);
       assert.equal(rpcCalls.filter((call) => call.functionName === 'claim_client_portal_invite').length, 1);
 
+      const claimedStatus = await fetch(`${origin}/api/v1/client-portal/invitations/status`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      assert.equal(claimedStatus.status, 200);
+      assert.deepEqual((await claimedStatus.json()).data, { alreadyClaimed: true });
+
+      const unknownTokenStatus = await fetch(`${origin}/api/v1/client-portal/invitations/status`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: crypto.randomBytes(32).toString('base64url') }),
+      });
+      assert.equal(unknownTokenStatus.status, 200);
+      assert.deepEqual((await unknownTokenStatus.json()).data, { alreadyClaimed: false });
+
+      const replayedValidation = await fetch(`${origin}/api/v1/client-portal/invitations/validate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token, email: 'client@example.com' }),
+      });
+      assert.equal(replayedValidation.status, 409);
+      assert.equal((await replayedValidation.json()).code, 'invitation_already_claimed');
+
+      const replayedWithWrongEmail = await fetch(`${origin}/api/v1/client-portal/invitations/validate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token, email: 'other@example.com' }),
+      });
+      assert.equal(replayedWithWrongEmail.status, 400);
+      assert.equal((await replayedWithWrongEmail.json()).code, undefined);
+
+      const replayedRegistration = await fetch(`${origin}/api/v1/client-portal/invitations/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token, email: 'client@example.com', password: 'replacement-password-456' }),
+      });
+      assert.equal(replayedRegistration.status, 409);
+      assert.equal((await replayedRegistration.json()).code, 'invitation_already_claimed');
+
+      const existingInviteToken = crypto.randomBytes(32).toString('base64url');
+      rows.client_portal_invites.push({
+        id: 'invite-2',
+        client_id: 'client-1',
+        invited_email: 'client@example.com',
+        token_hash: hashInviteToken(existingInviteToken),
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+        consumed_at: null,
+        revoked_at: null,
+      });
       existingAccountMode = true;
       const existingAccountRegistration = await fetch(`${origin}/api/v1/client-portal/invitations/register`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token, email: 'client@example.com', password: 'replacement-password-456' }),
+        body: JSON.stringify({ token: existingInviteToken, email: 'client@example.com', password: 'replacement-password-456' }),
       });
       assert.equal(existingAccountRegistration.status, 201);
       assert.deepEqual(passwordUpdates, [{

@@ -84,8 +84,10 @@ async function consumeInvitationRateLimit(req, res, purpose) {
   }
 }
 
-async function findValidPortalInvite(token, email) {
-  if (typeof token !== 'string' || !PORTAL_INVITE_TOKEN_PATTERN.test(token) || !isValidPortalEmail(email)) return null;
+async function inspectPortalInvite(token, email) {
+  if (typeof token !== 'string' || !PORTAL_INVITE_TOKEN_PATTERN.test(token) || !isValidPortalEmail(email)) {
+    return { status: 'invalid' };
+  }
   const { data: invite, error: inviteError } = await supabase.from('client_portal_invites')
     .select('id, client_id, invited_email, expires_at, consumed_at, revoked_at')
     .eq('token_hash', hashInviteToken(token))
@@ -93,11 +95,8 @@ async function findValidPortalInvite(token, email) {
   if (inviteError) throw inviteError;
   if (
     !invite
-    || invite.consumed_at
-    || invite.revoked_at
-    || new Date(invite.expires_at).getTime() <= Date.now()
     || normalizePortalEmail(invite.invited_email) !== email
-  ) return null;
+  ) return { status: 'invalid' };
 
   const { data: client, error: clientError } = await supabase.from('clients')
     .select('id, email, status')
@@ -108,10 +107,48 @@ async function findValidPortalInvite(token, email) {
     !client
     || client.status !== 'Active'
     || normalizePortalEmail(client.email) !== email
-  ) return null;
+  ) return { status: 'invalid' };
 
-  return invite;
+  if (invite.consumed_at) return { status: 'already_claimed' };
+  if (invite.revoked_at || new Date(invite.expires_at).getTime() <= Date.now()) {
+    return { status: 'invalid' };
+  }
+  return { status: 'valid', invite };
 }
+
+function sendAlreadyClaimedInvitation(res) {
+  return res.status(409).json({
+    success: false,
+    code: 'invitation_already_claimed',
+    message: 'Your portal account has already been created. Sign in with the email address and password you chose to upload documents.',
+  });
+}
+
+router.post('/invitations/status', async (req, res) => {
+  try {
+    if (!isConnected || !supabase) {
+      return res.status(503).json({ success: false, message: 'Client portal enrollment is temporarily unavailable.' });
+    }
+    if (!(await consumeInvitationRateLimit(req, res, 'status'))) return;
+    const token = req.body?.token;
+    let alreadyClaimed = false;
+    if (typeof token === 'string' && PORTAL_INVITE_TOKEN_PATTERN.test(token)) {
+      const { data: invite, error } = await supabase.from('client_portal_invites')
+        .select('consumed_at')
+        .eq('token_hash', hashInviteToken(token))
+        .maybeSingle();
+      if (error) throw error;
+      alreadyClaimed = Boolean(invite?.consumed_at);
+    }
+    return res.json({ success: true, data: { alreadyClaimed } });
+  } catch (error) {
+    if (error instanceof RateLimiterUnavailableError) {
+      return res.status(error.status).json({ success: false, message: error.message });
+    }
+    console.error('[Client Portal] Invitation status check failed:', error.message);
+    return res.status(503).json({ success: false, message: 'The invitation status could not be checked. Please try again shortly.' });
+  }
+});
 
 async function claimPortalInvite(user, token) {
   if (
@@ -223,8 +260,9 @@ router.post('/invitations/validate', async (req, res) => {
     if (!(await consumeInvitationRateLimit(req, res, 'validate'))) return;
     const token = req.body?.token;
     const email = normalizePortalEmail(req.body?.email);
-    const invite = await findValidPortalInvite(token, email);
-    if (!invite) {
+    const invitation = await inspectPortalInvite(token, email);
+    if (invitation.status === 'already_claimed') return sendAlreadyClaimedInvitation(res);
+    if (invitation.status !== 'valid') {
       return res.status(400).json({ success: false, message: 'This invitation is invalid or expired. Ask your CA to send you a new portal link.' });
     }
     return res.json({ success: true, data: { email } });
@@ -251,8 +289,9 @@ router.post('/invitations/register', async (req, res) => {
     if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
       return res.status(400).json({ success: false, message: 'Choose a password between 12 and 128 characters.' });
     }
-    const invite = await findValidPortalInvite(token, email);
-    if (!invite) {
+    const invitation = await inspectPortalInvite(token, email);
+    if (invitation.status === 'already_claimed') return sendAlreadyClaimedInvitation(res);
+    if (invitation.status !== 'valid') {
       return res.status(400).json({ success: false, message: 'This invitation is invalid or expired. Ask your CA to send you a new portal link.' });
     }
 
@@ -317,6 +356,8 @@ router.post('/invitations/register', async (req, res) => {
         if (cleanupError) console.error('[Client Portal] Failed to clean up an unclaimed account:', cleanupError.message);
       }
       createdUserId = null;
+      const latestInvitation = await inspectPortalInvite(token, email);
+      if (latestInvitation.status === 'already_claimed') return sendAlreadyClaimedInvitation(res);
       return res.status(409).json({ success: false, message: claim.error });
     }
     createdUserId = null;
