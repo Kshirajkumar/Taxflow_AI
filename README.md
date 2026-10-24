@@ -46,7 +46,7 @@ Also included: light/dark theme, a custom frameless Windows title bar, and firm 
 └──────────────────┘  └──────────────────────┘  └───────────────────┘
 ```
 
-**Storage note:** Client documents are uploaded through the secure client portal to a private Supabase Storage bucket, then downloaded by the signed-in TaxFlow desktop app into the selected local vault under `clients/client/year/month/Raw`. Telegram is text-only: it does not accept, download, send, or sync documents. Portal cloud objects are retained as the recovery source; successful local sync does not delete them. Other file-upload workflows still use the backend's configured vault. If those workflows run on Render, their files are on the Render host and need a persistent disk (`VAULT_PATH`) or a separate cloud-storage migration. The backend runs in **demo mode** with in-memory data when no `.env` is configured.
+**Storage note:** Client documents are uploaded through the secure client portal to a private Supabase Storage bucket, then downloaded by the signed-in TaxFlow desktop app into the selected local vault under `clients/client/year/month/Raw`. Telegram never downloads, processes, or stores document bytes. If a linked client sends media, the relay forwards only Telegram's update metadata so the backend can reply with a privacy warning and that client's private portal invitation. Portal cloud objects are retained as the recovery source; successful local sync does not delete them. Other file-upload workflows still use the backend's configured vault. If those workflows run on Render, their files are on the Render host and need a persistent disk (`VAULT_PATH`) or a separate cloud-storage migration. The backend runs in **demo mode** with in-memory data when no `.env` is configured.
 
 ---
 

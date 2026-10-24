@@ -9,6 +9,7 @@ const express = require('express');
 process.env.SUPABASE_URL = 'https://example.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only-placeholder';
 const database = require('../db/supabase');
+const { decryptPortalInviteToken, hashInviteToken } = require('../lib/clientPortalInvites');
 const { getStorageObjectKey } = require('../lib/documentStorage');
 const telegramRouter = require('../routes/telegram');
 
@@ -77,6 +78,7 @@ function fakeQuery(table) {
             attachment_download_status: 'pending',
             attachment_download_attempts: 0,
             attachment_download_next_attempt_at: new Date().toISOString(),
+            ...(table === 'client_portal_invites' ? { consumed_at: null, revoked_at: null } : {}),
             ...value
           };
           records.push(row);
@@ -171,30 +173,43 @@ test('Telegram status reports messaging diagnostics without checking portal Stor
   assert.equal(telegramApiCalls, 4);
 });
 
-test('Telegram media updates are ignored without storage, database access, or an automatic portal link', async (t) => {
+test('Telegram media updates receive a private portal link without downloading or storing file bytes', async (t) => {
   const oldFrom = database.supabase.from;
   const oldStorageFrom = database.supabase.storage.from;
   const oldFetch = global.fetch;
-  const oldBucket = process.env.SUPABASE_STORAGE_BUCKET;
-  const oldBotToken = process.env.TELEGRAM_BOT_TOKEN;
-  const oldSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const envKeys = ['SUPABASE_STORAGE_BUCKET', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'CLIENT_PORTAL_URL'];
+  const oldEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
   const telegramCalls = [];
-  let databaseCalls = 0;
   let storageUploads = 0;
+  let failNextMediaReply = true;
   Object.values(tables).forEach((rows) => { rows.length = 0; });
-  database.supabase.from = () => {
-    databaseCalls += 1;
-    throw new Error('Media updates must not query the database.');
-  };
+  tables.clients.push({
+    id: 'client-1',
+    name: 'Example Client',
+    email: 'client@example.com',
+    status: 'Active',
+    user_id: 'staff-1',
+    telegram_chat_id: 'chat-1',
+    telegram_user_id: '88',
+  });
+  database.supabase.from = (table) => fakeQuery(table);
   database.supabase.storage.from = () => ({
     async upload() { storageUploads += 1; return { data: null, error: null }; }
   });
-  process.env.SUPABASE_STORAGE_BUCKET = 'taxflow-intake';
   process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
   process.env.TELEGRAM_WEBHOOK_SECRET = 'test-webhook-secret';
+  process.env.CLIENT_PORTAL_URL = 'https://taxflow.example';
   global.fetch = async (url, init) => {
     if (String(url).startsWith('http://127.0.0.1:')) return oldFetch(url, init);
-    telegramCalls.push({ url: String(url), body: JSON.parse(init.body) });
+    const call = { url: String(url), body: JSON.parse(init.body) };
+    telegramCalls.push(call);
+    if (failNextMediaReply && call.body.text.includes('The TaxFlow bot does not download')) {
+      failNextMediaReply = false;
+      return new Response(JSON.stringify({ ok: false, description: 'Temporary Telegram failure' }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
     return new Response(JSON.stringify({ ok: true, result: { message_id: telegramCalls.length } }), {
       headers: { 'content-type': 'application/json' }
     });
@@ -208,55 +223,162 @@ test('Telegram media updates are ignored without storage, database access, or an
     database.supabase.from = oldFrom;
     database.supabase.storage.from = oldStorageFrom;
     global.fetch = oldFetch;
-    if (oldBucket === undefined) delete process.env.SUPABASE_STORAGE_BUCKET; else process.env.SUPABASE_STORAGE_BUCKET = oldBucket;
-    if (oldBotToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN; else process.env.TELEGRAM_BOT_TOKEN = oldBotToken;
-    if (oldSecret === undefined) delete process.env.TELEGRAM_WEBHOOK_SECRET; else process.env.TELEGRAM_WEBHOOK_SECRET = oldSecret;
+    for (const [key, value] of Object.entries(oldEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
   const mediaUpdates = [
     { photo: [{ file_id: 'photo-file' }] },
     { document: { file_id: 'document-file', file_name: 'private.pdf' } },
     { video: { file_id: 'video-file' } },
+    { animation: { file_id: 'animation-file' } },
+    { video_note: { file_id: 'video-note-file' } },
     { audio: { file_id: 'audio-file' } },
     { voice: { file_id: 'voice-file' } },
     { sticker: { file_id: 'sticker-file' } },
+    { paid_media: [{ type: 'photo', media: { file_id: 'paid-photo' } }] },
     { document: { file_id: 'caption-command-file' }, caption: '/start one-time-link' },
   ];
 
+  let firstUpdateBody;
+  let firstFailedResponse;
   for (const [index, media] of mediaUpdates.entries()) {
+    const update = {
+      update_id: 501 + index,
+      message: {
+        message_id: 72 + index,
+        date: 1792322400 + index,
+        chat: { id: 'chat-1', type: 'private' },
+        from: { id: 88 },
+        ...(index < 2 ? { media_group_id: 'private-album-1' } : {}),
+        ...media
+      }
+    };
+    if (index === 0) firstUpdateBody = update;
     const response = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         'x-telegram-bot-api-secret-token': 'test-webhook-secret'
       },
-      body: JSON.stringify({
-        update_id: 501 + index,
-        message: {
-          message_id: 72 + index,
-          date: 1792322400 + index,
-          chat: { id: 'chat-1', type: 'private' },
-          from: { id: 88 },
-          ...media
-        }
-      })
+      body: JSON.stringify(update)
     });
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), {
-      ok: true,
-      ignored: true,
-      reason: 'text_messages_only'
-    });
+    if (index === 0) {
+      firstFailedResponse = response;
+      assert.equal(response.status, 503);
+    } else {
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { ok: true, media_rejected: true });
+    }
   }
 
-  assert.equal(databaseCalls, 0);
-  assert.equal(telegramCalls.length, 0);
+  assert.equal(telegramCalls.length, mediaUpdates.length);
+  const retryResponse = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': 'test-webhook-secret'
+    },
+    body: JSON.stringify(firstUpdateBody)
+  });
+  assert.equal(retryResponse.status, 200);
+  assert.deepEqual(await retryResponse.json(), { ok: true, media_rejected: true });
+  assert.equal(telegramCalls.length, mediaUpdates.length, 'later album item already retried the failed group notice');
+  assert.equal(telegramCalls[telegramCalls.length - 1].body.text, telegramCalls[0].body.text);
+  assert.ok(telegramCalls.every((call) => call.url.endsWith('/sendMessage')));
+  assert.ok(telegramCalls.every((call) => /do not send documents, photos, or files/i.test(call.body.text)));
+  assert.ok(telegramCalls.every((call) => /does not download or process media/i.test(call.body.text)));
+  assert.ok(telegramCalls.every((call) => /https:\/\/taxflow\.example\/portal#invite=/.test(call.body.text)));
+  assert.ok(telegramCalls.every((call) => /create your account using the email address registered with your CA/i.test(call.body.text)));
+  assert.ok(telegramCalls.every((call) => /sign in to the portal whenever you need to upload files/i.test(call.body.text)));
+  assert.equal(new Set(telegramCalls.map((call) => call.body.text)).size, 1, 'each media reply reuses the active private invitation');
   assert.equal(storageUploads, 0);
-  assert.equal(tables.telegram_messages.length, 0);
+  assert.equal(tables.telegram_messages.length, mediaUpdates.length - 1, 'an album receives one response rather than one response per item');
+  assert.ok(tables.telegram_messages.every((row) => row.direction === 'outbound'));
+  assert.ok(tables.telegram_messages.every((row) => !row.body.includes('#invite=')));
   assert.equal(tables.documents_metadata.length, 0);
+  assert.equal(tables.client_portal_invites.length, 1);
+  assert.ok(tables.client_portal_invites[0].token_ciphertext);
+  assert.ok(/^[0-9a-f]{64}$/.test(tables.client_portal_invites[0].token_hash));
+  assert.equal(
+    hashInviteToken(decryptPortalInviteToken(tables.client_portal_invites[0].token_ciphertext)),
+    tables.client_portal_invites[0].token_hash
+  );
+
+  const groupResponse = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': 'test-webhook-secret'
+    },
+    body: JSON.stringify({
+      update_id: 589,
+      message: {
+        message_id: 98,
+        chat: { id: 'chat-1', type: 'group' },
+        from: { id: 88 },
+        photo: [{ file_id: 'group-photo' }]
+      }
+    })
+  });
+  assert.equal(groupResponse.status, 200);
+  assert.deepEqual(await groupResponse.json(), { ok: true, ignored: true, reason: 'private_chat_required' });
+
+  const duplicateResponse = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': 'test-webhook-secret'
+    },
+    body: JSON.stringify(firstUpdateBody)
+  });
+  assert.equal(duplicateResponse.status, 200);
+  assert.equal(telegramCalls.length, mediaUpdates.length, 'Telegram retries do not send duplicate privacy replies');
+  assert.equal((await firstFailedResponse.json()).message, 'Telegram update could not be stored; please retry.');
+
+  const unlinkedResponse = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': 'test-webhook-secret'
+    },
+    body: JSON.stringify({
+      update_id: 590,
+      message: {
+        message_id: 99,
+        chat: { id: 'unknown-chat', type: 'private' },
+        from: { id: 99 },
+        document: { file_id: 'unknown-private-file.pdf' }
+      }
+    })
+  });
+  assert.equal(unlinkedResponse.status, 200);
+  assert.deepEqual(await unlinkedResponse.json(), { ok: true, ignored: true, reason: 'linked_active_client_required' });
+  assert.equal(telegramCalls.length, mediaUpdates.length);
+
+  const senderMismatchResponse = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': 'test-webhook-secret'
+    },
+    body: JSON.stringify({
+      update_id: 591,
+      message: {
+        message_id: 100,
+        chat: { id: 'chat-1', type: 'private' },
+        from: { id: 999 },
+        document: { file_id: 'mismatched-sender.pdf' }
+      }
+    })
+  });
+  assert.equal(senderMismatchResponse.status, 200);
+  assert.deepEqual(await senderMismatchResponse.json(), { ok: true, ignored: true, reason: 'linked_user_mismatch' });
+  assert.equal(telegramCalls.length, mediaUpdates.length);
 
   database.supabase.from = (table) => fakeQuery(table);
-  tables.clients.push({ id: 'client-1', name: 'Example Client', telegram_chat_id: 'chat-1' });
   const textResponse = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
     method: 'POST',
     headers: {
@@ -275,9 +397,9 @@ test('Telegram media updates are ignored without storage, database access, or an
   });
   assert.equal(textResponse.status, 200);
   assert.deepEqual(await textResponse.json(), { ok: true });
-  assert.equal(tables.telegram_messages.length, 1);
-  assert.equal(tables.telegram_messages[0].body, 'Hello, I will send the documents through the portal.');
-  assert.equal(telegramCalls.length, 0);
+  assert.equal(tables.telegram_messages.length, mediaUpdates.length);
+  assert.equal(tables.telegram_messages.at(-1).body, 'Hello, I will send the documents through the portal.');
+  assert.equal(telegramCalls.length, mediaUpdates.length);
 });
 
 test('Telegram sends a welcome then a private portal invitation and retries only the failed message', async (t) => {

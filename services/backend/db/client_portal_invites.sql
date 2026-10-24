@@ -6,12 +6,18 @@ CREATE TABLE IF NOT EXISTS public.client_portal_invites (
   client_id UUID NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
   invited_email TEXT NOT NULL,
   token_hash TEXT NOT NULL UNIQUE CHECK (token_hash ~ '^[0-9a-f]{64}$'),
+  token_ciphertext TEXT,
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   expires_at TIMESTAMPTZ NOT NULL,
   consumed_at TIMESTAMPTZ,
   revoked_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.client_portal_invites
+  ADD COLUMN IF NOT EXISTS token_ciphertext TEXT;
+COMMENT ON COLUMN public.client_portal_invites.token_ciphertext IS
+  'Authenticated-encrypted invitation token used only by the backend to resend the active private portal link.';
 
 CREATE INDEX IF NOT EXISTS client_portal_invites_client_pending_idx
   ON public.client_portal_invites (client_id, expires_at DESC)

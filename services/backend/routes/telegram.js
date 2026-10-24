@@ -4,7 +4,9 @@ const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
 const {
   createClientPortalInvite,
+  decryptPortalInviteToken,
   deriveTelegramPortalInviteToken,
+  encryptPortalInviteToken,
   hashInviteToken,
 } = require('../lib/clientPortalInvites');
 const { requireAuth } = require('../middleware/requireAuth');
@@ -30,6 +32,11 @@ function isMissingDatabaseSchema(error) {
 }
 
 function databaseSetupWarning(table, error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  if (['42703', 'PGRST204'].includes(code) || /column .* does not exist|could not find .* column/i.test(message)) {
+    return `The schema for public.${table} is out of date. Run the Telegram setup migrations on the Supabase project used by this backend.`;
+  }
   if (isMissingDatabaseSchema(error)) {
     return `Required database table public.${table} is missing. Apply the Telegram setup migrations to the Supabase project used by this backend.`;
   }
@@ -79,6 +86,21 @@ function getUnsupportedTelegramMessageType(message) {
     ['checklist', message.checklist],
   ];
   return unsupportedTypes.find(([, value]) => value)?.[0] || null;
+}
+
+function getTelegramMediaMessageType(message) {
+  const mediaTypes = [
+    ['photo', message.photo],
+    ['document', message.document],
+    ['video', message.video],
+    ['animation', message.animation],
+    ['video_note', message.video_note],
+    ['audio', message.audio],
+    ['voice', message.voice],
+    ['sticker', message.sticker],
+    ['paid_media', message.paid_media],
+  ];
+  return mediaTypes.find(([, value]) => value != null)?.[0] || null;
 }
 
 function publicTelegramMessage(message) {
@@ -154,6 +176,80 @@ function createTelegramPortalInvitation(inviteToken) {
   ].join('\n');
 }
 
+function isUsablePortalInvite(invitation, client) {
+  return Boolean(invitation)
+    && !invitation.consumed_at
+    && !invitation.revoked_at
+    && new Date(invitation.expires_at).getTime() > Date.now()
+    && String(invitation.invited_email || '').trim().toLowerCase() === String(client.email || '').trim().toLowerCase();
+}
+
+async function persistPortalInviteToken(invitationId, token) {
+  const { error } = await supabase.from('client_portal_invites')
+    .update({ token_ciphertext: encryptPortalInviteToken(token) })
+    .eq('id', invitationId);
+  if (error) throw error;
+}
+
+async function getOrCreateTelegramPortalInvite(client, { createdBy, preferredToken = null } = {}) {
+  if (!client.email || client.status !== 'Active') {
+    throw new Error('An active client email is required to create the secure portal invitation.');
+  }
+  const normalizedEmail = String(client.email).trim().toLowerCase();
+  let invitation = null;
+  let token = preferredToken;
+
+  if (preferredToken) {
+    const { data, error } = await supabase.from('client_portal_invites')
+      .select('id,token_hash,token_ciphertext,invited_email,expires_at,consumed_at,revoked_at')
+      .eq('token_hash', hashInviteToken(preferredToken))
+      .maybeSingle();
+    if (error) throw error;
+    if (isUsablePortalInvite(data, client)) invitation = data;
+    else if (data) token = null;
+  }
+
+  if (!invitation) {
+    const { data: invitations, error } = await supabase.from('client_portal_invites')
+      .select('id,token_hash,token_ciphertext,invited_email,expires_at,consumed_at,revoked_at')
+      .eq('client_id', client.id)
+      .eq('invited_email', normalizedEmail)
+      .is('consumed_at', null)
+      .is('revoked_at', null)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (error) throw error;
+    invitation = (invitations || []).find((candidate) => isUsablePortalInvite(candidate, client)) || null;
+  }
+
+  if (invitation) {
+    if (invitation.token_ciphertext) {
+      try {
+        const storedToken = decryptPortalInviteToken(invitation.token_ciphertext);
+        if (hashInviteToken(storedToken) === invitation.token_hash) return storedToken;
+        console.error('[Telegram] Stored portal invitation token did not match its database hash; rotating invitation.');
+        token = null;
+      } catch (error) {
+        console.error('[Telegram] Could not decrypt the stored portal invitation; rotating invitation:', error.message);
+        token = null;
+      }
+    } else if (preferredToken && hashInviteToken(preferredToken) === invitation.token_hash) {
+      await persistPortalInviteToken(invitation.id, preferredToken);
+      return preferredToken;
+    }
+  }
+
+  token = token || crypto.randomBytes(32).toString('base64url');
+  await createClientPortalInvite({
+    clientId: client.id,
+    email: normalizedEmail,
+    createdBy: createdBy || client.user_id,
+    token,
+    storeEncryptedToken: true,
+  });
+  return token;
+}
+
 async function sendTrackedTelegramMessage({ client, chatId, providerMessageId, body, label }) {
   let { data: queuedMessage, error: queueError } = await supabase.from('telegram_messages')
     .insert({
@@ -197,31 +293,51 @@ async function sendTrackedTelegramMessage({ client, chatId, providerMessageId, b
   }
 }
 
-async function sendTelegramWelcome(client, chatId, telegramToken, createdBy) {
-  let portalInviteToken = deriveTelegramPortalInviteToken(telegramToken);
-  const { data: invitation, error: invitationLookupError } = await supabase.from('client_portal_invites')
-    .select('id,invited_email,expires_at,consumed_at,revoked_at')
-    .eq('token_hash', hashInviteToken(portalInviteToken))
+async function isTelegramMessageSent(providerMessageId) {
+  const { data, error } = await supabase.from('telegram_messages')
+    .select('delivery_status')
+    .eq('provider_message_id', providerMessageId)
+    .eq('direction', 'outbound')
     .maybeSingle();
-  if (invitationLookupError) throw invitationLookupError;
-  if (!invitation) {
-    if (!client.email || client.status !== 'Active') {
-      throw new Error('An active client email is required to create the portal invitation.');
-    }
-    await createClientPortalInvite({
-      clientId: client.id,
-      email: client.email,
-      createdBy,
-      token: portalInviteToken,
-    });
-  } else if (
-    invitation.consumed_at
-    || invitation.revoked_at
-    || new Date(invitation.expires_at).getTime() <= Date.now()
-    || String(invitation.invited_email || '').trim().toLowerCase() !== String(client.email || '').trim().toLowerCase()
-  ) {
-    portalInviteToken = null;
-  }
+  if (error) throw error;
+  return data?.delivery_status === 'sent';
+}
+
+async function sendTelegramMediaPrivacyReply(client, chatId, update) {
+  const mediaGroupId = String(update.message?.media_group_id || '').trim();
+  const updateId = mediaGroupId
+    ? `album:${mediaGroupId}`
+    : Number.isSafeInteger(update.update_id)
+      ? String(update.update_id)
+      : `${String(chatId)}:${String(update.message?.message_id || 'unknown')}`;
+  const providerMessageId = `taxflow:media-privacy:${client.id}:${updateId}`;
+  if (await isTelegramMessageSent(providerMessageId)) return;
+  const inviteToken = await getOrCreateTelegramPortalInvite(client, { createdBy: client.user_id });
+  const body = [
+    'For your privacy and security, please do not send documents, photos, or files in Telegram.',
+    'The TaxFlow bot does not download or process media sent here.',
+    'Upload them only through your private TaxFlow Client Portal:',
+    getClientPortalLink(inviteToken),
+    '',
+    'First visit: create your account using the email address registered with your CA and set a password. Already registered? Sign in with that email and password. Sign in to the portal whenever you need to upload files.',
+    'This invitation is private; please do not forward it.',
+  ].join('\n');
+  await sendTrackedTelegramMessage({
+    client,
+    chatId,
+    providerMessageId,
+    body,
+    label: 'Telegram file privacy reply',
+  });
+}
+
+async function sendTelegramWelcome(client, chatId, telegramToken, createdBy) {
+  const invitationMessageId = `taxflow:portal-invite:${client.id}:${chatId}`;
+  if (await isTelegramMessageSent(invitationMessageId)) return;
+  const portalInviteToken = await getOrCreateTelegramPortalInvite(client, {
+    createdBy,
+    preferredToken: deriveTelegramPortalInviteToken(telegramToken),
+  });
 
   await sendTrackedTelegramMessage({
     client,
@@ -233,7 +349,7 @@ async function sendTelegramWelcome(client, chatId, telegramToken, createdBy) {
   await sendTrackedTelegramMessage({
     client,
     chatId,
-    providerMessageId: `taxflow:portal-invite:${client.id}:${chatId}`,
+    providerMessageId: invitationMessageId,
     body: createTelegramPortalInvitation(portalInviteToken),
     label: 'Portal invitation message',
   });
@@ -306,7 +422,7 @@ router.get('/status', requireAuth, async (_req, res) => {
           .select('id,body')
           .limit(1),
         supabase.from('telegram_link_tokens').select('id').limit(1),
-        supabase.from('client_portal_invites').select('id').limit(1),
+        supabase.from('client_portal_invites').select('id,token_ciphertext').limit(1),
       ]);
       telegramSchemaReady = !messagesSchemaError && !linkTokensSchemaError;
       clientPortalInvitesReady = !invitesSchemaError;
@@ -638,8 +754,9 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
   if (!secretMatches(req.headers['x-telegram-bot-api-secret-token'], webhookSecret())) return res.sendStatus(401);
   const update = req.body || {};
   const message = update.message || update.edited_message;
+  const mediaType = update.message ? getTelegramMediaMessageType(update.message) : null;
   const unsupportedType = message ? getUnsupportedTelegramMessageType(message) : null;
-  if (unsupportedType) {
+  if (unsupportedType && !mediaType) {
     console.info(`[Telegram] Ignored ${unsupportedType} update ${update.update_id ?? 'unknown'}; file transfers are disabled.`);
     return res.status(200).json({ ok: true, ignored: true, reason: 'text_messages_only' });
   }
@@ -650,6 +767,27 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
 
   try {
     if (!message?.chat?.id) return res.status(200).json({ ok: true, ignored: true });
+    if (mediaType) {
+      if (message.chat.type !== 'private') {
+        console.info(`[Telegram] Ignored ${mediaType} update from unsupported ${message.chat.type} chat.`);
+        return res.status(200).json({ ok: true, ignored: true, reason: 'private_chat_required' });
+      }
+      const { data: client, error: clientError } = await supabase.from('clients')
+        .select('id,name,email,status,user_id,telegram_user_id')
+        .eq('telegram_chat_id', String(message.chat.id))
+        .maybeSingle();
+      if (clientError) throw clientError;
+      if (!client || client.status !== 'Active') {
+        console.info(`[Telegram] Ignored ${mediaType} update from an unlinked or inactive client chat.`);
+        return res.status(200).json({ ok: true, ignored: true, reason: 'linked_active_client_required' });
+      }
+      if (client.telegram_user_id && String(client.telegram_user_id) !== String(message.from?.id || '')) {
+        console.warn('[Telegram] Ignored a media update whose sender does not match the linked Telegram user.');
+        return res.status(200).json({ ok: true, ignored: true, reason: 'linked_user_mismatch' });
+      }
+      await sendTelegramMediaPrivacyReply(client, message.chat.id, update);
+      return res.status(200).json({ ok: true, media_rejected: true });
+    }
     const text = typeof message.text === 'string' ? message.text.trim() : '';
     if (text.startsWith('/start')) {
       const token = text.replace(/^\/start(?:@[^\s]+)?\s*/i, '').trim();

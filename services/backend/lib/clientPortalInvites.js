@@ -7,6 +7,35 @@ function hashInviteToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+function getPortalInviteEncryptionKey() {
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) throw new Error('Portal invitation encryption is not configured.');
+  return crypto.createHash('sha256').update(`taxflow-client-portal-token-encryption-v1:${secret}`).digest();
+}
+
+function encryptPortalInviteToken(token) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getPortalInviteEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()]);
+  return ['v1', iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), encrypted.toString('base64url')].join('.');
+}
+
+function decryptPortalInviteToken(encryptedToken) {
+  const [version, ivValue, tagValue, encryptedValue, ...extra] = String(encryptedToken || '').split('.');
+  if (version !== 'v1' || !ivValue || !tagValue || !encryptedValue || extra.length) {
+    throw new Error('Stored portal invitation token is invalid.');
+  }
+  const iv = Buffer.from(ivValue, 'base64url');
+  const authTag = Buffer.from(tagValue, 'base64url');
+  const encrypted = Buffer.from(encryptedValue, 'base64url');
+  if (iv.length !== 12 || authTag.length !== 16 || encrypted.length === 0) {
+    throw new Error('Stored portal invitation token is invalid.');
+  }
+  const decipher = crypto.createDecipheriv('aes-256-gcm', getPortalInviteEncryptionKey(), iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+}
+
 function deriveTelegramPortalInviteToken(telegramToken) {
   const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!secret) throw new Error('Portal invitation signing is not configured.');
@@ -15,7 +44,7 @@ function deriveTelegramPortalInviteToken(telegramToken) {
     .digest('base64url');
 }
 
-async function createClientPortalInvite({ clientId, email, createdBy, token = crypto.randomBytes(32).toString('base64url') }) {
+async function createClientPortalInvite({ clientId, email, createdBy, token = crypto.randomBytes(32).toString('base64url'), storeEncryptedToken = false }) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
     throw new Error('Add a valid email address to this client before creating a portal invitation.');
@@ -27,6 +56,7 @@ async function createClientPortalInvite({ clientId, email, createdBy, token = cr
       client_id: clientId,
       invited_email: normalizedEmail,
       token_hash: hashInviteToken(token),
+      ...(storeEncryptedToken ? { token_ciphertext: encryptPortalInviteToken(token) } : {}),
       expires_at: expiresAt,
       created_by: createdBy || null,
     })
@@ -47,6 +77,8 @@ async function revokeClientPortalInvites(clientId) {
 
 module.exports = {
   createClientPortalInvite,
+  encryptPortalInviteToken,
+  decryptPortalInviteToken,
   deriveTelegramPortalInviteToken,
   hashInviteToken,
   revokeClientPortalInvites,

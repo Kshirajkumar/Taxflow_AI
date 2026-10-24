@@ -8,7 +8,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only-placeholder';
 process.env.CLIENT_PORTAL_URL = 'https://portal.example.com';
 
 const database = require('../db/supabase');
-const { hashInviteToken } = require('../lib/clientPortalInvites');
+const { decryptPortalInviteToken, encryptPortalInviteToken, hashInviteToken } = require('../lib/clientPortalInvites');
 const portalRouter = require('../routes/clientPortal');
 
 function createDatabaseMock(rows) {
@@ -51,6 +51,15 @@ async function withServer(app, callback) {
     await new Promise((resolve) => server.close(resolve));
   }
 }
+
+test('portal invitation tokens are authenticated-encrypted for server-side reuse', () => {
+  const token = crypto.randomBytes(32).toString('base64url');
+  const encrypted = encryptPortalInviteToken(token);
+  assert.notEqual(encrypted, token);
+  assert.match(encrypted, /^v1\./);
+  assert.equal(decryptPortalInviteToken(encrypted), token);
+  assert.throws(() => decryptPortalInviteToken(`${encrypted.slice(0, -1)}x`));
+});
 
 test('portal invitation validation and registration require the exact client email', async () => {
   const oldFrom = database.supabase.from;

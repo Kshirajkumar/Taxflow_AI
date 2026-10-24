@@ -5,6 +5,12 @@ const path = require('node:path');
 
 const migrationDirectory = path.join(__dirname, '..', 'db');
 
+test('portal invitation migration adds server-encrypted token storage for private media replies', () => {
+  const sql = fs.readFileSync(path.join(migrationDirectory, 'client_portal_invites.sql'), 'utf8');
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS token_ciphertext TEXT/i);
+  assert.match(sql, /authenticated-encrypted invitation token/i);
+});
+
 test('storage migration replaces the sync RPC with the portal-only result shape', () => {
   const sql = fs.readFileSync(path.join(migrationDirectory, 'create_taxflow_storage_bucket.sql'), 'utf8');
   const dropIndex = sql.indexOf('DROP FUNCTION IF EXISTS public.list_pending_document_sync(UUID, UUID, INTEGER);');
