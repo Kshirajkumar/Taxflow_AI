@@ -8,7 +8,8 @@ const express = require('express');
 const path = require('node:path');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
-const { revokeClientPortalInvites } = require('../lib/clientPortalInvites');
+const { createClientPortalInvite, getClientPortalInvitationLink, revokeClientPortalInvites } = require('../lib/clientPortalInvites');
+const telegramRouter = require('./telegram');
 const { ensureClientVaultStructure, listClientVaultTree, getClientVaultRoot, deleteClientVaultFile, resolveClientVaultFile, searchClientVaultFiles } = require('../vault/vaultManager');
 const {
   downloadDocument,
@@ -303,7 +304,7 @@ router.patch('/:id', async (req, res) => {
     if (isConnected) {
       const { data: currentClient, error: currentClientError } = await supabase
         .from('clients')
-        .select('email')
+        .select('email, telegram_chat_id')
         .eq('id', req.params.id)
         .eq('user_id', req.user.id)
         .maybeSingle();
@@ -326,6 +327,8 @@ router.patch('/:id', async (req, res) => {
         .from('clients').update(updates).eq('id', req.params.id).eq('user_id', req.user.id).select('*, supported_countries(country_name,currency_code)').single();
       if (error) throw error;
       let portalAccessWarning = '';
+      let portalInviteLink = '';
+      let portalInviteDeliveryStatus = 'not_created';
       const updatedEmail = String(data.email || '').trim().toLowerCase();
       const portalAccessReset = emailChanged && previousEmail !== updatedEmail;
       if (portalAccessReset) {
@@ -393,10 +396,45 @@ router.patch('/:id', async (req, res) => {
             warnings.push('Previous portal access has been disconnected. The old portal login could not be deleted automatically; contact support if it should be removed.');
           }
         }
+
+        if (updatedEmail && accessDetached) {
+          try {
+            const invitation = await createClientPortalInvite({
+              clientId: data.id,
+              email: updatedEmail,
+              createdBy: req.user.id,
+              storeEncryptedToken: Boolean(data.telegram_chat_id),
+            });
+            portalInviteLink = getClientPortalInvitationLink(invitation.token);
+            portalInviteDeliveryStatus = 'created';
+            if (data.telegram_chat_id) {
+              const delivery = await telegramRouter.notifyClientPortalEmailChanged(data, {
+                previousEmail,
+                updatedEmail,
+                invitationId: invitation.id,
+                invitationLink: portalInviteLink,
+              });
+              portalInviteDeliveryStatus = delivery.sent ? 'sent' : 'telegram_not_linked';
+            } else {
+              portalInviteDeliveryStatus = 'telegram_not_linked';
+            }
+            if (portalInviteDeliveryStatus === 'telegram_not_linked') {
+              warnings.push('A fresh portal invitation is ready, but this client has no linked Telegram chat. Copy the invitation link and send it privately to the new email address.');
+            }
+          } catch (portalError) {
+            console.error(`[Clients] Could not create or send the fresh portal invitation for ${data.id}:`, portalError.message);
+            portalInviteDeliveryStatus = portalInviteLink ? 'delivery_failed' : 'not_created';
+            warnings.push(portalInviteLink
+              ? 'The fresh portal invitation could not be delivered automatically. Copy the invitation link and send it privately to the client.'
+              : 'The email was changed and old access was disconnected, but a fresh portal invitation could not be created. Use Create secure invite link to continue.');
+          }
+        } else if (updatedEmail) {
+          portalInviteDeliveryStatus = 'access_reset_failed';
+        }
         portalAccessWarning = warnings.join(' ');
       }
       invalidateClientsCache(req.user.id);
-      return res.json({ success: true, source: 'supabase', data: { ...data, country_name: data.supported_countries?.country_name, currency_code: data.supported_countries?.currency_code, portalAccessReset, portalAccessWarning } });
+      return res.json({ success: true, source: 'supabase', data: { ...data, country_name: data.supported_countries?.country_name, currency_code: data.supported_countries?.currency_code, portalAccessReset, portalAccessWarning, portalInviteLink, portalInviteDeliveryStatus } });
     }
     const idx = fallbackClients.findIndex(c => c.id === req.params.id);
     if (idx === -1) return res.status(404).json({ success: false, message: 'Not found' });

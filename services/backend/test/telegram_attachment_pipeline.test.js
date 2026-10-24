@@ -824,3 +824,52 @@ test('Telegram file send and download endpoints permanently reject file transfer
   assert.match((await downloadResponse.json()).message, /disabled/i);
   assert.equal(tables.telegram_messages.length, 0);
 });
+
+test('client email-change Telegram notices explain the reset and redact the invitation from history', async (t) => {
+  const oldFrom = database.supabase.from;
+  const oldFetch = global.fetch;
+  const oldBotToken = process.env.TELEGRAM_BOT_TOKEN;
+  const priorMessages = [...tables.telegram_messages];
+  const telegramCalls = [];
+  database.supabase.from = (table) => fakeQuery(table);
+  process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
+  global.fetch = async (url, init) => {
+    const call = { url: String(url), body: JSON.parse(init.body) };
+    telegramCalls.push(call);
+    return new Response(JSON.stringify({
+      ok: true,
+      result: { message_id: 123, from: { id: 456 } },
+    }));
+  };
+  t.after(() => {
+    database.supabase.from = oldFrom;
+    global.fetch = oldFetch;
+    if (oldBotToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = oldBotToken;
+    tables.telegram_messages.splice(0, tables.telegram_messages.length, ...priorMessages);
+  });
+
+  const invitationLink = `https://taxflow.example/portal#invite=${crypto.randomBytes(32).toString('base64url')}`;
+  const result = await telegramRouter.notifyClientPortalEmailChanged({
+    id: 'email-change-client',
+    telegram_chat_id: 'private-chat-123',
+  }, {
+    previousEmail: 'old@example.com',
+    updatedEmail: 'new@example.com',
+    invitationId: 'invitation-123',
+    invitationLink,
+  });
+
+  assert.deepEqual(result, { sent: true });
+  assert.equal(telegramCalls.length, 1);
+  assert.equal(telegramCalls[0].body.chat_id, 'private-chat-123');
+  assert.match(telegramCalls[0].body.text, /old@example\.com/);
+  assert.match(telegramCalls[0].body.text, /new@example\.com/);
+  assert.match(telegramCalls[0].body.text, /previous portal login has been disconnected/i);
+  assert.match(telegramCalls[0].body.text, /create a new portal account/i);
+  assert.match(telegramCalls[0].body.text, /expires in 30 days/i);
+  const storedNotice = tables.telegram_messages.find((message) => message.provider_message_id.includes('email-change-client'));
+  assert.equal(storedNotice.delivery_status, 'sent');
+  assert.doesNotMatch(storedNotice.body, /#invite=/);
+  assert.match(storedNotice.body, /\[private client portal invitation link\]/);
+});

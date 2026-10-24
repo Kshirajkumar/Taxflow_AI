@@ -7,6 +7,22 @@ function hashInviteToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+function getClientPortalInvitationLink(token) {
+  if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(token)) {
+    throw new Error('A valid client portal invitation is required.');
+  }
+  const configuredUrl = String(process.env.CLIENT_PORTAL_URL || '').trim();
+  if (!configuredUrl) throw new Error('CLIENT_PORTAL_URL is not configured.');
+  const portalUrl = new URL(configuredUrl);
+  if (process.env.NODE_ENV === 'production' && portalUrl.protocol !== 'https:') {
+    throw new Error('CLIENT_PORTAL_URL must use HTTPS in production.');
+  }
+  if (portalUrl.username || portalUrl.password || portalUrl.search || portalUrl.hash || portalUrl.pathname !== '/') {
+    throw new Error('CLIENT_PORTAL_URL must be the website origin without a path or credentials.');
+  }
+  return `${portalUrl.origin}/portal#invite=${encodeURIComponent(token)}`;
+}
+
 function getPortalInviteEncryptionKey() {
   const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!secret) throw new Error('Portal invitation encryption is not configured.');
@@ -80,6 +96,7 @@ module.exports = {
   encryptPortalInviteToken,
   decryptPortalInviteToken,
   deriveTelegramPortalInviteToken,
+  getClientPortalInvitationLink,
   hashInviteToken,
   revokeClientPortalInvites,
 };

@@ -10,6 +10,7 @@ const { consume, RateLimiterUnavailableError } = require('../lib/rateLimiter');
 const {
   createClientPortalInvite,
   deriveTelegramPortalInviteToken,
+  getClientPortalInvitationLink,
   hashInviteToken,
   revokeClientPortalInvites,
 } = require('../lib/clientPortalInvites');
@@ -37,19 +38,6 @@ const FILE_TYPES = new Map([
       && !buffer.includes(Buffer.from('vbaProject.bin'))
   }]
 ]);
-
-function getPortalBaseUrl() {
-  const value = String(process.env.CLIENT_PORTAL_URL || '').trim();
-  if (!value) throw new Error('CLIENT_PORTAL_URL is not configured.');
-  const url = new URL(value);
-  if (process.env.NODE_ENV === 'production' && url.protocol !== 'https:') {
-    throw new Error('CLIENT_PORTAL_URL must use HTTPS in production.');
-  }
-  if (url.username || url.password || url.search || url.hash || url.pathname !== '/') {
-    throw new Error('CLIENT_PORTAL_URL must be the website origin without a path or credentials.');
-  }
-  return url.toString().replace(/\/+$/, '');
-}
 
 function normalizePortalFileName(value) {
   const original = String(value || '').replace(/\\/g, '/');
@@ -453,7 +441,7 @@ router.post('/clients/:clientId/invite', requireAuth, async (req, res) => {
       success: true,
       data: {
         email,
-        link: `${getPortalBaseUrl()}/portal#invite=${encodeURIComponent(invitation.token)}`,
+        link: getClientPortalInvitationLink(invitation.token),
         expiresAt: invitation.expiresAt,
       },
     });

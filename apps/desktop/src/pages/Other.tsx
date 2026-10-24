@@ -144,8 +144,14 @@ export function ClientsPage() {
       setSelectedClient(updated);
       if (saved.portalAccessReset) {
         setPortalAccessEnabled(false);
-        setPortalInviteLink('');
-        setPortalMessage('Client email changed. The previous portal login was disconnected. Create a fresh invitation link and send it to the new email; the client must create a new portal account. Existing client documents remain attached to this client record.');
+        setPortalInviteLink(saved.portalInviteLink || '');
+        if (saved.portalInviteDeliveryStatus === 'sent') {
+          setPortalMessage(`Portal email changed from ${selectedClient.contact || 'not set'} to ${saved.email}. The previous portal login was disconnected, existing documents were kept, and a fresh invitation was sent to the client's linked Telegram chat. The client must create a new account using ${saved.email}.`);
+        } else if (saved.portalInviteLink) {
+          setPortalMessage(`Portal email changed from ${selectedClient.contact || 'not set'} to ${saved.email}. The previous portal login was disconnected and existing documents were kept. Copy the fresh invitation below and send it privately to the client so they can create a new account using ${saved.email}.`);
+        } else {
+          setPortalMessage(`Portal email changed to ${saved.email || 'the new address'}. The previous portal login was disconnected and existing documents were kept. Create a fresh invitation link below and send it privately to the client.`);
+        }
       }
       setPortalError(saved.portalAccessWarning || '');
       setEditingClient(false);

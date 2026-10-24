@@ -7,6 +7,7 @@ const {
   decryptPortalInviteToken,
   deriveTelegramPortalInviteToken,
   encryptPortalInviteToken,
+  getClientPortalInvitationLink,
   hashInviteToken,
 } = require('../lib/clientPortalInvites');
 const { requireAuth } = require('../middleware/requireAuth');
@@ -157,10 +158,7 @@ function getClientPortalBaseUrl() {
 }
 
 function getClientPortalLink(inviteToken) {
-  if (typeof inviteToken !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(inviteToken)) {
-    throw new Error('A valid client portal invitation is required.');
-  }
-  return `${getClientPortalBaseUrl()}#invite=${encodeURIComponent(inviteToken)}`;
+  return getClientPortalInvitationLink(inviteToken);
 }
 
 function createTelegramWelcome(clientName) {
@@ -306,6 +304,38 @@ async function sendTrackedTelegramMessage({ client, chatId, providerMessageId, b
     if (statusError) console.error(`[Telegram] ${label} failure status could not be saved:`, statusError.message);
     throw error;
   }
+}
+
+async function notifyClientPortalEmailChanged(client, { previousEmail, updatedEmail, invitationId, invitationLink }) {
+  if (!client.telegram_chat_id) {
+    return { sent: false, reason: 'telegram_not_linked' };
+  }
+  if (!updatedEmail || !invitationId || !invitationLink) {
+    throw new Error('An updated email and fresh portal invitation are required for Telegram notification.');
+  }
+  if (!botToken()) throw new Error('Telegram bot is not configured.');
+
+  const body = [
+    'Important: your CA updated the email address for your TaxFlow client portal.',
+    `Previous email: ${previousEmail || 'Not set'}`,
+    `New portal email: ${updatedEmail}`,
+    '',
+    'Your previous portal login has been disconnected and can no longer access this client portal. Your existing documents remain safely attached to your client record.',
+    '',
+    'Create a new portal account using the new email address above and choose a new password:',
+    invitationLink,
+    '',
+    'This is a private, single-use invitation that expires in 30 days. After creating your account, sign in with the new email and password whenever you upload documents. Do not forward this link.',
+  ].join('\n');
+
+  await sendTrackedTelegramMessage({
+    client,
+    chatId: client.telegram_chat_id,
+    providerMessageId: `taxflow:portal-email-change:${client.id}:${invitationId}`,
+    body,
+    label: 'Client portal email-change notification',
+  });
+  return { sent: true };
 }
 
 async function isTelegramMessageSent(providerMessageId) {
@@ -921,6 +951,7 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
 
 module.exports = router;
 module.exports.configureWebhook = configureWebhook;
+module.exports.notifyClientPortalEmailChanged = notifyClientPortalEmailChanged;
 module.exports._test = {
   secretMatches,
   expectedWebhookUrl,
