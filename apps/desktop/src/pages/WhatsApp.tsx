@@ -928,7 +928,8 @@ export function WhatsAppPage() {
               )}
               {channel === 'telegram' && (telegramStatusError || telegramDiagnostics.length > 0) && (
                 <div className="empty telegram-state error" role="alert">
-                  <b>Telegram setup needs attention</b>
+                  <b>Telegram integration setup needs attention</b>
+                  <span>This is a workspace-wide database or webhook issue, not a status report for {c.name}'s Telegram link.</span>
                   {telegramStatusError && <span>{telegramStatusError}</span>}
                   {telegramDiagnostics.map((warning) => <span key={warning}>{warning}</span>)}
                   {needsTelegramMigrationHelp([telegramStatusError, ...telegramDiagnostics]) && (
