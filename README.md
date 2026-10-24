@@ -42,11 +42,11 @@ Also included: light/dark theme, a custom frameless Windows title bar, and firm 
           ▼                  ▼
 ┌──────────────────┐  ┌──────────────────────┐
 │ Supabase DB      │  │ Supabase Storage     │  │ Local Vault       │
-│ metadata         │  │ private Telegram     │  │ desktop copies    │
+│ metadata         │  │ private portal files │  │ desktop copies    │
 └──────────────────┘  └──────────────────────┘  └───────────────────┘
 ```
 
-**Storage note:** Telegram attachments in production are uploaded directly to a private Supabase Storage bucket, then downloaded by the signed-in TaxFlow desktop app into the selected local vault under `clients/client/year/month/Raw`. The cloud object is retained as the recovery source; successful local sync does not delete it. Other file-upload workflows still use the backend's configured vault. If those workflows run on Render, their files are on the Render host and need a persistent disk (`VAULT_PATH`) or a separate cloud-storage migration. The backend runs in **demo mode** with in-memory data when no `.env` is configured.
+**Storage note:** Client documents are uploaded through the secure client portal to a private Supabase Storage bucket, then downloaded by the signed-in TaxFlow desktop app into the selected local vault under `clients/client/year/month/Raw`. Telegram is text-only: it does not accept, download, send, or sync documents. Portal cloud objects are retained as the recovery source; successful local sync does not delete them. Other file-upload workflows still use the backend's configured vault. If those workflows run on Render, their files are on the Render host and need a persistent disk (`VAULT_PATH`) or a separate cloud-storage migration. The backend runs in **demo mode** with in-memory data when no `.env` is configured.
 
 ---
 
@@ -129,7 +129,7 @@ Edit `services/backend/.env`:
 |---|---|
 | `PORT` | API port (default `5000`) |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | Cloud metadata database |
-| `SUPABASE_STORAGE_BUCKET` | Private object bucket for production Telegram attachments (`taxflow-intake`) |
+| `SUPABASE_STORAGE_BUCKET` | Private object bucket for client-portal documents (`taxflow-intake`) |
 | `TELEGRAM_WEBHOOK_AUTO_CONFIGURE` | Set to `true` on exactly one backend service per Telegram bot; other Render services sharing that bot must leave it unset or `false` |
 | `VAULT_PATH` | Folder for client files on the backend host. For a local backend, do not place it in a cloud-synced folder. For a hosted backend, use a persistent mounted disk. |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | AI extraction and generation |

@@ -18,16 +18,6 @@ create table if not exists public.telegram_messages (
   sender_user_id text,
   body text not null check (char_length(body) between 1 and 4096),
   message_type text not null default 'text',
-  telegram_file_id text,
-  telegram_file_name text,
-  mime_type text,
-  file_size bigint,
-  vault_file_ref uuid,
-  file_download_error text,
-  attachment_download_status text not null default 'pending',
-  attachment_download_attempts integer not null default 0,
-  attachment_download_next_attempt_at timestamptz default now(),
-  attachment_download_started_at timestamptz,
   delivery_status text not null default 'received',
   approved_by uuid references auth.users(id),
   approved_at timestamptz,
@@ -44,30 +34,6 @@ create index if not exists telegram_messages_client_created_idx on public.telegr
 alter table public.telegram_messages add column if not exists approved_by uuid references auth.users(id);
 alter table public.telegram_messages add column if not exists approved_at timestamptz;
 alter table public.telegram_messages add column if not exists provider_response_id text;
-alter table public.telegram_messages add column if not exists telegram_file_id text;
-alter table public.telegram_messages add column if not exists telegram_file_name text;
-alter table public.telegram_messages add column if not exists mime_type text;
-alter table public.telegram_messages add column if not exists file_size bigint;
-alter table public.telegram_messages add column if not exists vault_file_ref uuid;
-alter table public.telegram_messages add column if not exists file_download_error text;
-alter table public.telegram_messages add column if not exists attachment_download_status text not null default 'pending';
-alter table public.telegram_messages add column if not exists attachment_download_attempts integer not null default 0;
-alter table public.telegram_messages add column if not exists attachment_download_next_attempt_at timestamptz default now();
-alter table public.telegram_messages add column if not exists attachment_download_started_at timestamptz;
-alter table public.telegram_messages drop constraint if exists telegram_messages_attachment_download_status_check;
-alter table public.telegram_messages add constraint telegram_messages_attachment_download_status_check
-  check (attachment_download_status in ('pending', 'downloading', 'failed', 'saved'));
-update public.telegram_messages
-set attachment_download_status = case
-  when vault_file_ref is not null then 'saved'
-  when file_download_error is not null then 'failed'
-  else 'pending'
-end
-where telegram_file_id is not null;
-create index if not exists telegram_messages_attachment_download_queue_idx
-  on public.telegram_messages(attachment_download_next_attempt_at, created_at)
-  where direction = 'inbound' and telegram_file_id is not null and vault_file_ref is null
-    and attachment_download_status = 'pending';
 alter table public.telegram_messages drop constraint if exists telegram_messages_delivery_status_check;
 alter table public.telegram_messages add constraint telegram_messages_delivery_status_check check (delivery_status in ('received', 'queued', 'sent', 'failed'));
 

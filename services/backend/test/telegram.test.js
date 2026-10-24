@@ -18,6 +18,32 @@ test('Telegram setup recognizes missing Postgres and Supabase REST schema object
   assert.equal(isMissingDatabaseSchema(new Error('Temporary network failure')), false);
 });
 
+test('Telegram setup derives only a valid HTTPS relay webhook URL', () => {
+  const { expectedWebhookUrl } = telegramRouter._test;
+  const previous = {
+    autoConfigure: process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE,
+    relayUrl: process.env.TELEGRAM_WEBHOOK_RELAY_URL,
+    publicUrl: process.env.PUBLIC_URL
+  };
+  try {
+    process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE = 'false';
+    process.env.TELEGRAM_WEBHOOK_RELAY_URL = 'https://relay.example/telegram/webhook';
+    assert.equal(expectedWebhookUrl(), 'https://relay.example/telegram/webhook');
+    process.env.TELEGRAM_WEBHOOK_RELAY_URL = 'http://relay.example/telegram/webhook';
+    assert.equal(expectedWebhookUrl(), null);
+    process.env.TELEGRAM_WEBHOOK_RELAY_URL = '';
+    process.env.PUBLIC_URL = 'https://taxflow.example/';
+    assert.equal(expectedWebhookUrl(), 'https://taxflow.example/api/v1/telegram/webhook');
+  } finally {
+    if (previous.autoConfigure === undefined) delete process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE;
+    else process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE = previous.autoConfigure;
+    if (previous.relayUrl === undefined) delete process.env.TELEGRAM_WEBHOOK_RELAY_URL;
+    else process.env.TELEGRAM_WEBHOOK_RELAY_URL = previous.relayUrl;
+    if (previous.publicUrl === undefined) delete process.env.PUBLIC_URL;
+    else process.env.PUBLIC_URL = previous.publicUrl;
+  }
+});
+
 test('Telegram accepts text but classifies file and non-text updates as unsupported', () => {
   const { getUnsupportedTelegramMessageType } = telegramRouter._test;
   assert.equal(getUnsupportedTelegramMessageType({ text: 'hello' }), null);

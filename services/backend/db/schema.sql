@@ -105,7 +105,6 @@ CREATE TABLE IF NOT EXISTS documents_metadata (
   verified_by         VARCHAR(255),
   verified_at         TIMESTAMPTZ,
   whatsapp_message_id UUID,
-  telegram_message_id UUID,
   created_at          TIMESTAMPTZ DEFAULT NOW()
 );
 

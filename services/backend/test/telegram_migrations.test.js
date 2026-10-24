@@ -29,3 +29,13 @@ test('document sync repair returns portal documents only', () => {
   assert.match(sql.slice(createIndex), /d\.source = 'Portal'/);
   assert.doesNotMatch(sql.slice(createIndex), /d\.source\s*=\s*'Telegram'/);
 });
+
+test('Telegram file-transfer cleanup preserves message history while removing document links', () => {
+  const sql = fs.readFileSync(path.join(migrationDirectory, 'decommission_telegram_file_transfer.sql'), 'utf8');
+  assert.match(sql, /UPDATE public\.telegram_messages/);
+  assert.match(sql, /DROP COLUMN IF EXISTS telegram_file_id/);
+  assert.match(sql, /DROP COLUMN IF EXISTS attachment_download_status/);
+  assert.match(sql, /DROP COLUMN IF EXISTS telegram_message_id/);
+  assert.doesNotMatch(sql, /DELETE FROM public\.documents_metadata/i);
+  assert.doesNotMatch(sql, /DELETE FROM storage\.objects/i);
+});

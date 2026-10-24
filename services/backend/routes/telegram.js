@@ -1,6 +1,5 @@
 const express = require('express');
 const crypto = require('node:crypto');
-const path = require('node:path');
 const router = express.Router();
 const { supabase, isConnected } = require('../db/supabase');
 const {
@@ -10,77 +9,16 @@ const {
 } = require('../lib/clientPortalInvites');
 const { requireAuth } = require('../middleware/requireAuth');
 const { assertOwnedClient } = require('../lib/ownership');
-const { saveFileToVault, deleteVaultFile } = require('../vault/vaultManager');
-const {
-  getStorageObjectKey,
-  isCloudDocumentStorageEnabled,
-  isCloudDocumentStorageRequired,
-  normalizeMimeType,
-  sha256,
-  uploadDocument
-} = require('../lib/documentStorage');
 
 const botToken = () => process.env.TELEGRAM_BOT_TOKEN || '';
 const webhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET || '';
 const botUsername = () => String(process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '');
 const webhookAutoConfigureEnabled = () => String(process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE || '').toLowerCase() === 'true';
-const TELEGRAM_FILE_LIMIT_BYTES = 20 * 1024 * 1024;
-const TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
-const TELEGRAM_PHOTO_LIMIT_BYTES = 9 * 1024 * 1024;
 const PORTAL_INVITE_LINK_PATTERN = /https?:\/\/[^\s<>"']+\/portal#invite=[A-Za-z0-9_-]{40,64}/gi;
-const attachmentDownloads = new Map();
-const attachmentDownloadQueue = [];
-let activeAttachmentDownloads = 0;
-let attachmentWorkerTimer = null;
-const MAX_CONCURRENT_ATTACHMENT_DOWNLOADS = 4;
-const MAX_ATTACHMENT_DOWNLOAD_ATTEMPTS = 5;
-const ATTACHMENT_DOWNLOAD_INTERVAL_MS = 10000;
-const FILE_TYPES = {
-  '.pdf': 'PDF', '.png': 'PNG', '.jpg': 'JPG', '.jpeg': 'JPEG', '.webp': 'WEBP',
-  '.xls': 'XLS', '.xlsx': 'XLSX', '.csv': 'CSV', '.doc': 'DOC', '.docx': 'DOCX',
-  '.txt': 'OTHER', '.rtf': 'OTHER', '.zip': 'OTHER', '.rar': 'OTHER', '.7z': 'OTHER',
-  '.ppt': 'OTHER', '.pptx': 'OTHER', '.gif': 'OTHER', '.mp4': 'OTHER', '.webm': 'OTHER',
-  '.mov': 'OTHER', '.3gp': 'OTHER', '.mp3': 'OTHER', '.m4a': 'OTHER', '.ogg': 'OTHER',
-  '.wav': 'OTHER', '.heic': 'OTHER', '.heif': 'OTHER', '.tif': 'OTHER', '.tiff': 'OTHER',
-  '.tgs': 'OTHER'
-};
 
 function redactPortalInviteLinks(message) {
   return message.replace(PORTAL_INVITE_LINK_PATTERN, '[private client portal invitation link]');
 }
-const MIME_EXTENSIONS = {
-  'application/pdf': '.pdf',
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'image/webp': '.webp',
-  'image/gif': '.gif',
-  'image/heic': '.heic',
-  'image/heif': '.heif',
-  'image/tiff': '.tiff',
-  'application/vnd.ms-excel': '.xls',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
-  'text/csv': '.csv',
-  'text/plain': '.txt',
-  'application/rtf': '.rtf',
-  'application/msword': '.doc',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-  'application/vnd.ms-powerpoint': '.ppt',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
-  'application/zip': '.zip',
-  'application/x-zip-compressed': '.zip',
-  'application/vnd.rar': '.rar',
-  'application/x-7z-compressed': '.7z',
-  'video/mp4': '.mp4',
-  'video/webm': '.webm',
-  'video/quicktime': '.mov',
-  'video/3gpp': '.3gp',
-  'audio/mpeg': '.mp3',
-  'audio/mp4': '.m4a',
-  'audio/ogg': '.ogg',
-  'audio/wav': '.wav',
-  'audio/x-wav': '.wav',
-  'application/x-tgsticker': '.tgs'
-};
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 function secretMatches(value, expected) { const left = Buffer.from(String(value || '')); const right = Buffer.from(String(expected || '')); return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right); }
 
@@ -114,394 +52,10 @@ function getUnsupportedTelegramMessageType(message) {
   return unsupportedTypes.find(([, value]) => value)?.[0] || null;
 }
 
-function getTelegramAttachment(message) {
-  if (Array.isArray(message.photo) && message.photo.length && message.photo[message.photo.length - 1]?.file_id) {
-    const photo = message.photo[message.photo.length - 1];
-    return {
-      fileId: photo.file_id,
-      fileName: `telegram-photo-${message.message_id}.jpg`,
-      mimeType: 'image/jpeg',
-      fileSize: Number(photo.file_size) || null,
-      messageType: 'image'
-    };
-  }
-  const mediaTypes = [
-    ['document', message.document, 'telegram-document'],
-    ['video', message.video, 'telegram-video'],
-    ['animation', message.animation, 'telegram-animation'],
-    ['video_note', message.video_note, 'telegram-video-note'],
-    ['audio', message.audio, 'telegram-audio'],
-    ['voice', message.voice, 'telegram-voice'],
-    ['sticker', message.sticker, 'telegram-sticker']
-  ];
-  for (const [messageType, media, fallbackName] of mediaTypes) {
-    if (!media?.file_id) continue;
-    const defaultExtensions = {
-      video: '.mp4',
-      animation: '.gif',
-      video_note: '.mp4',
-      audio: '.mp3',
-      voice: '.ogg',
-      sticker: media.is_animated ? '.tgs' : '.webp'
-    };
-    return {
-      fileId: media.file_id,
-      fileName: media.file_name || `${fallbackName}-${message.message_id}${MIME_EXTENSIONS[String(media.mime_type || '').toLowerCase()] || defaultExtensions[messageType] || ''}`,
-      mimeType: media.mime_type || (messageType === 'sticker' && media.is_animated ? 'application/x-tgsticker' : 'application/octet-stream'),
-      fileSize: Number(media.file_size) || null,
-      messageType
-    };
-  }
-  return null;
-}
-
-function normalizeTelegramFileName(fileName, mimeType) {
-  const baseName = String(fileName || 'telegram-document').replace(/[\\/]/g, '_').replace(/[^\w.\- ]/g, '_').slice(0, 200);
-  let extension = path.extname(baseName).toLowerCase();
-  const normalizedMimeType = String(mimeType || '').split(';')[0].trim().toLowerCase();
-  const mimeExtension = MIME_EXTENSIONS[normalizedMimeType];
-  if (extension && !FILE_TYPES[extension]) {
-    throw new Error(`Telegram attachment format "${extension}" is not supported. Send a PDF, image, Office file, text file, or ZIP archive.`);
-  }
-  if (!extension) {
-    if (!mimeExtension) throw new Error('Telegram attachment format could not be identified safely.');
-    extension = mimeExtension;
-  }
-  const equivalentExtensions = new Map([['.jpeg', '.jpg']]);
-  const declaredExtension = equivalentExtensions.get(extension) || extension;
-  const detectedExtension = equivalentExtensions.get(mimeExtension) || mimeExtension;
-  const genericTextMime = normalizedMimeType === 'text/plain' && extension === '.csv';
-  if (mimeExtension && declaredExtension !== detectedExtension && !genericTextMime) {
-    throw new Error('The Telegram attachment filename extension does not match its declared file format.');
-  }
-  const stem = path.basename(baseName, path.extname(baseName)).slice(0, 160) || 'telegram-document';
-  return { fileName: `${stem}${extension}`, fileType: FILE_TYPES[extension] };
-}
-
-function getUnrepresentedTelegramMessage(message) {
-  const messageTypes = [
-    ['contact', message.contact],
-    ['location', message.location],
-    ['venue', message.venue],
-    ['poll', message.poll],
-    ['dice', message.dice],
-    ['game', message.game],
-    ['video', message.video],
-    ['audio', message.audio],
-    ['voice', message.voice],
-    ['animation', message.animation],
-    ['sticker', message.sticker],
-    ['document', message.document]
-  ];
-  const found = messageTypes.find(([, value]) => value);
-  return found ? String(found[0]) : 'message';
-}
-
-function getTelegramMessageDate(message) {
-  const date = new Date(message?.created_at);
-  if (Number.isNaN(date.getTime())) {
-    throw new Error('Telegram message has an invalid timestamp; its attachment cannot be filed.');
-  }
-  return date;
-}
-
-function getAssessmentYear(date) {
-  const firstAssessmentYear = date.getFullYear() - (date.getMonth() < 3 ? 1 : 0);
-  return `${firstAssessmentYear}-${String(firstAssessmentYear + 1).slice(-2)}`;
-}
-
-function isPermanentAttachmentError(error) {
-  const text = error instanceof Error ? error.message : String(error || '');
-  return /not supported|does not match its declared|larger than 20 MB|invalid timestamp|empty file|valid (?:user|client|document) uuid/i.test(text);
-}
-
-function getAttachmentErrorMessage(error, stage) {
-  const message = error instanceof Error ? error.message : String(error || 'Unknown error');
-  if (/row-level security|violates row security|permission denied/i.test(message)) {
-    return `Supabase blocked the Telegram attachment during ${stage} because of Row Level Security. Confirm the backend's SUPABASE_SERVICE_ROLE_KEY belongs to this project, then run db/fix_telegram_attachment_rls.sql in that project's Supabase SQL Editor.`;
-  }
-  return message || `Telegram attachment failed during ${stage}.`;
-}
-
-function getAttachmentRetryDelay(attempt) {
-  return Math.min(15000 * (2 ** Math.max(0, attempt - 1)), 15 * 60 * 1000);
-}
-
-async function claimAttachmentDownload(message, client) {
-  const { data, error } = await supabase.from('telegram_messages')
-    .update({
-      attachment_download_status: 'downloading',
-      attachment_download_attempts: Number(message.attachment_download_attempts || 0) + 1,
-      attachment_download_started_at: new Date().toISOString(),
-      file_download_error: null
-    })
-    .eq('id', message.id)
-    .eq('client_id', client.id)
-    .eq('attachment_download_status', 'pending')
-    .select('*')
-    .maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
-async function processTelegramAttachmentDownload(message, client) {
-  let failureStage = 'Telegram download';
-  return (async () => {
-    const current = await claimAttachmentDownload(message, client);
-    if (!current) return message;
-    if (current.vault_file_ref) return current;
-
-    const normalized = normalizeTelegramFileName(current.telegram_file_name, current.mime_type);
-    if (current.file_size && Number(current.file_size) > TELEGRAM_FILE_LIMIT_BYTES) {
-      throw new Error('Telegram files larger than 20 MB cannot be downloaded by this bot.');
-    }
-
-    const file = await telegramCall('getFile', { file_id: current.telegram_file_id });
-    if (!file.file_path) throw new Error('Telegram did not provide a download path for this attachment.');
-    if (Number(file.file_size) > TELEGRAM_FILE_LIMIT_BYTES) {
-      throw new Error('Telegram files larger than 20 MB cannot be downloaded by this bot.');
-    }
-    const response = await fetch(`https://api.telegram.org/file/bot${botToken()}/${file.file_path}`, {
-      signal: AbortSignal.timeout(30000)
-    });
-    if (!response.ok) throw new Error(`Telegram file download failed (${response.status}).`);
-    const buffer = await readTelegramFile(response);
-    if (!buffer.length) throw new Error('Telegram returned an empty file.');
-
-    const receivedAt = getTelegramMessageDate(current);
-    const periodYear = String(receivedAt.getUTCFullYear());
-    const periodMonth = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(receivedAt);
-    const storedFileName = `${current.id}_${normalized.fileName}`;
-    const cloudStorageEnabled = isCloudDocumentStorageEnabled();
-    if (!cloudStorageEnabled && isCloudDocumentStorageRequired()) {
-      throw new Error('Supabase Storage is required for production Telegram attachments. Configure SUPABASE_STORAGE_BUCKET and apply the storage migration.');
-    }
-
-    let saved = null;
-    let cloudObject = null;
-    if (cloudStorageEnabled) {
-      failureStage = 'private Storage upload';
-      const objectKey = getStorageObjectKey({
-        userId: client.user_id,
-        clientId: client.id,
-        year: periodYear,
-        month: periodMonth,
-        documentId: current.id,
-        fileName: normalized.fileName
-      });
-      cloudObject = await uploadDocument(objectKey, buffer, current.mime_type);
-    } else {
-      // General maps to the Raw bucket in the configured local vault.
-      failureStage = 'local vault save';
-      saved = saveFileToVault(client.name, storedFileName, buffer.toString('base64'), 'General', undefined, receivedAt);
-    }
-    const metadata = {
-      client_id: client.id,
-      client_name: client.name,
-      file_name: saved ? saved.fileName : storedFileName,
-      file_type: normalized.fileType,
-      file_size_kb: Number((buffer.length / 1024).toFixed(2)),
-      category: 'General',
-      source: 'Telegram',
-      status: 'Pending',
-      vault_path: cloudObject
-        ? `supabase://${cloudObject.bucket}/${cloudObject.objectKey}`
-        : saved.vaultPath,
-      ...(cloudObject ? {
-        storage_bucket: cloudObject.bucket,
-        storage_object_path: cloudObject.objectKey,
-        file_sha256: sha256(buffer),
-        mime_type: normalizeMimeType(current.mime_type)
-      } : {}),
-      assessment_year: getAssessmentYear(receivedAt),
-      telegram_message_id: message.id,
-      created_at: receivedAt.toISOString()
-    };
-
-    let document;
-    failureStage = 'document metadata insert';
-    const { data, error } = await supabase.from('documents_metadata').insert(metadata).select('id').single();
-    if (error?.code === '23505') {
-      if (saved) deleteVaultFile(saved.vaultPath);
-      const existing = await supabase.from('documents_metadata').select('id').eq('telegram_message_id', message.id).single();
-      if (existing.error) throw existing.error;
-      document = existing.data;
-    } else if (error) {
-      if (saved) deleteVaultFile(saved.vaultPath);
-      throw error;
-    } else {
-      document = data;
-    }
-
-    failureStage = 'Telegram message status update';
-    const { data: updated, error: updateError } = await supabase
-      .from('telegram_messages')
-      .update({
-        vault_file_ref: document.id,
-        file_download_error: null,
-        attachment_download_status: 'saved',
-        attachment_download_started_at: null
-      })
-      .eq('id', message.id)
-      .eq('client_id', client.id)
-      .select('*')
-      .single();
-    if (updateError) throw updateError;
-    return updated;
-  })().catch(async (error) => {
-    const messageText = getAttachmentErrorMessage(error, failureStage);
-    const attempts = Number(message.attachment_download_attempts || 0) + 1;
-    const retry = !isPermanentAttachmentError(error) && attempts < MAX_ATTACHMENT_DOWNLOAD_ATTEMPTS;
-    const nextAttemptAt = retry ? new Date(Date.now() + getAttachmentRetryDelay(attempts)).toISOString() : null;
-    const { error: updateError } = await supabase.from('telegram_messages')
-      .update({
-        file_download_error: messageText,
-        attachment_download_status: retry ? 'pending' : 'failed',
-        attachment_download_started_at: null,
-        attachment_download_next_attempt_at: nextAttemptAt
-      })
-      .eq('id', message.id)
-      .eq('client_id', client.id);
-    if (updateError) console.error('[Telegram] attachment failure status persistence failed:', updateError.message);
-    console.error(`[Telegram] attachment download failed for message ${message.id} (attempt ${attempts}${retry ? ', retry scheduled' : ''}):`, messageText);
-    return {
-      ...message,
-      file_download_error: messageText,
-      attachment_download_status: retry ? 'pending' : 'failed',
-      attachment_download_attempts: attempts,
-      attachment_download_next_attempt_at: nextAttemptAt
-    };
-  });
-}
-
-function startQueuedAttachmentDownloads() {
-  while (activeAttachmentDownloads < MAX_CONCURRENT_ATTACHMENT_DOWNLOADS && attachmentDownloadQueue.length) {
-    const job = attachmentDownloadQueue.shift();
-    activeAttachmentDownloads += 1;
-    processTelegramAttachmentDownload(job.message, job.client)
-      .then(job.resolve)
-      .catch((error) => {
-        console.error(`[Telegram] attachment queue failed for message ${job.message.id}:`, error);
-        job.resolve({ ...job.message, file_download_error: 'Attachment download failed. Check the backend logs and retry.' });
-      })
-      .finally(() => {
-        attachmentDownloads.delete(job.message.id);
-        activeAttachmentDownloads -= 1;
-        startQueuedAttachmentDownloads();
-      });
-  }
-}
-
-function downloadTelegramAttachment(message, client) {
-  if (!message.telegram_file_id || message.vault_file_ref) {
-    return Promise.resolve(message);
-  }
-
-  const pending = attachmentDownloads.get(message.id);
-  if (pending) return pending;
-
-  const enqueue = async () => {
-    let queuedMessage = message;
-    if (message.attachment_download_status === 'failed') {
-      const { data, error } = await supabase.from('telegram_messages')
-        .update({
-          attachment_download_status: 'pending',
-          attachment_download_attempts: 0,
-          attachment_download_next_attempt_at: new Date().toISOString(),
-          attachment_download_started_at: null,
-          file_download_error: null
-        })
-        .eq('id', message.id)
-        .eq('client_id', client.id)
-        .select('*')
-        .single();
-      if (error) throw error;
-      queuedMessage = data;
-    }
-    return new Promise((resolve) => {
-      attachmentDownloadQueue.push({ message: queuedMessage, client, resolve });
-      startQueuedAttachmentDownloads();
-    });
-  };
-
-  let resolve;
-  const download = new Promise((complete) => { resolve = complete; });
-  attachmentDownloads.set(message.id, download);
-  enqueue().then(resolve).catch((error) => {
-    console.error(`[Telegram] could not queue attachment ${message.id}:`, error.message);
-    resolve({ ...message, file_download_error: error.message });
-  }).finally(() => attachmentDownloads.delete(message.id));
-  return download;
-}
-
-async function recoverPendingAttachmentDownloads() {
-  if (!isConnected || !supabase || !botToken()) return;
-  const now = new Date().toISOString();
-  const staleBefore = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-  const { error: staleError } = await supabase.from('telegram_messages')
-    .update({
-      attachment_download_status: 'pending',
-      attachment_download_started_at: null,
-      attachment_download_next_attempt_at: now
-    })
-    .eq('direction', 'inbound')
-    .eq('attachment_download_status', 'downloading')
-    .lt('attachment_download_started_at', staleBefore);
-  if (staleError) throw staleError;
-
-  const { data: messages, error } = await supabase.from('telegram_messages')
-    .select('id, client_id, telegram_file_id, vault_file_ref, file_download_error, attachment_download_status, attachment_download_attempts, attachment_download_next_attempt_at')
-    .eq('direction', 'inbound')
-    .not('telegram_file_id', 'is', null)
-    .is('vault_file_ref', null)
-    .eq('attachment_download_status', 'pending')
-    .lte('attachment_download_next_attempt_at', now)
-    .order('created_at', { ascending: true })
-    .limit(50);
-  if (error) throw error;
-  if (!messages?.length) return 0;
-
-  const clientIds = Array.from(new Set(messages.map((message) => message.client_id)));
-  const { data: clients, error: clientsError } = await supabase.from('clients')
-    .select('id,name,user_id')
-    .in('id', clientIds);
-  if (clientsError) throw clientsError;
-  const clientsById = new Map((clients || []).map((client) => [client.id, client]));
-  messages.forEach((message) => {
-    const client = clientsById.get(message.client_id);
-    if (client) void downloadTelegramAttachment(message, client);
-  });
-  return messages.length;
-}
-
-function startAttachmentDownloadWorker() {
-  return;
-}
-
-function expectedWebhookUrl() {
-  if (!webhookAutoConfigureEnabled()) {
-    const relayUrl = String(process.env.TELEGRAM_WEBHOOK_RELAY_URL || '').trim();
-    if (relayUrl) {
-      try {
-        const parsed = new URL(relayUrl);
-        if (parsed.protocol === 'https:' && parsed.pathname === '/telegram/webhook' && !parsed.search && !parsed.hash && !parsed.username && !parsed.password) {
-          return parsed.toString().replace(/\/+$/, '');
-        }
-      } catch {
-        return null;
-      }
-      return null;
-    }
-  }
-  const publicUrl = String(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
-  return publicUrl ? `${publicUrl}/api/v1/telegram/webhook` : null;
-}
-
 function publicTelegramMessage(message) {
   const {
     telegram_file_id,
     telegram_file_name,
-    mime_type,
     file_size,
     vault_file_ref,
     file_download_error,
@@ -510,41 +64,16 @@ function publicTelegramMessage(message) {
     attachment_download_next_attempt_at,
     attachment_download_started_at,
     file_download_pending,
-    file_download_retryable,
     ...visibleMessage
   } = message;
-  const hasLegacyAttachment = Boolean(
-    telegram_file_id || telegram_file_name || vault_file_ref || file_download_pending
-  );
-  if (!hasLegacyAttachment) return visibleMessage;
+  if (!telegram_file_id && !telegram_file_name && !vault_file_ref && !file_download_pending) {
+    return visibleMessage;
+  }
   return {
     ...visibleMessage,
     body: 'Telegram supports text messages only. This file was not processed; use the secure client portal for document uploads.',
-    message_type: 'unsupported',
+    message_type: 'text',
   };
-}
-
-async function readTelegramFile(response) {
-  const contentLength = Number(response.headers.get('content-length'));
-  if (contentLength && contentLength > TELEGRAM_FILE_LIMIT_BYTES) {
-    throw new Error('Telegram files larger than 20 MB cannot be downloaded by this bot.');
-  }
-  if (!response.body) throw new Error('Telegram returned an empty file response.');
-
-  const reader = response.body.getReader();
-  const chunks = [];
-  let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > TELEGRAM_FILE_LIMIT_BYTES) {
-      await reader.cancel();
-      throw new Error('Telegram files larger than 20 MB cannot be downloaded by this bot.');
-    }
-    chunks.push(Buffer.from(value));
-  }
-  return Buffer.concat(chunks, size);
 }
 
 async function telegramCall(method, payload) {
@@ -660,28 +189,24 @@ async function sendTelegramWelcome(client, chatId, telegramToken, createdBy) {
   }
 }
 
-async function telegramFileCall(method, chatId, buffer, fileName, mimeType) {
-  if (!botToken()) throw new Error('Telegram bot is not configured.');
-  const form = new FormData();
-  form.set('chat_id', String(chatId));
-  form.set(method === 'sendPhoto' ? 'photo' : 'document', new Blob([buffer], { type: mimeType }), fileName);
-  let response;
-  try {
-    response = await fetch(`https://api.telegram.org/bot${botToken()}/${method}`, {
-      method: 'POST',
-      body: form,
-      signal: AbortSignal.timeout(60000)
-    });
-  } catch {
-    throw new Error('Telegram could not confirm file delivery. Check the conversation before trying again.');
+function expectedWebhookUrl() {
+  if (!webhookAutoConfigureEnabled()) {
+    const relayUrl = String(process.env.TELEGRAM_WEBHOOK_RELAY_URL || '').trim();
+    if (relayUrl) {
+      try {
+        const parsed = new URL(relayUrl);
+        if (parsed.protocol === 'https:' && parsed.pathname === '/telegram/webhook' && !parsed.search
+          && !parsed.hash && !parsed.username && !parsed.password) {
+          return parsed.toString().replace(/\/+$/, '');
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    }
   }
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok || !result.ok) {
-    const error = new Error(result.description || `Telegram file delivery failed (${response.status}).`);
-    error.retryAsDocument = method === 'sendPhoto' && response.status === 400;
-    throw error;
-  }
-  return result.result;
+  const publicUrl = String(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
+  return publicUrl ? `${publicUrl}/api/v1/telegram/webhook` : null;
 }
 
 async function configureWebhook() {
@@ -724,27 +249,23 @@ router.get('/status', requireAuth, async (_req, res) => {
     try {
       const [
         { error: messagesSchemaError },
-        { error: documentsSchemaError },
         { error: linkTokensSchemaError },
         { error: invitesSchemaError },
       ] = await Promise.all([
         supabase.from('telegram_messages')
           .select('id,body')
           .limit(1),
-        supabase.from('documents_metadata')
-          .select('id,source')
-          .limit(1),
         supabase.from('telegram_link_tokens').select('id').limit(1),
         supabase.from('client_portal_invites').select('id').limit(1),
       ]);
-      telegramSchemaReady = !messagesSchemaError && !documentsSchemaError && !linkTokensSchemaError;
+      telegramSchemaReady = !messagesSchemaError && !linkTokensSchemaError;
       clientPortalInvitesReady = !invitesSchemaError;
       if (!telegramSchemaReady) {
-        throw messagesSchemaError || documentsSchemaError || linkTokensSchemaError;
+        throw messagesSchemaError || linkTokensSchemaError;
       }
     } catch (error) {
       console.error('[Telegram] Runtime database schema check failed:', error.message);
-      warnings.push('Telegram database migrations are missing or the configured Supabase project is unavailable. Apply the Telegram and storage migrations to the same project used by this backend.');
+      warnings.push('Telegram message or connection-link migrations are missing, or the configured Supabase project is unavailable. Apply the Telegram text and link migrations to the project used by this backend.');
     }
     if (!clientPortalInvitesReady) {
       warnings.push('Client connection links require the client_portal and client_portal_invites migrations. Apply the Telegram setup migrations to the same Supabase project used by this backend.');
@@ -1007,14 +528,7 @@ router.get('/clients/:clientId/messages', requireAuth, async (req, res) => {
     return res.json({
       success: true,
       linked: Boolean(client?.telegram_chat_id),
-      data: messages.map((message) => publicTelegramMessage({
-        ...message,
-        file_download_pending: Boolean(
-          message.telegram_file_id
-          && !message.vault_file_ref
-          && ['pending', 'downloading'].includes(message.attachment_download_status)
-        )
-      }))
+      data: messages.map(publicTelegramMessage)
     });
   } catch (error) { return res.status(500).json({ success: false, message: error.message }); }
 });
@@ -1073,120 +587,6 @@ router.post('/clients/:clientId/send-file', requireAuth, (_req, res) => {
     success: false,
     message: 'Sending files through Telegram is disabled. Use the secure client portal for document sharing.'
   });
-});
-
-router.post('/clients/:clientId/send-file', requireAuth, express.raw({ type: '*/*', limit: TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES }), async (req, res) => {
-  let queuedMessage;
-  let providerMessageId;
-  let telegramRequestStarted = false;
-  try {
-    const clientId = req.params.clientId;
-    const requestId = String(req.query.requestId || '');
-    const fileNameInput = typeof req.query.fileName === 'string' ? req.query.fileName : '';
-    const mimeType = normalizeMimeType(typeof req.query.mimeType === 'string' ? req.query.mimeType : req.get('content-type'));
-    const approved = req.query.approved === 'true';
-    const fileBytes = req.body;
-
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
-      return res.status(400).json({ success: false, message: 'A valid requestId is required.' });
-    }
-    if (!approved) return res.status(422).json({ success: false, message: 'Explicit file approval is required.' });
-    if (!Buffer.isBuffer(fileBytes)) return res.status(415).json({ success: false, message: 'Upload the attachment as a binary file.' });
-    if (!fileBytes.length) return res.status(400).json({ success: false, message: 'The selected attachment is empty.' });
-    if (fileBytes.length > TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES) {
-      return res.status(413).json({ success: false, message: 'Telegram attachments cannot exceed 25 MB.' });
-    }
-
-    let normalized;
-    try {
-      normalized = normalizeTelegramFileName(fileNameInput, mimeType);
-    } catch (error) {
-      return res.status(415).json({ success: false, message: error.message });
-    }
-    const fileName = normalized.fileName;
-    if (!isConnected || !(await assertOwnedClient(req.user.id, clientId))) {
-      return res.status(404).json({ success: false, message: 'Client not found.' });
-    }
-    const { data: client, error: clientError } = await supabase.from('clients')
-      .select('id,telegram_chat_id')
-      .eq('id', clientId)
-      .eq('user_id', req.user.id)
-      .single();
-    if (clientError) throw clientError;
-    if (!client.telegram_chat_id) return res.status(422).json({ success: false, message: 'This client has not linked Telegram.' });
-
-    providerMessageId = `taxflow:${requestId}`;
-    const isPhoto = ['image/jpeg', 'image/png'].includes(mimeType) && fileBytes.length <= TELEGRAM_PHOTO_LIMIT_BYTES;
-    const messageType = isPhoto ? 'image' : 'document';
-    const body = fileName;
-    const { data, error: queueError } = await supabase.from('telegram_messages')
-      .insert({
-        client_id: clientId,
-        provider_message_id: providerMessageId,
-        direction: 'outbound',
-        chat_id: String(client.telegram_chat_id),
-        body,
-        message_type: messageType,
-        telegram_file_name: fileName,
-        mime_type: mimeType,
-        file_size: fileBytes.length,
-        delivery_status: 'queued',
-        approved_by: req.user.id,
-        approved_at: new Date().toISOString()
-      })
-      .select('*')
-      .single();
-    if (queueError?.code === '23505') {
-      return res.status(409).json({ success: false, message: 'This file request has already been processed.' });
-    }
-    if (queueError) throw queueError;
-    queuedMessage = data;
-
-    telegramRequestStarted = true;
-    let sent;
-    let sentMessageType = messageType;
-    try {
-      sent = await telegramFileCall(isPhoto ? 'sendPhoto' : 'sendDocument', client.telegram_chat_id, fileBytes, fileName, mimeType);
-    } catch (error) {
-      if (!isPhoto || error.retryAsDocument !== true) throw error;
-      console.warn(`[Telegram] Photo validation failed for outbound message ${providerMessageId}; retrying once as a document.`);
-      sent = await telegramFileCall('sendDocument', client.telegram_chat_id, fileBytes, fileName, mimeType);
-      sentMessageType = 'document';
-    }
-    const sentFields = {
-      delivery_status: 'sent',
-      provider_response_id: String(sent.message_id),
-      sender_user_id: String(sent.from?.id || ''),
-      message_type: sentMessageType
-    };
-    const { data: sentMessage, error: updateError } = await supabase.from('telegram_messages')
-      .update(sentFields)
-      .eq('provider_message_id', providerMessageId)
-      .eq('direction', 'outbound')
-      .select('*')
-      .single();
-    if (updateError) {
-      console.error('[Telegram] sent attachment status persistence failed:', updateError.message);
-      return res.json({
-        success: true,
-        data: { ...queuedMessage, ...sentFields },
-        warning: 'delivery_status_persistence_failed'
-      });
-    }
-    return res.json({ success: true, data: sentMessage });
-  } catch (error) {
-    if (providerMessageId && queuedMessage) {
-      const { error: statusError } = await supabase.from('telegram_messages')
-        .update({ delivery_status: 'failed' })
-        .eq('provider_message_id', providerMessageId)
-        .eq('direction', 'outbound');
-      if (statusError) console.error('[Telegram] failed attachment status persistence failed:', statusError.message);
-    }
-    return res.status(telegramRequestStarted ? 502 : 500).json({
-      success: false,
-      message: error.message || 'Unable to send the Telegram attachment.'
-    });
-  }
 });
 
 router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
@@ -1297,25 +697,12 @@ router.post('/webhook', express.json({ limit: '2mb' }), async (req, res) => {
 
 module.exports = router;
 module.exports.configureWebhook = configureWebhook;
-module.exports.startAttachmentDownloadWorker = startAttachmentDownloadWorker;
 module.exports._test = {
   secretMatches,
   expectedWebhookUrl,
   webhookAutoConfigureEnabled,
   isMissingDatabaseSchema,
-  TELEGRAM_OUTBOUND_FILE_LIMIT_BYTES,
-  TELEGRAM_PHOTO_LIMIT_BYTES,
   configureWebhook,
-  getTelegramAttachment,
   getUnsupportedTelegramMessageType,
-  getUnrepresentedTelegramMessage,
-  normalizeTelegramFileName,
-  getTelegramMessageDate,
-  getAssessmentYear,
-  isPermanentAttachmentError,
-  getAttachmentErrorMessage,
-  getAttachmentRetryDelay,
-  recoverPendingAttachmentDownloads,
-  isAttachmentDownloadQueued: (messageId) => attachmentDownloads.has(messageId),
   publicTelegramMessage
 };

@@ -50,7 +50,8 @@ function Shell() {
 
   useEffect(() => {
     if (!vaultSyncNotice) return undefined;
-    const timer = window.setTimeout(() => setVaultSyncNotice(null), 20_000);
+    const duration = vaultSyncNotice.kind === 'error' ? 10_000 : vaultSyncNotice.kind === 'warning' ? 8_000 : 5_000;
+    const timer = window.setTimeout(() => setVaultSyncNotice(null), duration);
     return () => window.clearTimeout(timer);
   }, [vaultSyncNotice]);
 

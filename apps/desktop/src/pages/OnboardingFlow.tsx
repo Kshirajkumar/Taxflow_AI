@@ -302,7 +302,7 @@ export function OnboardingFlow() {
             <div className="ob-step-badge">Step 2 of 3</div>
             <h1 className="ob-title">Configure Your Local Vault</h1>
             <p className="ob-subtitle">
-              Choose a folder on <strong>this computer</strong>. Incoming Telegram files are copied into each client’s year/month/Raw folder after a verified download. A private cloud copy is retained for recovery and syncing other authorized devices.
+              Choose a folder on <strong>this computer</strong>. Secure client-portal documents are copied into each client’s year/month/Raw folder after a verified download. A private cloud copy is retained for recovery and syncing other authorized devices.
             </p>
 
             <div className="ob-vault-visual">
