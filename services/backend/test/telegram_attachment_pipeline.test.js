@@ -182,6 +182,11 @@ test('Telegram media updates receive a private portal link without downloading o
   const telegramCalls = [];
   let storageUploads = 0;
   let failNextMediaReply = true;
+  let blockNextMediaReply = false;
+  let markMediaReplyStarted;
+  let releaseBlockedMediaReply;
+  const mediaReplyStarted = new Promise((resolve) => { markMediaReplyStarted = resolve; });
+  const blockedMediaReply = new Promise((resolve) => { releaseBlockedMediaReply = resolve; });
   Object.values(tables).forEach((rows) => { rows.length = 0; });
   tables.clients.push({
     id: 'client-1',
@@ -209,6 +214,11 @@ test('Telegram media updates receive a private portal link without downloading o
         status: 503,
         headers: { 'content-type': 'application/json' }
       });
+    }
+    if (blockNextMediaReply && call.body.text.includes('The TaxFlow bot does not download')) {
+      blockNextMediaReply = false;
+      markMediaReplyStarted();
+      await blockedMediaReply;
     }
     return new Response(JSON.stringify({ ok: true, result: { message_id: telegramCalls.length } }), {
       headers: { 'content-type': 'application/json' }
@@ -400,6 +410,41 @@ test('Telegram media updates receive a private portal link without downloading o
   assert.equal(tables.telegram_messages.length, mediaUpdates.length);
   assert.equal(tables.telegram_messages.at(-1).body, 'Hello, I will send the documents through the portal.');
   assert.equal(telegramCalls.length, mediaUpdates.length);
+
+  const concurrentAlbumUpdate = (updateId, messageId, media) => ({
+    update_id: updateId,
+    message: {
+      message_id: messageId,
+      media_group_id: 'concurrent-private-album',
+      chat: { id: 'chat-1', type: 'private' },
+      from: { id: 88 },
+      ...media
+    }
+  });
+  const sendConcurrentAlbumUpdate = (update) => fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': 'test-webhook-secret'
+    },
+    body: JSON.stringify(update)
+  });
+  const concurrentAlbumFirst = concurrentAlbumUpdate(601, 101, { photo: [{ file_id: 'concurrent-photo' }] });
+  const concurrentAlbumRetry = concurrentAlbumUpdate(602, 102, { document: { file_id: 'concurrent-document' } });
+  const callsBeforeConcurrentAlbum = telegramCalls.length;
+  blockNextMediaReply = true;
+  const firstAlbumResponsePromise = sendConcurrentAlbumUpdate(concurrentAlbumFirst);
+  await mediaReplyStarted;
+  const overlappingAlbumResponse = await sendConcurrentAlbumUpdate(concurrentAlbumRetry);
+  assert.equal(overlappingAlbumResponse.status, 503, 'a duplicate update waits for the queued send instead of sending again');
+  assert.equal(telegramCalls.length, callsBeforeConcurrentAlbum + 1);
+  releaseBlockedMediaReply();
+  const firstAlbumResponse = await firstAlbumResponsePromise;
+  assert.equal(firstAlbumResponse.status, 200);
+  const retriedAlbumResponse = await sendConcurrentAlbumUpdate(concurrentAlbumRetry);
+  assert.equal(retriedAlbumResponse.status, 200);
+  assert.deepEqual(await retriedAlbumResponse.json(), { ok: true, media_rejected: true });
+  assert.equal(telegramCalls.length, callsBeforeConcurrentAlbum + 1, 'the completed album response is not sent again');
 });
 
 test('Telegram sends a welcome then a private portal invitation and retries only the failed message', async (t) => {

@@ -272,6 +272,9 @@ async function sendTrackedTelegramMessage({ client, chatId, providerMessageId, b
     if (existing.error) throw existing.error;
     queuedMessage = existing.data;
     if (queuedMessage.delivery_status === 'sent') return;
+    if (queuedMessage.delivery_status !== 'failed') {
+      throw new Error(`${label} is already queued for delivery; retry the Telegram update.`);
+    }
   } else if (queueError) {
     throw queueError;
   }
