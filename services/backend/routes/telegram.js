@@ -272,21 +272,6 @@ router.get('/status', requireAuth, async (_req, res) => {
     }
   }
 
-  const storageBucket = String(process.env.SUPABASE_STORAGE_BUCKET || '').trim();
-  let storageBucketReady = false;
-  if (!storageBucket) {
-  warnings.push('SUPABASE_STORAGE_BUCKET is not configured on this backend. Client portal uploads cannot be saved to private Supabase Storage.');
-  } else if (supabase && isConnected) {
-    try {
-      const { error } = await supabase.storage.from(storageBucket).list('', { limit: 1 });
-      if (error) throw error;
-      storageBucketReady = true;
-    } catch (error) {
-      console.error('[Telegram] Storage bucket check failed:', error.message);
-      warnings.push(`Supabase Storage bucket "${storageBucket}" is missing or inaccessible. Verify the backend service-role key targets the same Supabase project and that the private client-portal Storage migration was applied.`);
-    }
-  }
-
   if (!webhookInfo?.url) {
     warnings.push('No Telegram webhook is currently registered for this bot.');
   } else if (targetWebhookUrl && webhookInfo.url.replace(/\/+$/, '') !== targetWebhookUrl) {
@@ -315,8 +300,6 @@ router.get('/status', requireAuth, async (_req, res) => {
       webhookLastError: webhookInfo?.last_error_message || null,
       telegramSchemaReady,
       clientPortalInvitesReady,
-      storageBucket: storageBucket || null,
-      storageBucketReady,
       webhookAutoConfigureEnabled: webhookAutoConfigureEnabled(),
       webhookIngress,
       warnings

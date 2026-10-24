@@ -99,24 +99,18 @@ function fakeQuery(table) {
   return query;
 }
 
-test('Telegram status identifies a competing webhook service and an unavailable Storage bucket', async (t) => {
+test('Telegram status reports messaging diagnostics without checking portal Storage', async (t) => {
   const oldFrom = database.supabase.from;
   const oldGetUser = database.supabase.auth.getUser;
   const oldStorageFrom = database.supabase.storage.from;
   const oldFetch = global.fetch;
-  const envKeys = ['TELEGRAM_BOT_TOKEN', 'SUPABASE_STORAGE_BUCKET', 'PUBLIC_URL', 'RENDER_EXTERNAL_URL', 'TELEGRAM_WEBHOOK_AUTO_CONFIGURE'];
+  const envKeys = ['TELEGRAM_BOT_TOKEN', 'PUBLIC_URL', 'RENDER_EXTERNAL_URL', 'TELEGRAM_WEBHOOK_AUTO_CONFIGURE'];
   const oldEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
   let telegramApiCalls = 0;
   database.supabase.from = (table) => fakeQuery(table);
   database.supabase.auth.getUser = async () => ({ data: { user: { id: 'user-1' } }, error: null });
-  database.supabase.storage.from = (bucket) => ({
-    async list() {
-      assert.equal(bucket, 'taxflow-intake');
-      return { data: null, error: new Error('Bucket not found') };
-    }
-  });
+  database.supabase.storage.from = () => assert.fail('Telegram status must not check client-portal Storage');
   process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
-  process.env.SUPABASE_STORAGE_BUCKET = 'taxflow-intake';
   process.env.PUBLIC_URL = 'https://taxflow-api.onrender.com';
   process.env.RENDER_EXTERNAL_URL = 'https://taxflow-api.onrender.com';
   process.env.TELEGRAM_WEBHOOK_AUTO_CONFIGURE = 'false';
@@ -157,9 +151,9 @@ test('Telegram status identifies a competing webhook service and an unavailable 
   assert.equal(body.diagnostics.webhookPendingUpdates, 2);
   assert.equal(body.diagnostics.telegramSchemaReady, true);
   assert.equal(body.diagnostics.clientPortalInvitesReady, true);
-  assert.equal(body.diagnostics.storageBucketReady, false);
+  assert.equal(Object.hasOwn(body.diagnostics, 'storageBucketReady'), false);
   assert.match(body.diagnostics.warnings.join(' '), /different service/i);
-  assert.match(body.diagnostics.warnings.join(' '), /missing or inaccessible/i);
+  assert.doesNotMatch(body.diagnostics.warnings.join(' '), /storage bucket|client portal uploads/i);
 
   missingSchemaTables.add('client_portal_invites');
   const missingInviteSchemaResponse = await fetch(`http://127.0.0.1:${server.address().port}/api/v1/telegram/status`);
