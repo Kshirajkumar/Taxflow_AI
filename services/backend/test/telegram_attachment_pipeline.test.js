@@ -453,6 +453,37 @@ test('Telegram media updates receive a private portal link without downloading o
   assert.equal(retriedAlbumResponse.status, 200);
   assert.deepEqual(await retriedAlbumResponse.json(), { ok: true, media_rejected: true });
   assert.equal(telegramCalls.length, callsBeforeConcurrentAlbum + 1, 'the completed album response is not sent again');
+
+  tables.client_portal_access.push({
+    client_id: 'client-1',
+    active: true,
+    user_id: 'portal-user-1',
+    invited_email: 'client@example.com',
+  });
+  const registeredClientMediaResponse = await fetch(`http://127.0.0.1:${server.address().port}/telegram/webhook`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': 'test-webhook-secret'
+    },
+    body: JSON.stringify({
+      update_id: 603,
+      message: {
+        message_id: 103,
+        chat: { id: 'chat-1', type: 'private' },
+        from: { id: 88 },
+        photo: [{ file_id: 'registered-client-photo' }]
+      }
+    })
+  });
+  assert.equal(registeredClientMediaResponse.status, 200);
+  assert.deepEqual(await registeredClientMediaResponse.json(), { ok: true, media_rejected: true });
+  const registeredClientReply = telegramCalls.at(-1).body.text;
+  assert.match(registeredClientReply, /https:\/\/taxflow\.example\/portal(?:\n|$)/);
+  assert.doesNotMatch(registeredClientReply, /#invite=/);
+  assert.match(registeredClientReply, /Sign in with the email address and password you already created/i);
+  assert.doesNotMatch(registeredClientReply, /This invitation is private/i);
+  assert.equal(tables.client_portal_invites.length, 1, 'registered clients do not receive a new invitation');
 });
 
 test('Telegram sends a welcome then a private portal invitation and retries only the failed message', async (t) => {

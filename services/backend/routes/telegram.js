@@ -143,10 +143,7 @@ async function telegramCall(method, payload) {
   return result.result;
 }
 
-function getClientPortalLink(inviteToken) {
-  if (typeof inviteToken !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(inviteToken)) {
-    throw new Error('A valid client portal invitation is required.');
-  }
+function getClientPortalBaseUrl() {
   const configuredUrl = String(process.env.CLIENT_PORTAL_URL || '').trim();
   if (!configuredUrl) throw new Error('CLIENT_PORTAL_URL is not configured.');
   const portalUrl = new URL(configuredUrl);
@@ -156,7 +153,14 @@ function getClientPortalLink(inviteToken) {
   if (portalUrl.username || portalUrl.password || portalUrl.search || portalUrl.hash || portalUrl.pathname !== '/') {
     throw new Error('CLIENT_PORTAL_URL must be the website origin without a path or credentials.');
   }
-  return `${portalUrl.origin}/portal#invite=${encodeURIComponent(inviteToken)}`;
+  return `${portalUrl.origin}/portal`;
+}
+
+function getClientPortalLink(inviteToken) {
+  if (typeof inviteToken !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(inviteToken)) {
+    throw new Error('A valid client portal invitation is required.');
+  }
+  return `${getClientPortalBaseUrl()}#invite=${encodeURIComponent(inviteToken)}`;
 }
 
 function createTelegramWelcome(clientName) {
@@ -314,6 +318,19 @@ async function isTelegramMessageSent(providerMessageId) {
   return data?.delivery_status === 'sent';
 }
 
+async function hasActiveClientPortalAccount(client) {
+  const { data: access, error } = await supabase.from('client_portal_access')
+    .select('active,user_id,invited_email')
+    .eq('client_id', client.id)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(
+    access?.active
+    && access.user_id
+    && String(access.invited_email || '').trim().toLowerCase() === String(client.email || '').trim().toLowerCase()
+  );
+}
+
 async function sendTelegramMediaPrivacyReply(client, chatId, update) {
   const mediaGroupId = String(update.message?.media_group_id || '').trim();
   const updateId = mediaGroupId
@@ -323,15 +340,20 @@ async function sendTelegramMediaPrivacyReply(client, chatId, update) {
       : `${String(chatId)}:${String(update.message?.message_id || 'unknown')}`;
   const providerMessageId = `taxflow:media-privacy:${client.id}:${updateId}`;
   if (await isTelegramMessageSent(providerMessageId)) return;
-  const inviteToken = await getOrCreateTelegramPortalInvite(client, { createdBy: client.user_id });
+  const portalAccountExists = await hasActiveClientPortalAccount(client);
+  const portalLink = portalAccountExists
+    ? getClientPortalBaseUrl()
+    : getClientPortalLink(await getOrCreateTelegramPortalInvite(client, { createdBy: client.user_id }));
   const body = [
     'For your privacy and security, please do not send documents, photos, or files in Telegram.',
     'The TaxFlow bot does not download or process media sent here.',
     'Upload them only through your private TaxFlow Client Portal:',
-    getClientPortalLink(inviteToken),
+    portalLink,
     '',
-    'First visit: create your account using the email address registered with your CA and set a password. Already registered? Sign in with that email and password. Sign in to the portal whenever you need to upload files.',
-    'This invitation is private; please do not forward it.',
+    portalAccountExists
+      ? 'Sign in with the email address and password you already created for your portal account. Use the portal whenever you need to upload files.'
+      : 'First visit: create your account using the email address registered with your CA and set a password. Sign in with that email and password on future visits. Sign in to the portal whenever you need to upload files.',
+    ...(!portalAccountExists ? ['This invitation is private; please do not forward it.'] : []),
   ].join('\n');
   await sendTrackedTelegramMessage({
     client,
