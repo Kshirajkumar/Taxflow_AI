@@ -1,5 +1,24 @@
 -- Inbox automation: shared templates, country time zones, and server-side Telegram schedules.
--- Run once in the SQL Editor for the Supabase project used by the backend.
+-- Run in the Supabase SQL Editor for your project. Safe to run multiple times.
+
+-- ==============================================================================
+-- 1. MESSAGE TEMPLATES TABLE (Shared Defaults + Private User Templates)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.message_templates (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  name        VARCHAR(200) NOT NULL,
+  cat         VARCHAR(50) NOT NULL DEFAULT 'Utility',
+  body        TEXT NOT NULL,
+  protected   BOOLEAN NOT NULL DEFAULT FALSE,
+  template_key TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.message_templates
+  ADD COLUMN IF NOT EXISTS template_key TEXT;
 
 ALTER TABLE public.message_templates
   ALTER COLUMN user_id DROP NOT NULL;
@@ -111,6 +130,32 @@ CREATE POLICY message_templates_delete_policy ON public.message_templates
   TO authenticated, service_role
   USING (user_id = auth.uid() AND protected = FALSE);
 
+
+-- ==============================================================================
+-- 2. SUPPORTED COUNTRIES AND TIMEZONES
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.supported_countries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code VARCHAR(10) NOT NULL UNIQUE,
+  country_name VARCHAR(120) NOT NULL,
+  tax_authority_name TEXT,
+  portal_name TEXT,
+  portal_url TEXT,
+  currency_code VARCHAR(10) NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO public.supported_countries (id, country_code, country_name, tax_authority_name, portal_name, portal_url, currency_code, is_active)
+VALUES
+  ('10000000-0000-4000-8000-000000000001', 'IN', 'India', 'Income Tax Department / GSTN / TRACES', 'Income Tax e-Filing / GST Portal', 'https://www.incometax.gov.in/', 'INR', TRUE),
+  ('10000000-0000-4000-8000-000000000002', 'US', 'United States', 'Internal Revenue Service', 'IRS e-file / MeF', 'https://www.irs.gov/e-file-providers', 'USD', TRUE),
+  ('10000000-0000-4000-8000-000000000003', 'AE', 'United Arab Emirates', 'Federal Tax Authority', 'EmaraTax', 'https://eservices.tax.gov.ae/', 'AED', TRUE),
+  ('10000000-0000-4000-8000-000000000004', 'SG', 'Singapore', 'Inland Revenue Authority of Singapore', 'myTax Portal', 'https://mytax.iras.gov.sg/', 'SGD', TRUE),
+  ('10000000-0000-4000-8000-000000000005', 'GB', 'United Kingdom', 'HM Revenue & Customs', 'HMRC online services / MTD', 'https://www.gov.uk/government/organisations/hm-revenue-customs', 'GBP', TRUE)
+ON CONFLICT (country_code) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS public.supported_country_timezones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   country_id UUID NOT NULL REFERENCES public.supported_countries(id) ON DELETE CASCADE,
@@ -144,6 +189,19 @@ JOIN public.supported_countries AS country USING (country_code)
 ON CONFLICT (country_id, timezone_name)
 DO UPDATE SET is_default = EXCLUDED.is_default;
 
+ALTER TABLE public.supported_country_timezones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.supported_country_timezones FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON public.supported_country_timezones FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.supported_country_timezones TO service_role;
+DROP POLICY IF EXISTS supported_country_timezones_service_role ON public.supported_country_timezones;
+CREATE POLICY supported_country_timezones_service_role
+  ON public.supported_country_timezones FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
+
+
+-- ==============================================================================
+-- 3. SCHEDULES TABLE (One-time and Daily Recurring Messages)
+-- ==============================================================================
+
 CREATE TABLE IF NOT EXISTS public.telegram_message_schedules (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -176,14 +234,6 @@ CREATE INDEX IF NOT EXISTS telegram_message_schedules_due_idx
   WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS telegram_message_schedules_owner_created_idx
   ON public.telegram_message_schedules(owner_user_id, created_at DESC);
-
-ALTER TABLE public.supported_country_timezones ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.supported_country_timezones FORCE ROW LEVEL SECURITY;
-REVOKE ALL ON public.supported_country_timezones FROM PUBLIC, anon, authenticated;
-GRANT SELECT ON public.supported_country_timezones TO service_role;
-DROP POLICY IF EXISTS supported_country_timezones_service_role ON public.supported_country_timezones;
-CREATE POLICY supported_country_timezones_service_role
-  ON public.supported_country_timezones FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
 
 ALTER TABLE public.telegram_message_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.telegram_message_schedules FORCE ROW LEVEL SECURITY;
