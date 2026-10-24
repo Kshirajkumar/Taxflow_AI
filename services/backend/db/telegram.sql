@@ -28,6 +28,21 @@ create table if not exists public.telegram_messages (
 alter table public.clients add column if not exists telegram_user_id text;
 alter table public.clients add column if not exists telegram_chat_id text;
 alter table public.clients add column if not exists telegram_linked_at timestamptz;
+alter table public.clients add column if not exists status varchar(20) not null default 'Active';
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.clients'::regclass
+      and conname = 'clients_status_check'
+  ) then
+    alter table public.clients
+      add constraint clients_status_check
+      check (status in ('Active', 'Inactive', 'Suspended')) not valid;
+  end if;
+end
+$$;
 create unique index if not exists clients_telegram_chat_id_unique on public.clients(telegram_chat_id) where telegram_chat_id is not null;
 create unique index if not exists telegram_messages_provider_direction_unique on public.telegram_messages(provider_message_id, direction);
 create index if not exists telegram_messages_client_created_idx on public.telegram_messages(client_id, created_at desc);

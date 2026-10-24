@@ -5,6 +5,12 @@ const path = require('node:path');
 
 const migrationDirectory = path.join(__dirname, '..', 'db');
 
+test('Telegram migration adds the client status required for secure connection links', () => {
+  const sql = fs.readFileSync(path.join(migrationDirectory, 'telegram.sql'), 'utf8');
+  assert.match(sql, /alter table public\.clients add column if not exists status varchar\(20\) not null default 'Active'/i);
+  assert.match(sql, /check \(status in \('Active', 'Inactive', 'Suspended'\)\) not valid/i);
+});
+
 test('portal invitation migration adds server-encrypted token storage for private media replies', () => {
   const sql = fs.readFileSync(path.join(migrationDirectory, 'client_portal_invites.sql'), 'utf8');
   assert.match(sql, /ADD COLUMN IF NOT EXISTS token_ciphertext TEXT/i);
