@@ -929,6 +929,7 @@ export interface TelegramStatus {
     webhookMatchesThisService: boolean | null;
     webhookPendingUpdates: number;
     webhookLastError: string | null;
+    webhookLastErrorAt?: string | null;
     telegramSchemaReady: boolean;
     clientPortalInvitesReady: boolean;
     storageBucket: string | null;

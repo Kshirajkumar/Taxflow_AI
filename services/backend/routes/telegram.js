@@ -29,6 +29,35 @@ function isMissingDatabaseSchema(error) {
     || /relation .* does not exist|could not find .* in the schema cache/i.test(message);
 }
 
+function databaseSetupWarning(table, error) {
+  if (isMissingDatabaseSchema(error)) {
+    return `Required database table public.${table} is missing. Apply the Telegram setup migrations to the Supabase project used by this backend.`;
+  }
+  if (String(error?.code || '') === '42501') {
+    return `The backend database role cannot access public.${table}. Verify SUPABASE_SERVICE_ROLE_KEY belongs to the configured Supabase project.`;
+  }
+  return `The backend could not verify public.${table}. Check the Supabase connection and service-role credentials.`;
+}
+
+function getMissingDatabaseTable(error) {
+  const message = String(error?.message || '');
+  const relationMatch = message.match(/relation\s+["']?(?:public\.)?([a-z_][a-z0-9_]*)["']?\s+does not exist/i);
+  const restMatch = message.match(/could not find the table ['"]public\.([a-z_][a-z0-9_]*)['"]/i);
+  return relationMatch?.[1] || restMatch?.[1] || null;
+}
+
+function getRecentWebhookError(webhookInfo, now = Date.now()) {
+  const message = String(webhookInfo?.last_error_message || '').trim();
+  if (!message) return null;
+  const errorDate = Number(webhookInfo.last_error_date);
+  if (!Number.isFinite(errorDate) || errorDate <= 0) {
+    return { message, occurredAt: null };
+  }
+  const occurredAtMs = errorDate * 1000;
+  if (now - occurredAtMs > 24 * 60 * 60 * 1000) return null;
+  return { message, occurredAt: new Date(occurredAtMs).toISOString() };
+}
+
 function getUnsupportedTelegramMessageType(message) {
   const unsupportedTypes = [
     ['photo', message.photo],
@@ -282,14 +311,22 @@ router.get('/status', requireAuth, async (_req, res) => {
       telegramSchemaReady = !messagesSchemaError && !linkTokensSchemaError;
       clientPortalInvitesReady = !invitesSchemaError;
       if (!telegramSchemaReady) {
-        throw messagesSchemaError || linkTokensSchemaError;
+        if (messagesSchemaError) {
+          console.error('[Telegram] telegram_messages schema check failed:', messagesSchemaError.message);
+          warnings.push(databaseSetupWarning('telegram_messages', messagesSchemaError));
+        }
+        if (linkTokensSchemaError) {
+          console.error('[Telegram] telegram_link_tokens schema check failed:', linkTokensSchemaError.message);
+          warnings.push(databaseSetupWarning('telegram_link_tokens', linkTokensSchemaError));
+        }
+      }
+      if (invitesSchemaError) {
+        console.error('[Telegram] client_portal_invites schema check failed:', invitesSchemaError.message);
+        warnings.push(databaseSetupWarning('client_portal_invites', invitesSchemaError));
       }
     } catch (error) {
       console.error('[Telegram] Runtime database schema check failed:', error.message);
-      warnings.push('Telegram message or connection-link migrations are missing, or the configured Supabase project is unavailable. Apply the Telegram text and link migrations to the project used by this backend.');
-    }
-    if (!clientPortalInvitesReady) {
-      warnings.push('Client connection links require the client_portal and client_portal_invites migrations. Apply the Telegram setup migrations to the same Supabase project used by this backend.');
+      warnings.push('The backend could not check its Telegram database schema. Verify the Supabase connection and service-role credentials, then retry.');
     }
   }
 
@@ -298,8 +335,10 @@ router.get('/status', requireAuth, async (_req, res) => {
   } else if (targetWebhookUrl && webhookInfo.url.replace(/\/+$/, '') !== targetWebhookUrl) {
     warnings.push('Telegram is delivering updates to a different service than this backend. Check the webhook URL and ensure only the intended Render service configures this bot.');
   }
-  if (webhookInfo?.last_error_message) {
-    warnings.push(`Telegram reported a recent webhook delivery error: ${webhookInfo.last_error_message}`);
+  const recentWebhookError = getRecentWebhookError(webhookInfo);
+  if (recentWebhookError) {
+    const when = recentWebhookError.occurredAt ? ` at ${recentWebhookError.occurredAt}` : '';
+    warnings.push(`Telegram reported a webhook delivery error${when}: ${recentWebhookError.message}`);
   }
   if (!targetWebhookUrl) {
     warnings.push(webhookIngress === 'relay'
@@ -318,7 +357,8 @@ router.get('/status', requireAuth, async (_req, res) => {
         ? webhookInfo?.url?.replace(/\/+$/, '') === targetWebhookUrl
         : null,
       webhookPendingUpdates: Number(webhookInfo?.pending_update_count || 0),
-      webhookLastError: webhookInfo?.last_error_message || null,
+      webhookLastError: recentWebhookError?.message || null,
+      webhookLastErrorAt: recentWebhookError?.occurredAt || null,
       telegramSchemaReady,
       clientPortalInvitesReady,
       webhookAutoConfigureEnabled: webhookAutoConfigureEnabled(),
@@ -369,9 +409,18 @@ router.post('/clients/:clientId/link', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('[Telegram] Could not create a client connection invitation:', error.message);
     if (isMissingDatabaseSchema(error)) {
+      const missingTable = getMissingDatabaseTable(error);
       return res.status(503).json({
         success: false,
-        message: 'Telegram database setup is incomplete. Apply the Telegram, client portal, and client portal invitation migrations to the Supabase project configured by this backend, then retry.',
+        message: missingTable
+          ? `Required database table public.${missingTable} is missing. Apply the Telegram setup migrations to the Supabase project used by this backend, then retry.`
+          : 'A required Telegram database object is missing. Apply the Telegram setup migrations to the Supabase project used by this backend, then retry.',
+      });
+    }
+    if (String(error.code || '') === '42501') {
+      return res.status(503).json({
+        success: false,
+        message: 'The backend database role cannot access a required Telegram table. Verify that SUPABASE_SERVICE_ROLE_KEY belongs to the Supabase project configured by this backend.',
       });
     }
     if (/CLIENT_PORTAL_URL|Portal invitation signing is not configured/i.test(String(error.message || ''))) {
@@ -708,6 +757,8 @@ module.exports._test = {
   expectedWebhookUrl,
   webhookAutoConfigureEnabled,
   isMissingDatabaseSchema,
+  getMissingDatabaseTable,
+  getRecentWebhookError,
   configureWebhook,
   getUnsupportedTelegramMessageType,
   publicTelegramMessage

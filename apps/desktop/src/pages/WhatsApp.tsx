@@ -25,6 +25,25 @@ import { missing } from '../lib/domain';
 import { fDate, fTime, fDT, until, agoT, dayDiff, vnow, toInput } from '../lib/format';
 import type { ChatMsg, Reminder } from '../types';
 
+const TELEGRAM_MIGRATION_COMMAND = 'Set-Location .\\services\\backend; npm run migrate:telegram';
+
+function needsTelegramMigrationHelp(messages: string[]) {
+  return messages.some((message) => /database table .* missing|database setup.*incomplete|migrations? are missing|required telegram database object/i.test(message));
+}
+
+function TelegramMigrationHelp({ copied, copyError, onCopy }: { copied: boolean; copyError: string; onCopy: () => void }) {
+  return (
+    <details className="telegram-migration-help">
+      <summary>How to fix the database setup</summary>
+      <p>From the TaxFlow project folder, run this in PowerShell. Ensure <code>DATABASE_URL</code> is set in <code>services/backend/.env</code> for the same Supabase project used by the deployed backend.</p>
+      <code className="telegram-migration-command">{TELEGRAM_MIGRATION_COMMAND}</code>
+      <button className="btn sm" onClick={onCopy}>{copied ? 'Command copied' : 'Copy PowerShell command'}</button>
+      {copyError && <span role="status">{copyError}</span>}
+      <p>Do not share your database URL or password. If the command reports a database login error, correct the credentials in the backend environment before retrying.</p>
+    </details>
+  );
+}
+
 function dayLabel(d: Date) {
   const n = dayDiff(vnow(), d);
   return n === 0 ? 'Today' : n === 1 ? 'Yesterday' : fDate(d);
@@ -108,6 +127,8 @@ export function WhatsAppPage() {
   const [telegramBot, setTelegramBot] = useState('');
   const [telegramStatusError, setTelegramStatusError] = useState('');
   const [telegramDiagnostics, setTelegramDiagnostics] = useState<string[]>([]);
+  const [telegramMigrationCommandCopied, setTelegramMigrationCommandCopied] = useState(false);
+  const [telegramMigrationCopyError, setTelegramMigrationCopyError] = useState('');
   const [telegramError, setTelegramError] = useState('');
   const [telegramRefreshWarning, setTelegramRefreshWarning] = useState('');
   const [telegramInfo, setTelegramInfo] = useState('');
@@ -130,6 +151,7 @@ export function WhatsAppPage() {
   const [telegramDraft, setTelegramDraft] = useState('');
   const [telegramRequestId, setTelegramRequestId] = useState('');
   const [telegramRetry, setTelegramRetry] = useState(0);
+  const [telegramStatusRetry, setTelegramStatusRetry] = useState(0);
   /** Text staged inline in the thread waiting for approval — NOT yet sent */
   const [pendingTelegramMsg, setPendingTelegramMsg] = useState('');
   const [pendingTelegramClientId, setPendingTelegramClientId] = useState('');
@@ -290,6 +312,7 @@ export function WhatsAppPage() {
       } catch (error) {
         if (active) {
           setTelegramReady(false);
+          setTelegramDiagnostics([]);
           setTelegramStatusError(error instanceof Error ? error.message : 'Telegram is unavailable.');
         }
       } finally {
@@ -302,7 +325,7 @@ export function WhatsAppPage() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [channel]);
+  }, [channel, telegramStatusRetry]);
 
   useEffect(() => {
     if (channel !== 'telegram' || !c) {
@@ -499,6 +522,19 @@ export function WhatsAppPage() {
       setTelegramInfo(`Connection link copied. Send it directly to ${c.name}; do not open it from your own Telegram account.`);
     } catch {
       setTelegramError('Could not copy the link. Select the link text and copy it manually.');
+    }
+  }
+
+  async function copyTelegramMigrationCommand() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable.');
+      await navigator.clipboard.writeText(TELEGRAM_MIGRATION_COMMAND);
+      setTelegramMigrationCommandCopied(true);
+      setTelegramMigrationCopyError('');
+    } catch (error) {
+      console.error('[Telegram] Could not copy the database migration command:', error);
+      setTelegramMigrationCommandCopied(false);
+      setTelegramMigrationCopyError('Clipboard access is unavailable. Select the command above and copy it manually.');
     }
   }
 
@@ -895,6 +931,14 @@ export function WhatsAppPage() {
                   <b>Telegram setup needs attention</b>
                   {telegramStatusError && <span>{telegramStatusError}</span>}
                   {telegramDiagnostics.map((warning) => <span key={warning}>{warning}</span>)}
+                  {needsTelegramMigrationHelp([telegramStatusError, ...telegramDiagnostics]) && (
+                    <TelegramMigrationHelp
+                      copied={telegramMigrationCommandCopied}
+                      copyError={telegramMigrationCopyError}
+                      onCopy={() => void copyTelegramMigrationCommand()}
+                    />
+                  )}
+                  <button className="btn sm" onClick={() => setTelegramStatusRetry((value) => value + 1)}>Check again</button>
                 </div>
               )}
               {channel === 'whatsapp' && (!whatsAppReady || whatsAppError) && (
@@ -912,11 +956,18 @@ export function WhatsAppPage() {
                   <b>Telegram action needs attention</b>
                   <span>{telegramError}</span>
                   <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                    <button className="btn sm" onClick={() => { setTelegramError(''); setTelegramRetry((value) => value + 1); }}>Retry connection</button>
+                    <button className="btn sm" onClick={() => { setTelegramError(''); setTelegramRetry((value) => value + 1); setTelegramStatusRetry((value) => value + 1); }}>Retry connection</button>
                     {/session|expired|invalid|unauthorized|log in/i.test(telegramError) && (
                       <button className="btn sm pri" onClick={() => dispatch({ type: 'LOGOUT' })}>Log in again</button>
                     )}
                   </div>
+                  {needsTelegramMigrationHelp([telegramError]) && (
+                    <TelegramMigrationHelp
+                      copied={telegramMigrationCommandCopied}
+                      copyError={telegramMigrationCopyError}
+                      onCopy={() => void copyTelegramMigrationCommand()}
+                    />
+                  )}
                 </div>
               )}
               {channel === 'telegram' && !isTelegramConversationLoading && telegramConversationClientId === c.id && !telegramError && !isTelegramLinkedForCurrentClient && (

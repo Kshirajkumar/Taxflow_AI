@@ -11,11 +11,13 @@ test('Telegram webhook secret comparison rejects missing and incorrect values', 
 });
 
 test('Telegram setup recognizes missing Postgres and Supabase REST schema objects', () => {
-  const { isMissingDatabaseSchema } = telegramRouter._test;
+  const { isMissingDatabaseSchema, getMissingDatabaseTable } = telegramRouter._test;
   assert.equal(isMissingDatabaseSchema({ code: '42P01', message: 'relation does not exist' }), true);
   assert.equal(isMissingDatabaseSchema({ code: 'PGRST205', message: 'table missing from schema cache' }), true);
   assert.equal(isMissingDatabaseSchema({ code: '28P01', message: 'password authentication failed' }), false);
   assert.equal(isMissingDatabaseSchema(new Error('Temporary network failure')), false);
+  assert.equal(getMissingDatabaseTable({ code: '42P01', message: 'relation "public.telegram_link_tokens" does not exist' }), 'telegram_link_tokens');
+  assert.equal(getMissingDatabaseTable({ code: 'PGRST205', message: "Could not find the table 'public.client_portal_invites' in the schema cache" }), 'client_portal_invites');
 });
 
 test('Telegram setup derives only a valid HTTPS relay webhook URL', () => {
@@ -42,6 +44,23 @@ test('Telegram setup derives only a valid HTTPS relay webhook URL', () => {
     if (previous.publicUrl === undefined) delete process.env.PUBLIC_URL;
     else process.env.PUBLIC_URL = previous.publicUrl;
   }
+});
+
+test('Telegram webhook diagnostics do not present errors older than one day as recent', () => {
+  const { getRecentWebhookError } = telegramRouter._test;
+  const now = Date.now();
+  assert.deepEqual(
+    getRecentWebhookError({ last_error_message: '503 Service Unavailable', last_error_date: Math.floor((now - 5 * 60 * 1000) / 1000) }, now),
+    { message: '503 Service Unavailable', occurredAt: new Date(Math.floor((now - 5 * 60 * 1000) / 1000) * 1000).toISOString() }
+  );
+  assert.equal(
+    getRecentWebhookError({ last_error_message: '503 Service Unavailable', last_error_date: Math.floor((now - 25 * 60 * 60 * 1000) / 1000) }, now),
+    null
+  );
+  assert.deepEqual(
+    getRecentWebhookError({ last_error_message: '503 Service Unavailable' }, now),
+    { message: '503 Service Unavailable', occurredAt: null }
+  );
 });
 
 test('Telegram accepts text but classifies file and non-text updates as unsupported', () => {

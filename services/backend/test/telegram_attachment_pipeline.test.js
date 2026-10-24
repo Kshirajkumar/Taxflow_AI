@@ -160,7 +160,8 @@ test('Telegram status reports messaging diagnostics without checking portal Stor
   assert.equal(missingInviteSchemaResponse.status, 200);
   const missingInviteSchema = await missingInviteSchemaResponse.json();
   assert.equal(missingInviteSchema.diagnostics.clientPortalInvitesReady, false);
-  assert.match(missingInviteSchema.diagnostics.warnings.join(' '), /client_portal_invites migrations/i);
+  assert.match(missingInviteSchema.diagnostics.warnings.join(' '), /Required database table public\.client_portal_invites is missing/i);
+  assert.match(missingInviteSchema.diagnostics.warnings.join(' '), /Supabase project used by this backend/i);
   missingSchemaTables.delete('client_portal_invites');
 
   assert.deepEqual(await telegramRouter._test.configureWebhook(), {
