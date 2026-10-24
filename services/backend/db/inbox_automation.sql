@@ -45,18 +45,43 @@ CREATE UNIQUE INDEX IF NOT EXISTS message_templates_shared_template_key_idx
   ON public.message_templates(template_key)
   WHERE user_id IS NULL AND template_key IS NOT NULL;
 
+-- 1. Website link template
 INSERT INTO public.message_templates (user_id, template_key, name, cat, body, protected)
-VALUES
-  (NULL, 'website_link', 'Website link', 'Links', 'Hello {name}, you can visit our client portal and website at: {portalLink}', TRUE),
-  (NULL, 'portal_link', 'Client portal website link', 'Client portal', 'Hello {name}, you can sign in to your TaxFlow client portal and upload your requested documents here: {portalLink}', TRUE),
-  (NULL, 'docs', 'GST documents request', 'Utility', 'Hello {name}, please upload your {period} sales & purchase invoices through your secure client portal: {portalLink}. Deadline: {due}.', TRUE),
-  (NULL, 'pending', 'Missing document', 'Utility', 'Hi {name}, we have not received the {doc} for {period} yet. Please upload it through your secure client portal: {portalLink}.', TRUE),
-  (NULL, 'itr', 'ITR documents', 'Utility', 'Hi {name}, to file your ITR please upload Form 16 / 26AS, bank interest certificates, and investment proofs through your secure client portal: {portalLink}.', TRUE),
-  (NULL, 'portal_invite', 'Secure portal invitation', 'Client portal', 'Hi {name}, open this private link from your CA to access your documents and upload files using our secure file-transfer service: {portalLink}' || E'\n\nUse the same email address your CA has on file. Please do not send tax, financial, identity, or other sensitive documents in Telegram.', TRUE)
-ON CONFLICT (template_key) WHERE user_id IS NULL AND template_key IS NOT NULL DO UPDATE
-SET name = EXCLUDED.name,
-    cat = EXCLUDED.cat,
-    body = EXCLUDED.body;
+VALUES (NULL, 'website_link', 'Website link', 'Links', 'Hello {name}, you can visit our client portal and website at: {portalLink}', TRUE)
+ON CONFLICT (template_key) WHERE user_id IS NULL AND template_key IS NOT NULL
+DO UPDATE SET name = EXCLUDED.name, cat = EXCLUDED.cat, body = EXCLUDED.body;
+
+-- 2. Client portal website link template
+INSERT INTO public.message_templates (user_id, template_key, name, cat, body, protected)
+VALUES (NULL, 'portal_link', 'Client portal website link', 'Client portal', 'Hello {name}, you can sign in to your TaxFlow client portal and upload your requested documents here: {portalLink}', TRUE)
+ON CONFLICT (template_key) WHERE user_id IS NULL AND template_key IS NOT NULL
+DO UPDATE SET name = EXCLUDED.name, cat = EXCLUDED.cat, body = EXCLUDED.body;
+
+-- 3. GST documents request template
+INSERT INTO public.message_templates (user_id, template_key, name, cat, body, protected)
+VALUES (NULL, 'docs', 'GST documents request', 'Utility', 'Hello {name}, please upload your {period} sales & purchase invoices through your secure client portal: {portalLink}. Deadline: {due}.', TRUE)
+ON CONFLICT (template_key) WHERE user_id IS NULL AND template_key IS NOT NULL
+DO UPDATE SET name = EXCLUDED.name, cat = EXCLUDED.cat, body = EXCLUDED.body;
+
+-- 4. Missing document template
+INSERT INTO public.message_templates (user_id, template_key, name, cat, body, protected)
+VALUES (NULL, 'pending', 'Missing document', 'Utility', 'Hi {name}, we have not received the {doc} for {period} yet. Please upload it through your secure client portal: {portalLink}.', TRUE)
+ON CONFLICT (template_key) WHERE user_id IS NULL AND template_key IS NOT NULL
+DO UPDATE SET name = EXCLUDED.name, cat = EXCLUDED.cat, body = EXCLUDED.body;
+
+-- 5. ITR documents template
+INSERT INTO public.message_templates (user_id, template_key, name, cat, body, protected)
+VALUES (NULL, 'itr', 'ITR documents', 'Utility', 'Hi {name}, to file your ITR please upload Form 16 / 26AS, bank interest certificates, and investment proofs through your secure client portal: {portalLink}.', TRUE)
+ON CONFLICT (template_key) WHERE user_id IS NULL AND template_key IS NOT NULL
+DO UPDATE SET name = EXCLUDED.name, cat = EXCLUDED.cat, body = EXCLUDED.body;
+
+-- 6. Secure portal invitation template
+INSERT INTO public.message_templates (user_id, template_key, name, cat, body, protected)
+VALUES (NULL, 'portal_invite', 'Secure portal invitation', 'Client portal', 'Hi {name}, open this private link from your CA to access your documents and upload files using our secure file-transfer service: {portalLink}
+
+Use the same email address your CA has on file. Please do not send tax, financial, identity, or other sensitive documents in Telegram.', TRUE)
+ON CONFLICT (template_key) WHERE user_id IS NULL AND template_key IS NOT NULL
+DO UPDATE SET name = EXCLUDED.name, cat = EXCLUDED.cat, body = EXCLUDED.body;
 
 -- Message templates RLS
 ALTER TABLE public.message_templates ENABLE ROW LEVEL SECURITY;

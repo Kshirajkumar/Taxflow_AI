@@ -41,11 +41,6 @@ CREATE POLICY message_templates_service_role
   USING (true)
   WITH CHECK (true);
 
-UPDATE public.message_templates
-SET body = body || E'\n\nUpload documents securely after signing in: {portalLink}',
-    updated_at = NOW()
-WHERE position('{portalLink}' IN body) = 0;
-
 -- Seed default protected templates for existing users (idempotent)
 INSERT INTO public.message_templates (user_id, template_key, name, cat, body, protected)
 SELECT
@@ -58,10 +53,14 @@ SELECT
 FROM auth.users au
 CROSS JOIN (
   VALUES
+    ('website_link', 'Website link', 'Links', 'Hello {name}, you can visit our client portal and website at: {portalLink}'),
+    ('portal_link', 'Client portal website link', 'Client portal', 'Hello {name}, you can sign in to your TaxFlow client portal and upload your requested documents here: {portalLink}'),
     ('docs', 'GST documents request', 'Utility', 'Hello {name}, please upload your {period} sales & purchase invoices through your secure client portal: {portalLink}. Deadline: {due}.'),
     ('pending', 'Missing document', 'Utility', 'Hi {name}, we have not received the {doc} for {period} yet. Please upload it through your secure client portal: {portalLink}.'),
     ('itr', 'ITR documents', 'Utility', 'Hi {name}, to file your ITR please upload Form 16 / 26AS, bank interest certificates, and investment proofs through your secure client portal: {portalLink}.'),
-    ('portal_invite', 'Secure portal invitation', 'Client portal', 'Hi {name}, open this private link from your CA to access your documents and upload files using our secure file-transfer service: {portalLink}' || E'\n\nUse the same email address your CA has on file. Please do not send tax, financial, identity, or other sensitive documents in Telegram.')
+    ('portal_invite', 'Secure portal invitation', 'Client portal', 'Hi {name}, open this private link from your CA to access your documents and upload files using our secure file-transfer service: {portalLink}
+
+Use the same email address your CA has on file. Please do not send tax, financial, identity, or other sensitive documents in Telegram.')
 ) AS t(template_key, name, cat, body)
 WHERE NOT EXISTS (
   SELECT 1 FROM public.message_templates mt
